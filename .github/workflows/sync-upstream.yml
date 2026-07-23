@@ -22,6 +22,8 @@ jobs:
           git fetch upstream
           DEFAULT_BRANCH=$(git remote show upstream | grep 'HEAD branch' | cut -d' ' -f5)
           echo "Upstream default branch is: $DEFAULT_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout $DEFAULT_BRANCH
-          git merge upstream/$DEFAULT_BRANCH --ff-only
+          git merge upstream/$DEFAULT_BRANCH --no-edit
           git push origin $DEFAULT_BRANCH
