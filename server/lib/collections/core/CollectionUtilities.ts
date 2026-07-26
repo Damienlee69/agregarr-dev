@@ -2432,3 +2432,37 @@ export function incrementCollectionSyncCounter(configId: string): number {
     return 0;
   }
 }
+
+/**
+ * Ownership proof. An `agregarr*` label is the ONLY evidence a collection is
+ * ours: a matching title is user-selectable, and "not a smart collection"
+ * says nothing about who created it.
+ *
+ * Prefix rather than `parseConfigIdFromLabel`, which rejects hyphenated
+ * labels still in use, e.g. `agregarr-multisource-123`.
+ */
+export function hasAgregarrLabel(
+  labels: (string | { tag?: string })[] | undefined
+): boolean {
+  if (!Array.isArray(labels)) {
+    return false;
+  }
+  return labels.some((label) => {
+    const text = typeof label === 'string' ? label : label?.tag ?? '';
+    return text.toLowerCase().startsWith('agregarr');
+  });
+}
+
+/**
+ * One config, many collections. A single stored `collectionRatingKey` would
+ * name whichever one happened to sync last, so these configs never store one.
+ */
+export function isMultiCollectionPattern(config?: {
+  type?: string;
+  subtype?: string;
+}): boolean {
+  return (
+    (config?.type === 'overseerr' && config?.subtype === 'users') ||
+    (config?.type === 'tmdb' && config?.subtype === 'auto_franchise')
+  );
+}

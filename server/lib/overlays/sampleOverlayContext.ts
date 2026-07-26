@@ -71,6 +71,7 @@ const BASE_CONTEXT: Partial<OverlayRenderContext> = {
 
   // Status fields
   releaseDate: '2024-12-25',
+  isEstimatedReleaseDate: false,
   daysUntilRelease: 14,
   daysAgo: 3,
   nextEpisodeAirDate: '2025-01-15',
@@ -161,6 +162,10 @@ export function createSampleOverlayContext(
     Object.assign(context, EPISODE_AGGREGATION_FIELDS);
     context.totalSeasons = 5;
     context.seasonsAvailable = 3;
+    // Only movies get a theatrical+90 estimate, so deriveReleaseDateContext
+    // leaves this undefined for shows. Previewing it as false would let a
+    // condition match here and never match live.
+    context.isEstimatedReleaseDate = undefined;
   }
 
   return context;

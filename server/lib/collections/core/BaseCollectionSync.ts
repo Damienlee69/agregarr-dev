@@ -28,6 +28,8 @@ import {
   extractErrorMessage,
   getCollectionMediaType,
   handleRateLimit,
+  hasAgregarrLabel,
+  isMultiCollectionPattern,
   logCollectionProcessingResults,
   sanitizeCollectionName,
   updateConfigWithRatingKey,
@@ -298,6 +300,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
           }
 
           // Process individual configuration (using effective config with potentially overridden visibility)
+          const configPhaseStart = Date.now();
           const result = await this.processConfiguration(
             effectiveConfig,
             plexClient,
@@ -305,6 +308,9 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             processedCollectionKeys,
             libraryCache, // OPTIMIZATION: Pass library cache to eliminate repeated API calls
             options
+          );
+          plexClient.recordCollectionProcessingTime(
+            Date.now() - configPhaseStart
           );
 
           created += result.created;
@@ -843,6 +849,17 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     }
   }
 
+  /** Call this as soon as Plex returns a key: everything after creation can throw, and a retry with no stored key cannot find the unlabeled collection it just made. */
+  protected persistCollectionRatingKey(
+    config: CollectionConfig | undefined,
+    collectionRatingKey: string
+  ): void {
+    if (!config || isMultiCollectionPattern(config)) {
+      return;
+    }
+    this.updateConfigWithRatingKey(config, collectionRatingKey);
+  }
+
   /**
    * Validate and sanitize collection items before processing
    */
@@ -1091,12 +1108,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     );
 
     // Update config with rating key if collection was created/updated
-    // Skip for multi-collection patterns (one config generates multiple collections)
-    const isMultiCollectionPattern =
-      (config.type === 'overseerr' && config.subtype === 'users') ||
-      (config.type === 'tmdb' && config.subtype === 'auto_franchise');
-    if (updateResult.collectionRatingKey && !isMultiCollectionPattern) {
-      this.updateConfigWithRatingKey(config, updateResult.collectionRatingKey);
+    if (updateResult.collectionRatingKey) {
+      this.persistCollectionRatingKey(config, updateResult.collectionRatingKey);
     }
 
     // Store missing items for Quick Sync (now that we have collectionRatingKey)
@@ -1142,6 +1155,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     items: CollectionItem[],
     options: CollectionUpdateOptions
   ): Promise<CollectionUpdateResult> {
+    const contentPhaseStart = Date.now();
     const { collectionName, mediaType, customLabel } = options;
 
     // Validate items first
@@ -1425,6 +1439,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         }
 
         collectionRatingKey = newSmartCollectionRatingKey;
+        this.persistCollectionRatingKey(options.config, collectionRatingKey);
         created = 1;
       }
     } else {
@@ -1597,6 +1612,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         }
 
         collectionRatingKey = newCollectionRatingKey;
+        this.persistCollectionRatingKey(options.config, collectionRatingKey);
 
         // Add all items to the new collection
         await plexClient.addItemsToCollection(collectionRatingKey, plexItems);
@@ -1647,11 +1663,18 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       throw new Error(`Failed to create or find collection ${collectionName}`);
     }
 
+    plexClient.recordPhaseTime('contentUpdate', Date.now() - contentPhaseStart);
+
     // Apply metadata to the collection
+    const metadataPhaseStart = Date.now();
     const metadataResult = await this.updateCollectionMetadata(
       plexClient,
       collectionRatingKey,
       options
+    );
+    plexClient.recordPhaseTime(
+      'metadataUpdate',
+      Date.now() - metadataPhaseStart
     );
 
     if (metadataResult.ratingKeyIsStale) {
@@ -1756,10 +1779,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       // This is more reliable than label matching for all single collections
       // Skip for multi-collection patterns (one config generates multiple collections)
       let ratingKeyWasStale = false;
-      const isMultiCollectionPattern =
-        (config?.type === 'overseerr' && config?.subtype === 'users') ||
-        (config?.type === 'tmdb' && config?.subtype === 'auto_franchise');
-      if (config?.collectionRatingKey && !isMultiCollectionPattern) {
+      if (config?.collectionRatingKey && !isMultiCollectionPattern(config)) {
         try {
           const existingByRatingKey = await plexClient.getCollectionMetadata(
             config.collectionRatingKey
@@ -1984,25 +2004,14 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             const collection = result.value.collection;
             const labels = result.value.labels;
 
-            const hasAgregarrLabel = labels.some((label: string) =>
-              label.toLowerCase().startsWith('agregarr')
-            );
+            // A matching title is not ownership: the label is. Adopting an
+            // unlabeled collection here overwrote users' filters and deleted
+            // their collections.
+            const isOurs = hasAgregarrLabel(labels);
+            const isSmartCollection =
+              (collection as PlexCollectionWithSmart).smart === '1';
 
-            const titleMatches = titleCandidates.includes(collection.title);
-
-            // Adopt if: (a) title matches AND has an agregarr label (orphaned
-            // from config ID change), or (b) title matches the per-user
-            // collection name AND collection is unlabeled (orphaned from a
-            // failed creation where the label was never applied).
-            const isOrphanedUserCollection =
-              !hasAgregarrLabel &&
-              collectionName &&
-              collection.title === collectionName;
-
-            if (
-              titleMatches &&
-              (hasAgregarrLabel || isOrphanedUserCollection)
-            ) {
+            if (isOurs && titleCandidates.includes(collection.title)) {
               // Validate the ratingKey is reachable before adopting
               const adoptCheck = await plexClient.getCollectionMetadataSafe(
                 collection.ratingKey
@@ -2015,9 +2024,6 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
                 continue;
               }
 
-              const isSmartCollection =
-                (collection as PlexCollectionWithSmart).smart === '1';
-
               logger.info(
                 `Found orphaned collection by title: "${collection.title}" - adopting with label`,
                 {
@@ -2027,7 +2033,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
                   collectionType: isSmartCollection ? 'smart' : 'regular',
                   oldLabels: labels,
                   newLabel: customLabel,
-                  hadAgregarrLabel: hasAgregarrLabel,
+                  hadAgregarrLabel: isOurs,
                 }
               );
 

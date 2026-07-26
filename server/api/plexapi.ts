@@ -212,6 +212,85 @@ class PlexAPI {
   private posterManager: PlexPosterManager;
   private autoEmptyTrashPrefPromise?: Promise<boolean>;
 
+  // Write telemetry - scoped to this instance (one PlexAPI per sync run), not
+  // a global singleton, so overlapping syncs never share counts.
+  private writeCounts = new Map<string, number>();
+  private phaseTimingsMs = new Map<string, number>();
+  private collectionProcessingMs = 0;
+
+  private static readonly WRITE_CATEGORIES = [
+    'title',
+    'sortTitle',
+    'contentSort',
+    'hubVisibility',
+    'label',
+    'poster',
+    'arrange',
+    'mode',
+  ] as const;
+
+  private static readonly PHASE_ORDER = [
+    'sourceFetch',
+    'contentUpdate',
+    'metadataUpdate',
+    'hubSync',
+    'ordering',
+  ] as const;
+
+  public recordWrite(category: string): void {
+    this.writeCounts.set(category, (this.writeCounts.get(category) ?? 0) + 1);
+  }
+
+  public recordPhaseTime(phase: string, ms: number): void {
+    this.phaseTimingsMs.set(phase, (this.phaseTimingsMs.get(phase) ?? 0) + ms);
+  }
+
+  // Total time spent inside processConfiguration() across every collection
+  // this sync. Not logged directly - it's the base that sourceFetch is
+  // derived from in getPhaseSummary().
+  public recordCollectionProcessingTime(ms: number): void {
+    this.collectionProcessingMs += ms;
+  }
+
+  public getWriteSummary(): { total: number; text: string } {
+    const seen = new Set<string>();
+    const parts: string[] = [];
+    let total = 0;
+    for (const category of PlexAPI.WRITE_CATEGORIES) {
+      const count = this.writeCounts.get(category) ?? 0;
+      parts.push(`${category}: ${count}`);
+      total += count;
+      seen.add(category);
+    }
+    for (const [category, count] of this.writeCounts) {
+      if (!seen.has(category)) {
+        parts.push(`${category}: ${count}`);
+        total += count;
+      }
+    }
+    return { total, text: parts.join(', ') };
+  }
+
+  // ponytail: sourceFetch is a residual (collectionProcessing minus the two
+  // sub-phases timed directly), not an isolated measurement - fetchSourceData
+  // is abstract and implemented per source (16 subclasses), so there's no
+  // single call site to wrap directly. Upgrade path: thread a timer through
+  // fetchSourceData if per-source fetch time is ever needed.
+  public getPhaseSummary(): string {
+    const contentMs = this.phaseTimingsMs.get('contentUpdate') ?? 0;
+    const metadataMs = this.phaseTimingsMs.get('metadataUpdate') ?? 0;
+    const sourceFetchMs = Math.max(
+      0,
+      this.collectionProcessingMs - contentMs - metadataMs
+    );
+    this.phaseTimingsMs.set('sourceFetch', sourceFetchMs);
+
+    return PlexAPI.PHASE_ORDER.map(
+      (phase) =>
+        `${phase}: ${Math.round(this.phaseTimingsMs.get(phase) ?? 0)}ms`
+    ).join(', ');
+  }
+
   private getExtendedClient(): ExtendedPlexAPI {
     return this.plexClient as ExtendedPlexAPI;
   }
@@ -309,19 +388,20 @@ class PlexAPI {
   /**
    * Check if a collection is a smart collection
    * @param collectionRatingKey The rating key of the collection to check
-   * @returns true if the collection is smart, false otherwise
+   * @returns 'smart' | 'not_smart', or 'unknown' when the check itself failed -
+   *   callers must not treat 'unknown' the same as 'not_smart'
    */
   private async isSmartCollection(
     collectionRatingKey: string
-  ): Promise<boolean> {
+  ): Promise<'smart' | 'not_smart' | 'unknown'> {
     try {
       const metadata = await this.getCollectionMetadata(collectionRatingKey);
       if (!metadata) {
-        return false;
+        return 'unknown';
       }
 
       // Smart collections have smart="1" attribute in Plex API
-      return metadata.smart === '1';
+      return metadata.smart === '1' ? 'smart' : 'not_smart';
     } catch (error) {
       logger.warn(
         `Failed to check if collection ${collectionRatingKey} is smart`,
@@ -330,7 +410,7 @@ class PlexAPI {
           error: error instanceof Error ? error.message : String(error),
         }
       );
-      return false;
+      return 'unknown';
     }
   }
 
@@ -1080,23 +1160,60 @@ class PlexAPI {
     }
   }
 
+  // Reads the collection back and counts how many of `attemptedKeys` actually
+  // landed. Only call this after a write that claims success - a failed write
+  // is already a known failure and doesn't need a second API call to prove it.
+  private async verifyItemsLanded(
+    collectionRatingKey: string,
+    attemptedKeys: Set<string>
+  ): Promise<number> {
+    if (attemptedKeys.size === 0) {
+      return 0;
+    }
+
+    const currentItems = await this.getCollectionItems(collectionRatingKey);
+    const currentSet = new Set(currentItems);
+    let verified = 0;
+    for (const key of attemptedKeys) {
+      if (currentSet.has(key)) {
+        verified++;
+      }
+    }
+
+    if (verified < attemptedKeys.size) {
+      logger.warn(
+        `addItemsToCollection: read-back verification found fewer items than the write claimed`,
+        {
+          label: 'Plex API',
+          collectionRatingKey,
+          attempted: attemptedKeys.size,
+          verified,
+        }
+      );
+    }
+
+    return verified;
+  }
+
   public async addItemsToCollection(
     collectionRatingKey: string,
     items: PlexCollectionItem[]
-  ): Promise<void> {
+  ): Promise<{ successful: number; failed: number }> {
     if (items.length === 0) {
-      return;
+      return { successful: 0, failed: 0 };
     }
 
-    // PROTECTION: Never add items to smart collections - they are auto-populated by Plex
-    const isSmart = await this.isSmartCollection(collectionRatingKey);
-    if (isSmart) {
+    // PROTECTION: Never add items to smart collections - they are auto-populated by Plex.
+    // Treat an unknown status (transport failure) the same as smart: refuse.
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
       logger.error(
         `PROTECTION: Attempted to add items to smart collection ${collectionRatingKey}. This could corrupt the Plex database!`,
         {
           label: 'Plex API',
           collectionRatingKey,
           itemCount: items.length,
+          smartStatus,
           protection: 'SMART_COLLECTION_BLOCK',
         }
       );
@@ -1146,6 +1263,13 @@ class PlexAPI {
       }
 
       await this.safePutQuery(addUrl);
+
+      const requestedKeys = new Set(items.map((item) => item.ratingKey));
+      const verified = await this.verifyItemsLanded(
+        collectionRatingKey,
+        requestedKeys
+      );
+      return { successful: verified, failed: items.length - verified };
     } catch (error) {
       // If bulk addition fails, fall back to individual addition
       logger.warn(
@@ -1155,6 +1279,9 @@ class PlexAPI {
           collectionRatingKey,
         }
       );
+
+      let failed = 0;
+      const addedKeys = new Set<string>();
 
       for (const item of items) {
         try {
@@ -1169,7 +1296,9 @@ class PlexAPI {
           }
 
           await this.safePutQuery(addUrl);
+          addedKeys.add(item.ratingKey);
         } catch (itemError) {
+          failed++;
           const errorMessage =
             itemError instanceof Error ? itemError.message : 'Unknown error';
           logger.warn(
@@ -1183,6 +1312,16 @@ class PlexAPI {
           );
         }
       }
+
+      if (addedKeys.size === 0) {
+        return { successful: 0, failed };
+      }
+
+      const verified = await this.verifyItemsLanded(
+        collectionRatingKey,
+        addedKeys
+      );
+      return { successful: verified, failed: items.length - verified };
     }
   }
 
@@ -1243,14 +1382,16 @@ class PlexAPI {
   public async removeItemsFromCollection(
     collectionRatingKey: string
   ): Promise<void> {
-    // PROTECTION: Never remove items from smart collections - they are auto-populated by Plex
-    const isSmart = await this.isSmartCollection(collectionRatingKey);
-    if (isSmart) {
+    // PROTECTION: Never remove items from smart collections - they are auto-populated by Plex.
+    // Treat an unknown status (transport failure) the same as smart: refuse.
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
       logger.error(
         `PROTECTION: Attempted to remove items from smart collection ${collectionRatingKey}. This could corrupt the Plex database!`,
         {
           label: 'Plex API',
           collectionRatingKey,
+          smartStatus,
           protection: 'SMART_COLLECTION_BLOCK',
         }
       );
@@ -1384,6 +1525,7 @@ class PlexAPI {
         const editUrl = `/library/metadata/${collectionRatingKey}?${queryString}`;
 
         await this.safePutQuery(editUrl);
+        this.recordWrite('label');
 
         // Verify the label was actually added (with a small delay for Plex API)
         await new Promise((resolve) => setTimeout(resolve, 500)); // Allow Plex time to index the label
@@ -1481,6 +1623,7 @@ class PlexAPI {
           normalizedTitle
         )}&title.locked=1`;
         await this.safePutQuery(editUrl);
+        this.recordWrite('title');
       } else {
         // Fallback to old method if libraryKey not provided (for backwards compatibility)
         // This may not work reliably for collections
@@ -1495,6 +1638,7 @@ class PlexAPI {
         const editUrl = `/library/metadata/${collectionRatingKey}?${queryString}`;
 
         await this.safePutQuery(editUrl);
+        this.recordWrite('title');
 
         logger.warn(
           `updateCollectionTitle called without libraryKey - using legacy endpoint which may not work for collections`,
@@ -1530,6 +1674,7 @@ class PlexAPI {
       const prefsUrl = `/library/metadata/${collectionRatingKey}/prefs?collectionMode=${mode}`;
 
       await this.safePutQuery(prefsUrl);
+      this.recordWrite('mode');
 
       logger.debug(
         `Updated collection mode to ${mode} for collection ${collectionRatingKey}`,
@@ -1793,6 +1938,7 @@ class PlexAPI {
       const editUrl = `/library/metadata/${collectionRatingKey}?${queryString}`;
 
       await this.safePutQuery(editUrl);
+      this.recordWrite('sortTitle');
     } catch (error) {
       logger.error(
         `Error updating sort title for collection ${collectionRatingKey}`,
@@ -1821,6 +1967,7 @@ class PlexAPI {
       const editUrl = `/library/collections/${collectionRatingKey}/prefs?collectionSort=${sortValues[sortType]}`;
 
       await this.safePutQuery(editUrl);
+      this.recordWrite('contentSort');
     } catch (error) {
       logger.error(
         `Error updating content sort for collection ${collectionRatingKey}`,
@@ -1838,15 +1985,17 @@ class PlexAPI {
     itemRatingKey: string,
     afterItemRatingKey: string
   ): Promise<boolean> {
-    // PROTECTION: Never move items in smart collections - they have their own ordering
-    const isSmart = await this.isSmartCollection(collectionRatingKey);
-    if (isSmart) {
+    // PROTECTION: Never move items in smart collections - they have their own ordering.
+    // Treat an unknown status (transport failure) the same as smart: refuse.
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
       logger.debug(
         `PROTECTION: Attempted to move item in smart collection ${collectionRatingKey}. Skipping move for smart collection.`,
         {
           label: 'Plex API',
           collectionRatingKey,
           itemRatingKey,
+          smartStatus,
           protection: 'SMART_COLLECTION_SKIP',
         }
       );
@@ -1859,6 +2008,7 @@ class PlexAPI {
       const moveUrl = `/library/collections/${collectionRatingKey}/items/${itemRatingKey}/move?after=${afterItemRatingKey}`;
 
       await this.safePutQuery(moveUrl);
+      this.recordWrite('arrange');
       return true;
     } catch (error) {
       // Silently fail - this is not critical for functionality
@@ -1874,15 +2024,17 @@ class PlexAPI {
       return; // No need to arrange single item or empty collections
     }
 
-    // PROTECTION: Never arrange items in smart collections - they have their own ordering
-    const isSmart = await this.isSmartCollection(collectionRatingKey);
-    if (isSmart) {
+    // PROTECTION: Never arrange items in smart collections - they have their own ordering.
+    // Treat an unknown status (transport failure) the same as smart: refuse.
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
       logger.warn(
         `PROTECTION: Attempted to arrange items in smart collection ${collectionRatingKey}. Skipping arrangement for smart collection.`,
         {
           label: 'Plex API',
           collectionRatingKey,
           itemCount: orderedItems.length,
+          smartStatus,
           protection: 'SMART_COLLECTION_SKIP',
         }
       );
@@ -1925,6 +2077,7 @@ class PlexAPI {
           try {
             const moveUrl = `/library/collections/${collectionRatingKey}/items/${itemToMove}/move`;
             await this.safePutQuery(moveUrl);
+            this.recordWrite('arrange');
             success = true;
           } catch (error) {
             success = false;
@@ -2001,8 +2154,9 @@ class PlexAPI {
       // visibility to all-on, undoing any inactive visibility that was set.
       let alreadyManaged = false;
       try {
-        const hubMgmt =
-          await this.hubManager.getHubManagement(librarySectionID);
+        const hubMgmt = await this.hubManager.getHubManagement(
+          librarySectionID
+        );
         alreadyManaged =
           hubMgmt.MediaContainer?.Hub?.some(
             (h: { identifier: string }) => h.identifier === hubIdentifier
@@ -2050,15 +2204,17 @@ class PlexAPI {
     let successful = 0;
     let failed = 0;
 
-    // PROTECTION: Never remove items from smart collections - they are auto-populated by Plex
-    const isSmart = await this.isSmartCollection(collectionRatingKey);
-    if (isSmart) {
+    // PROTECTION: Never remove items from smart collections - they are auto-populated by Plex.
+    // Treat an unknown status (transport failure) the same as smart: refuse.
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
       logger.error(
         `PROTECTION: Attempted to remove specific items from smart collection ${collectionRatingKey}. This could corrupt the Plex database!`,
         {
           label: 'Plex API',
           collectionRatingKey,
           itemCount: itemsToRemove.length,
+          smartStatus,
           protection: 'SMART_COLLECTION_BLOCK',
         }
       );
@@ -2110,15 +2266,17 @@ class PlexAPI {
     let removed = 0;
     let reordered = false;
 
-    // PROTECTION: Never update smart collections - they are auto-populated by Plex
-    const isSmart = await this.isSmartCollection(collectionRatingKey);
-    if (isSmart) {
+    // PROTECTION: Never update smart collections - they are auto-populated by Plex.
+    // Treat an unknown status (transport failure) the same as smart: refuse.
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
       logger.error(
         `PROTECTION: Attempted to update contents of smart collection ${collectionRatingKey}. This could corrupt the Plex database!`,
         {
           label: 'Plex API',
           collectionRatingKey,
           itemCount: desiredItems.length,
+          smartStatus,
           protection: 'SMART_COLLECTION_BLOCK',
         }
       );
@@ -2207,15 +2365,17 @@ class PlexAPI {
     let successful = 0;
     let failed = 0;
 
-    // PROTECTION: Never add items to smart collections - they are auto-populated by Plex
-    const isSmart = await this.isSmartCollection(collectionRatingKey);
-    if (isSmart) {
+    // PROTECTION: Never add items to smart collections - they are auto-populated by Plex.
+    // Treat an unknown status (transport failure) the same as smart: refuse.
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
       logger.error(
         `PROTECTION: Attempted to add specific items to smart collection ${collectionRatingKey}. This could corrupt the Plex database!`,
         {
           label: 'Plex API',
           collectionRatingKey,
           itemCount: itemsToAdd.length,
+          smartStatus,
           protection: 'SMART_COLLECTION_BLOCK',
         }
       );

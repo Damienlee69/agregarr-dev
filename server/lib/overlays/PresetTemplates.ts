@@ -426,6 +426,58 @@ export const PRESET_TEMPLATES: {
     },
   },
 
+  {
+    name: 'Trailer',
+    description: 'Full-width banner identifying placeholder trailers',
+    type: 'status',
+    tags: ['Status'],
+    applicationCondition: {
+      sections: [
+        {
+          rules: [{ field: 'isPlaceholder', operator: 'eq', value: true }],
+        },
+      ],
+    },
+    templateData: {
+      width: 1000,
+      height: 1500,
+      elements: [
+        {
+          id: 'trailer-banner-bg',
+          layerOrder: 0,
+          type: 'tile',
+          x: 0,
+          y: 100,
+          width: 1000,
+          height: 100,
+          properties: {
+            fillColor: '#571aff',
+            fillOpacity: 70,
+            borderRadius: 0,
+          },
+        },
+        {
+          id: 'trailer-text',
+          layerOrder: 1,
+          type: 'text',
+          x: 0,
+          y: 120,
+          width: 1000,
+          height: 80,
+          properties: {
+            text: 'TRAILER',
+            fontSize: 60,
+            fontFamily: 'Inter',
+            fontWeight: 'bold',
+            fontStyle: 'normal',
+            color: '#FFFFFF',
+            textAlign: 'center',
+          },
+        },
+      ],
+    },
+  },
+
   // ========================================
   // MONITORED RELEASES - ALREADY RELEASED (waiting for download)
   // ========================================
