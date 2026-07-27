@@ -88,6 +88,8 @@ interface CollectionUpdateOptions {
   processedCollectionKeys?: Set<string>;
   libraryKey: string;
   config?: CollectionConfig;
+  existingTitle?: string;
+  existingTitleSort?: string;
 }
 
 interface CollectionUpdateResult {
@@ -1493,7 +1495,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
           try {
             await plexClient.updateCollectionContentSort(
               collectionRatingKey,
-              'custom'
+              'custom',
+              existingCollection?.collectionSort
             );
           } catch (sortError) {
             const sortErrorMsg = extractErrorMessage(sortError);
@@ -1623,7 +1626,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       try {
         await plexClient.updateCollectionContentSort(
           collectionRatingKey,
-          'custom'
+          'custom',
+          existingCollection?.collectionSort
         );
       } catch (sortError) {
         const sortErrorMsg = extractErrorMessage(sortError);
@@ -1667,6 +1671,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
 
     // Apply metadata to the collection
     const metadataPhaseStart = Date.now();
+    options.existingTitle = existingCollection?.title;
+    options.existingTitleSort = existingCollection?.titleSort;
     const metadataResult = await this.updateCollectionMetadata(
       plexClient,
       collectionRatingKey,
@@ -1823,6 +1829,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
                 title: existingByRatingKey.title,
                 labels: existingByRatingKey.labels || [],
                 type: existingByRatingKey.type || 'collection',
+                titleSort: existingByRatingKey.titleSort,
+                collectionSort: existingByRatingKey.collectionSort,
               };
             }
           }
@@ -1893,6 +1901,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
 
           return {
             collection,
+            detailedCollection,
             labels,
             found,
             error: null,
@@ -1977,6 +1986,9 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             title: matchedCollection.collection.title,
             labels: matchedCollection.labels,
             type: matchedCollection.collection.type || 'collection',
+            titleSort: matchedCollection.detailedCollection?.titleSort,
+            collectionSort:
+              matchedCollection.detailedCollection?.collectionSort,
           };
         }
       }
@@ -2135,7 +2147,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         await plexClient.updateCollectionTitle(
           collectionRatingKey,
           collectionName,
-          libraryKey
+          libraryKey,
+          options.existingTitle
         );
       } catch (titleError) {
         const titleErrorMsg = extractErrorMessage(titleError);
@@ -2256,7 +2269,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
 
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
-        sortTitle
+        sortTitle,
+        options.existingTitleSort
       );
 
       // Update config if everLibraryPromoted needs to be reset

@@ -637,6 +637,7 @@ export interface MainSettings {
   locale: string;
   tmdbLanguage?: string; // Language for TMDB API calls (poster metadata, etc.) - defaults to 'en'
   enableTmdbPosterCache?: boolean; // Enable 7-day file cache for TMDB posters to reduce API calls - defaults to true
+  skipUnchangedPlexWrites?: boolean;
   ratingsCacheMaxDays?: number; // Maximum cache TTL for rating data (IMDb/RT) - older content caches longer, defaults to 30
   nextConfigId?: number; // Next sequential ID for collection configs (starts at 10000)
   // Global sync status tracking
@@ -656,12 +657,16 @@ export interface MainSettings {
   // Placeholder root folders (per-library)
   placeholderMovieRootFolders?: Record<string, string>; // libraryKey -> movie placeholder path mapping
   placeholderTVRootFolders?: Record<string, string>; // libraryKey -> TV placeholder path mapping
-  // YouTube trailer download settings
+  // Trailer download settings
   skipYoutubeTrailerDownloads?: boolean; // If true, skip YouTube trailer downloads and use hardcoded placeholder video only (speeds up sync)
+  preferTmdbTrailers?: boolean; // If true (default), resolve trailers from TMDB /videos before falling back to YouTube search
+  trailerExcludeWords?: string; // Comma-separated words — any match in title rejects the candidate
+  trailerIncludeWords?: string; // Comma-separated words — all must match in title (empty = no filter)
   // Letterboxd fetching method
   letterboxdUsePlainHttp?: boolean; // Use plain HTTP (axios) instead of Playwright for Letterboxd page fetching (default: false)
   // FlixPatrol fetching method
   flixpatrolUsePlainHttp?: boolean; // Use plain HTTP (axios) instead of Playwright for FlixPatrol page fetching (default: false)
+  logLevel?: 'debug' | 'info' | 'warn' | 'error';
 }
 
 interface PublicSettings {
@@ -749,6 +754,10 @@ class Settings {
         locale: 'en',
         tmdbLanguage: 'en',
         enableTmdbPosterCache: true,
+        skipUnchangedPlexWrites: true,
+        logLevel:
+          (process.env.LOG_LEVEL?.toLowerCase() as MainSettings['logLevel']) ||
+          'info',
       },
       plex: {
         name: '',

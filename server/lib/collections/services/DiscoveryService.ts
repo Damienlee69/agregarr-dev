@@ -396,6 +396,7 @@ export class DiscoveryService {
                 libraryId: c.libraryId,
                 newSortOrder: c.sortOrderHome,
                 isPromoted: c.isPromotedToHub,
+                visibilitySaved: c.visibilityConfig,
               })),
             }
           );
@@ -1095,56 +1096,35 @@ export class DiscoveryService {
                   ) {
                     existingPreExisting.sortOrderHome = hubConfig.sortOrderHome;
                   }
-                  // Skip visibility update when a time restriction is configured:
-                  // the inactive sync writes reduced visibility to Plex, and re-reading
-                  // it here would overwrite the user's intended active-state config.
-                  if (existingPreExisting.timeRestriction) {
-                    // Self-heal: if active config matches the effective inactive
-                    // config, the feedback loop already corrupted it. Only heal
-                    // when active is not already all-true (corruption reduces
-                    // flags; all-true means nothing was lost).
-                    const active = existingPreExisting.visibilityConfig;
-                    const alreadyFull =
-                      active.usersHome &&
-                      active.serverOwnerHome &&
-                      active.libraryRecommended;
-                    if (!alreadyFull) {
-                      const inactive = existingPreExisting.timeRestriction
-                        .inactiveVisibilityConfig ?? {
-                        usersHome: false,
-                        serverOwnerHome: false,
-                        libraryRecommended: true,
-                      };
-                      if (
-                        active.usersHome === inactive.usersHome &&
-                        active.serverOwnerHome === inactive.serverOwnerHome &&
-                        active.libraryRecommended ===
-                          inactive.libraryRecommended
-                      ) {
-                        existingPreExisting.visibilityConfig = {
-                          usersHome: true,
-                          serverOwnerHome: true,
-                          libraryRecommended: true,
-                        };
-                        logger.info(
-                          `Self-healed corrupted active visibility for "${existingPreExisting.name}" — matched inactive config, reset to all-visible`,
-                          { label: 'Discovery Service' }
-                        );
-                      }
+                  logger.info(
+                    `Hub enhancement PATH 1 (newly discovered): "${existingPreExisting.name}" — setting visibility from Plex hub state`,
+                    {
+                      label: 'Discovery Service - Visibility Debug',
+                      ratingKey: parsedHub.ratingKey,
+                      beforeVisibility: {
+                        ...existingPreExisting.visibilityConfig,
+                      },
+                      hubValues: {
+                        promotedToSharedHome: hub.promotedToSharedHome,
+                        promotedToOwnHome: hub.promotedToOwnHome,
+                        promotedToRecommended: hub.promotedToRecommended,
+                      },
                     }
-                  } else {
-                    if (hub.promotedToSharedHome !== undefined) {
-                      existingPreExisting.visibilityConfig.usersHome =
-                        hub.promotedToSharedHome;
-                    }
-                    if (hub.promotedToOwnHome !== undefined) {
-                      existingPreExisting.visibilityConfig.serverOwnerHome =
-                        hub.promotedToOwnHome;
-                    }
-                    if (hub.promotedToRecommended !== undefined) {
-                      existingPreExisting.visibilityConfig.libraryRecommended =
-                        hub.promotedToRecommended;
-                    }
+                  );
+                  // This config was discovered this run (not yet saved).
+                  // Set initial visibility from Plex hub management state,
+                  // since the config was created with all-false defaults.
+                  if (hub.promotedToSharedHome !== undefined) {
+                    existingPreExisting.visibilityConfig.usersHome =
+                      hub.promotedToSharedHome;
+                  }
+                  if (hub.promotedToOwnHome !== undefined) {
+                    existingPreExisting.visibilityConfig.serverOwnerHome =
+                      hub.promotedToOwnHome;
+                  }
+                  if (hub.promotedToRecommended !== undefined) {
+                    existingPreExisting.visibilityConfig.libraryRecommended =
+                      hub.promotedToRecommended;
                   }
                   // Pre-existing collection found in hub management - mark as promoted
                   const wasPromoted = existingPreExisting.isPromotedToHub;
@@ -1183,16 +1163,29 @@ export class DiscoveryService {
                     );
 
                   if (existingConfigFromSettings) {
-                    // Create a copy and enhance with hub promotion data
-                    // Skip visibility update when a time restriction is configured
-                    // (same guard as the first enhancement path above).
-                    const preserveVisibility =
-                      !!existingConfigFromSettings.timeRestriction;
-
-                    // Self-heal corrupted active visibility (same check as first path)
+                    // User's saved visibilityConfig is the source of truth.
+                    // Self-heal corrupted active visibility for time-restricted configs
+                    // (same check as first path).
                     let activeVisibility =
                       existingConfigFromSettings.visibilityConfig;
-                    if (preserveVisibility) {
+                    logger.info(
+                      `Hub enhancement PATH 2 (existing in settings): "${existingConfigFromSettings.name}" — preserving user visibility`,
+                      {
+                        label: 'Discovery Service - Visibility Debug',
+                        ratingKey: parsedHub.ratingKey,
+                        savedVisibility: activeVisibility
+                          ? { ...activeVisibility }
+                          : null,
+                        hasTimeRestriction:
+                          !!existingConfigFromSettings.timeRestriction,
+                        hubValues: {
+                          promotedToSharedHome: hub.promotedToSharedHome,
+                          promotedToOwnHome: hub.promotedToOwnHome,
+                          promotedToRecommended: hub.promotedToRecommended,
+                        },
+                      }
+                    );
+                    if (existingConfigFromSettings.timeRestriction) {
                       const alreadyFull =
                         activeVisibility.usersHome &&
                         activeVisibility.serverOwnerHome &&
@@ -1233,20 +1226,7 @@ export class DiscoveryService {
                         existingConfigFromSettings.sortOrderHome === undefined
                           ? hubConfig.sortOrderHome
                           : existingConfigFromSettings.sortOrderHome,
-                      visibilityConfig: preserveVisibility
-                        ? activeVisibility
-                        : {
-                            ...existingConfigFromSettings.visibilityConfig,
-                            ...(hub.promotedToSharedHome !== undefined && {
-                              usersHome: hub.promotedToSharedHome,
-                            }),
-                            ...(hub.promotedToOwnHome !== undefined && {
-                              serverOwnerHome: hub.promotedToOwnHome,
-                            }),
-                            ...(hub.promotedToRecommended !== undefined && {
-                              libraryRecommended: hub.promotedToRecommended,
-                            }),
-                          },
+                      visibilityConfig: activeVisibility,
                       isPromotedToHub: true,
                     };
 
