@@ -77,6 +77,8 @@ export interface PlexCollection {
   art?: string;
   /** Number of children in collection */
   childCount?: number;
+  titleSort?: string;
+  collectionSort?: string;
   /** Collection labels */
   labels?: (string | PlexLabel)[];
   /** Collection items */
@@ -679,6 +681,17 @@ export interface SonarrTagSourceData {
 }
 
 /**
+ * Plex Library label source data (items in a library carrying a given Plex
+ * label). Carries only the fields the label collection maps into CollectionItems.
+ */
+export interface PlexLabelSourceData {
+  ratingKey: string;
+  title: string;
+  year?: number;
+  Guid?: { id: string }[];
+}
+
+/**
  * Placeholder source data (for createPlaceholdersForMissing feature)
  * Used by any collection type that supports placeholder creation
  */
@@ -739,6 +752,7 @@ export type CollectionSourceData =
   | MyAnimeListSourceData
   | RadarrTagSourceData
   | SonarrTagSourceData
+  | PlexLabelSourceData
   | PlaceholderSourceData
   | RecentlyAddedSourceData;
 

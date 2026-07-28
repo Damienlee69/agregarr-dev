@@ -26,7 +26,11 @@ vi.mock('@server/lib/settings', () => ({
   getSettings: () => settings,
 }));
 
-import { clearConfigRatingKey } from './CollectionUtilities';
+import {
+  clearConfigRatingKey,
+  hasAgregarrLabel,
+  isMultiCollectionPattern,
+} from './CollectionUtilities';
 
 const config = (overrides: Partial<CollectionConfig>): CollectionConfig =>
   ({ id: 'cfg-1', libraryId: '4', ...overrides } as CollectionConfig);
@@ -119,5 +123,61 @@ describe('clearConfigRatingKey', () => {
     clearConfigRatingKey('cfg-1', '4');
 
     expect(stored().collectionRatingKey).toBeUndefined();
+  });
+});
+
+describe('hasAgregarrLabel', () => {
+  it('matches the hyphenated labels parseConfigIdFromLabel rejects', () => {
+    // Regression: routing multi-source deletes through parseConfigIdFromLabel
+    // silently stopped removing these collections.
+    expect(hasAgregarrLabel(['agregarr-multisource-10213'])).toBe(true);
+    expect(hasAgregarrLabel(['Agregarr-filtered_hub-10214'])).toBe(true);
+  });
+
+  it('matches camel-case labels', () => {
+    expect(hasAgregarrLabel(['AgregarrTmdb10213'])).toBe(true);
+  });
+
+  it('reads the tag shape Plex returns for raw collections', () => {
+    expect(hasAgregarrLabel([{ tag: 'agregarr-multisource-1' }])).toBe(true);
+    expect(hasAgregarrLabel([{ tag: 'horror' }])).toBe(false);
+  });
+
+  // The whole point: a user collection is refused however plausible it looks.
+  // "Same title" and "not a smart collection" are not ownership evidence.
+  it('refuses a user collection regardless of title or smart flag', () => {
+    expect(hasAgregarrLabel(['favourites'])).toBe(false);
+    expect(hasAgregarrLabel([])).toBe(false);
+    expect(hasAgregarrLabel(undefined)).toBe(false);
+  });
+});
+
+describe('isMultiCollectionPattern', () => {
+  it('names the two configs that generate more than one collection', () => {
+    expect(
+      isMultiCollectionPattern({ type: 'overseerr', subtype: 'users' })
+    ).toBe(true);
+    expect(
+      isMultiCollectionPattern({ type: 'tmdb', subtype: 'auto_franchise' })
+    ).toBe(true);
+  });
+
+  // The presence half: everything else must store its key, or the create path
+  // has nothing to recover from.
+  it('lets ordinary configs store a key', () => {
+    expect(
+      isMultiCollectionPattern({ type: 'tmdb', subtype: 'trending' })
+    ).toBe(false);
+    expect(
+      isMultiCollectionPattern({ type: 'overseerr', subtype: 'requests' })
+    ).toBe(false);
+    expect(isMultiCollectionPattern({ type: 'plex' })).toBe(false);
+    expect(isMultiCollectionPattern(undefined)).toBe(false);
+  });
+
+  it('does not match on the subtype alone', () => {
+    expect(isMultiCollectionPattern({ type: 'plex', subtype: 'users' })).toBe(
+      false
+    );
   });
 });

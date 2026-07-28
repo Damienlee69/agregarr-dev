@@ -1141,6 +1141,8 @@ export async function buildRenderContext(
  */
 export interface ReleaseDateInfo {
   releaseDate?: string;
+  // releaseDate is the theatrical+90 guess, not a published digital/physical date.
+  isEstimated?: boolean;
   nextEpisodeAirDate?: string;
   nextSeasonAirDate?: string;
   seasonNumber?: number;
@@ -1288,14 +1290,19 @@ export async function fetchReleaseDateInfo(
         if (determined) {
           return {
             releaseDate: determined.releaseDate,
+            isEstimated: determined.isEstimated,
           };
         }
       }
 
       // Fallback to simple release_date if release_dates not available
       if (movieDetails.release_date) {
+        // Published date, not the +90 guess, so the flag is false rather than
+        // absent: an `isEstimatedReleaseDate == false` condition cannot match an
+        // undefined field (evaluateRule).
         return {
           releaseDate: movieDetails.release_date,
+          isEstimated: false,
         };
       }
     } else {

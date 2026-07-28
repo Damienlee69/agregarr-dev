@@ -331,6 +331,7 @@ class CollectionsSync {
       this.setStage('Connecting to Plex server...');
       collectionSyncProgress.setDetail('Connecting to Plex server...');
       const plexClient = await this.getPlexClient();
+      plexClient.clearHubManagementCache();
 
       // Test connection
       const isConnected = await plexClient.getStatus();
@@ -370,13 +371,16 @@ class CollectionsSync {
         './collections/plex/HubSyncService'
       );
       const hubSyncService = new HubSyncService();
+      const hubSyncPhaseStart = Date.now();
       await hubSyncService.syncHubVisibility(plexClient, (stage: string) => {
         this.setStage(stage);
       });
+      plexClient.recordPhaseTime('hubSync', Date.now() - hubSyncPhaseStart);
 
       // Sync pre-existing collection sortTitles based on promotion status
       this.setStage('Updating collection sort titles...');
       collectionSyncProgress.setDetail('Updating collection sort titles...');
+      const orderingPhaseStart = Date.now();
       await hubSyncService.syncPreExistingCollectionSortTitles(plexClient);
 
       // Sync unified ordering (collections + hubs)
@@ -387,6 +391,7 @@ class CollectionsSync {
       await hubSyncService.syncUnifiedOrdering(plexClient, (stage: string) => {
         this.setStage(stage);
       });
+      plexClient.recordPhaseTime('ordering', Date.now() - orderingPhaseStart);
 
       // Clean up orphaned collections after sync completes
       this.setStage('Cleaning up orphaned collections...');
@@ -513,29 +518,6 @@ class CollectionsSync {
 
       const duration = Date.now() - startTime;
 
-      // Run discovery to refresh missing warnings
-      this.setStage('Refreshing collection status...');
-      collectionSyncProgress.setDetail('Refreshing collection status...');
-      try {
-        const { discoveryService } = await import(
-          '@server/lib/collections/services/DiscoveryService'
-        );
-        await discoveryService.discoverAllHubs(
-          plexClient,
-          true, // Update settings with any new discoveries to keep everything in sync
-          true // Skip sync check since we're already in sync
-        );
-        logger.info('Collection status refreshed successfully', {
-          label: 'Collections Sync',
-        });
-      } catch (error) {
-        logger.warn('Failed to refresh collection status after sync', {
-          label: 'Collections Sync',
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // Don't fail the sync if discovery fails
-      }
-
       // Randomize home order for collections with randomizeHomeOrder enabled
       try {
         this.setStage('Randomizing home order...');
@@ -551,6 +533,15 @@ class CollectionsSync {
         });
         // Don't fail the sync if randomization fails
       }
+
+      const writeSummary = plexClient.getWriteSummary();
+      logger.info(
+        `Plex writes this sync: ${writeSummary.total} (${writeSummary.text})`,
+        { label: 'Collections Sync' }
+      );
+      logger.info(`Sync phase timings: ${plexClient.getPhaseSummary()}`, {
+        label: 'Collections Sync',
+      });
 
       logger.info('Collections sync completed successfully', {
         label: 'Collections Sync',

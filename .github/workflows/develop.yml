@@ -16,10 +16,20 @@ on:
       - '.gitignore'
       - 'LICENSE'
 
+# Keyed on the ref, never the workflow alone: a develop push must not be able to
+# cancel a release build mid-flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
+  # Runs on every trigger, not just pull requests. Fork work pushes straight to
+  # develop, so a PR-only gate is no gate at all.
   test:
-    name: Lint & Test Build
-    if: github.event_name == 'pull_request'
+    name: Lint, Typecheck & Test
     runs-on: ubuntu-22.04
     container: node:20.19.5-alpine
     steps:
@@ -40,12 +50,17 @@ jobs:
         run: yarn typecheck
       - name: Formatting
         run: npx prettier --check .
+      - name: Test
+        run: yarn test
+      # On a push the Docker build runs yarn build anyway; only PRs need this.
       - name: Build
+        if: github.event_name == 'pull_request'
         run: yarn build
 
   build_develop:
     name: Build Develop
     if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+    needs: test
     runs-on: ubuntu-22.04
     steps:
       - name: Free disk space
@@ -69,6 +84,15 @@ jobs:
             SLUG="${GITHUB_REF#refs/heads/feature/}"
             echo "tags=bitr8/agregarr:${SLUG}" >> "$GITHUB_OUTPUT"
           fi
+      # The other half of the invariant: releases take their version from the
+      # tag, so develop must stay 0.1.0 or its builds start impersonating one.
+      - name: Fail if the develop version was bumped
+        run: |
+          v=$(jq -r .version package.json)
+          if [ "$v" != "0.1.0" ]; then
+            echo "::error::package.json is $v; develop must stay 0.1.0 so builds report develop-<sha>"
+            exit 1
+          fi
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -85,6 +109,7 @@ jobs:
   build_release:
     name: Build ${{ matrix.platform }}
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: test
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -104,6 +129,16 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
+      # Explicit rather than relying on the runner image having npm, which
+      # differs between the x64 and arm64 runners.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # package.json stays 0.1.0 on develop so those builds self-identify as
+      # develop-<sha>; the tag is the only source of a release version.
+      - name: Set version from tag
+        run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build and push by digest
@@ -116,6 +151,20 @@ jobs:
           build-args: |
             COMMIT_TAG=${{ github.sha }}
           outputs: type=image,name=bitr8/agregarr,push-by-digest=true,name-canonical=true,push=true
+      # v2.8.0 shipped reporting 2.7.0. Assert on the image, not on the
+      # injection step having exited 0. Fails before merge_release moves
+      # :latest, so a mismatched build never becomes user-visible.
+      - name: Verify the image reports the tag's version
+        run: |
+          want="${GITHUB_REF#refs/tags/v}"
+          got=$(docker run --rm --entrypoint node \
+            "bitr8/agregarr@${{ steps.build.outputs.digest }}" \
+            -e 'console.log(require("/app/package.json").version)')
+          echo "tag=$want image=$got"
+          if [ "$want" != "$got" ]; then
+            echo "::error::image reports $got but the tag says $want"
+            exit 1
+          fi
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
@@ -152,13 +201,23 @@ jobs:
         id: tags
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "tags=bitr8/agregarr:latest,bitr8/agregarr:${VERSION}" >> "$GITHUB_OUTPUT"
+          # A pre-release (v2.8.1-rc1) gets its own tag and must not move
+          # :latest, so the whole release path can be rehearsed on a throwaway.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "tags=bitr8/agregarr:${VERSION}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=bitr8/agregarr:latest,bitr8/agregarr:${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Create manifest and push
         working-directory: /tmp/digests
         run: |
           TAGS=$(echo "${{ steps.tags.outputs.tags }}" | tr ',' '\n' | sed 's/^/-t /' | tr '\n' ' ')
           docker buildx imagetools create $TAGS \
             $(printf 'bitr8/agregarr@sha256:%s ' *)
+      # Inspect what this run actually pushed. Hardcoding :latest meant a
+      # pre-release printed the previous release and looked verified.
       - name: Inspect images
         run: |
-          docker buildx imagetools inspect bitr8/agregarr:latest
+          for t in $(echo "${{ steps.tags.outputs.tags }}" | tr ',' ' '); do
+            docker buildx imagetools inspect "$t"
+          done

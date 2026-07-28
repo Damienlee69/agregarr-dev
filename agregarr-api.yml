@@ -8002,6 +8002,7 @@ paths:
                             sonarrtag,
                             comingsoon,
                             filtered_hub,
+                            plex,
                           ]
                         example: 'imdb'
                       subtype:
@@ -9343,6 +9344,15 @@ paths:
       tags:
         - settings-plex
         - users
+      parameters:
+        - in: query
+          name: all
+          schema:
+            type: string
+            enum:
+              - 'true'
+          required: false
+          description: When set to "true", returns all Plex users including the server owner. Otherwise returns only unimported users.
       responses:
         '200':
           description: Plex users
@@ -16086,10 +16096,18 @@ paths:
 
   /plex/labels:
     get:
-      summary: Get all Plex labels
-      description: Fetches all unique labels (tags) from all movie and TV show libraries in Plex. Used for the Plex Label condition field in overlay templates.
+      summary: Get Plex labels
+      description: Fetches unique labels (tags) from Plex. With no query parameter, aggregates labels across all movie and TV show libraries (used for the Plex Label condition field in overlay templates). With `libraryId`, returns only the labels present in that single library (used by the Plex Library "Label" collection type).
       tags:
         - overlays
+      parameters:
+        - name: libraryId
+          in: query
+          required: false
+          description: Restrict results to a single library, by section key. Omit to aggregate across all movie/TV libraries.
+          schema:
+            type: string
+          example: '10'
       responses:
         '200':
           description: Unique labels across all libraries
@@ -16108,6 +16126,69 @@ paths:
           description: Authentication required
         '500':
           description: Failed to fetch Plex labels
+
+  /plex/library/{libraryId}/attributes/{attributeType}:
+    get:
+      summary: Discover library attribute values
+      description: Returns the distinct values for a given attribute type in a Plex library, plus any existing collections that would conflict with the rendered template.
+      tags:
+        - plex
+      parameters:
+        - name: libraryId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: attributeType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [genre, decade, resolution, contentRating]
+        - name: template
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: configId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Attribute values and conflicts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  values:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        title:
+                          type: string
+                        fastKey:
+                          type: string
+                  conflicts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                        ratingKey:
+                          type: string
+        '400':
+          description: Invalid attribute type or library
+        '401':
+          description: Authentication required
+        '500':
+          description: Failed to fetch library attributes
 
   /overlay-test:
     post:

@@ -17,6 +17,7 @@ import {
   createSyncError,
   getCollectionSyncCounter,
   getMediaTypeFromLibrary,
+  hasAgregarrLabel,
   incrementCollectionSyncCounter,
   parseConfigIdFromLabel,
   processMissingItemsWithMode,
@@ -73,6 +74,8 @@ interface CollectionUpdateOptions {
   processedCollectionKeys?: Set<string>;
   libraryKey: string;
   config: MultiSourceCollectionConfig;
+  existingTitle?: string;
+  existingTitleSort?: string;
 }
 
 interface MetadataUpdateOptions {
@@ -83,6 +86,8 @@ interface MetadataUpdateOptions {
   customPoster?: string | Record<string, string>;
   config: MultiSourceCollectionConfig;
   libraryKey: string;
+  existingTitle?: string;
+  existingTitleSort?: string;
 }
 
 /**
@@ -141,7 +146,10 @@ export class MultiSourceOrchestrator {
           settings.plex.collectionConfigs = collectionConfigs;
           settings.save();
         }
-        configForSync = { ...configForSync, isActive: timeRestrictionResult.isActive };
+        configForSync = {
+          ...configForSync,
+          isActive: timeRestrictionResult.isActive,
+        };
       }
 
       // If collection is inactive and should be removed, handle removal
@@ -1372,27 +1380,28 @@ export class MultiSourceOrchestrator {
     const options: CollectionUpdateOptions = {
       collectionName: config.name,
       mediaType,
-      visibilityConfig: config.isActive === false
-        ? {
-            usersHome:
-              config.timeRestriction?.inactiveVisibilityConfig?.usersHome ??
-              false,
-            serverOwnerHome:
-              config.timeRestriction?.inactiveVisibilityConfig
-                ?.serverOwnerHome ?? false,
-            libraryRecommended:
-              config.timeRestriction?.inactiveVisibilityConfig
-                ?.libraryRecommended ?? true,
-            isActive: false,
-          }
-        : {
-            usersHome: config.visibilityConfig?.usersHome ?? true,
-            serverOwnerHome:
-              config.visibilityConfig?.serverOwnerHome ?? false,
-            libraryRecommended:
-              config.visibilityConfig?.libraryRecommended ?? true,
-            isActive: config.isActive,
-          },
+      visibilityConfig:
+        config.isActive === false
+          ? {
+              usersHome:
+                config.timeRestriction?.inactiveVisibilityConfig?.usersHome ??
+                false,
+              serverOwnerHome:
+                config.timeRestriction?.inactiveVisibilityConfig
+                  ?.serverOwnerHome ?? false,
+              libraryRecommended:
+                config.timeRestriction?.inactiveVisibilityConfig
+                  ?.libraryRecommended ?? true,
+              isActive: false,
+            }
+          : {
+              usersHome: config.visibilityConfig?.usersHome ?? true,
+              serverOwnerHome:
+                config.visibilityConfig?.serverOwnerHome ?? false,
+              libraryRecommended:
+                config.visibilityConfig?.libraryRecommended ?? true,
+              isActive: config.isActive,
+            },
       customLabel,
       sortOrderLibrary: config.sortOrderLibrary,
       isLibraryPromoted: config.isLibraryPromoted,
@@ -1463,12 +1472,14 @@ export class MultiSourceOrchestrator {
   private async setCustomSortSafely(
     plexClient: PlexAPI,
     collectionRatingKey: string,
-    collectionName: string
+    collectionName: string,
+    currentSort?: string
   ): Promise<void> {
     try {
       await plexClient.updateCollectionContentSort(
         collectionRatingKey,
-        'custom'
+        'custom',
+        currentSort
       );
     } catch (error) {
       logger.warn(
@@ -1532,7 +1543,8 @@ export class MultiSourceOrchestrator {
       options.config.id,
       collectionName,
       options.libraryKey,
-      allCollections
+      allCollections,
+      options.config.collectionRatingKey
     );
 
     // BRANCH: Create EITHER smart collection OR regular collection
@@ -1748,7 +1760,8 @@ export class MultiSourceOrchestrator {
             await plexClient.updateCollectionTitle(
               collectionRatingKey,
               collectionName,
-              options.libraryKey
+              options.libraryKey,
+              existingCollection.title
             );
             logger.debug(
               `Updated title for smart multi-source collection: ${existingCollection.title} -> ${collectionName}`,
@@ -1799,6 +1812,10 @@ export class MultiSourceOrchestrator {
         }
 
         collectionRatingKey = newSmartCollectionRatingKey;
+        this.updateMultiSourceConfigWithRatingKey(
+          options.config,
+          collectionRatingKey
+        );
         created = 1;
       }
     } else {
@@ -1885,6 +1902,10 @@ export class MultiSourceOrchestrator {
             }
 
             collectionRatingKey = newCollectionRatingKey;
+            this.updateMultiSourceConfigWithRatingKey(
+              options.config,
+              collectionRatingKey
+            );
             await plexClient.updateCollectionContents(
               collectionRatingKey,
               plexItems
@@ -1905,7 +1926,8 @@ export class MultiSourceOrchestrator {
             await this.setCustomSortSafely(
               plexClient,
               collectionRatingKey,
-              collectionName
+              collectionName,
+              existingCollection.collectionSort
             );
             const updateResult = await plexClient.updateCollectionContents(
               collectionRatingKey,
@@ -1932,7 +1954,8 @@ export class MultiSourceOrchestrator {
               await plexClient.updateCollectionTitle(
                 collectionRatingKey,
                 collectionName,
-                options.libraryKey
+                options.libraryKey,
+                existingCollection.title
               );
               logger.debug(
                 `Updated title for multi-source collection: ${existingCollection.title} -> ${collectionName}`,
@@ -2026,6 +2049,10 @@ export class MultiSourceOrchestrator {
         }
 
         collectionRatingKey = newCollectionRatingKey;
+        this.updateMultiSourceConfigWithRatingKey(
+          options.config,
+          collectionRatingKey
+        );
         await plexClient.addItemsToCollection(collectionRatingKey, plexItems);
         created = 1;
       }
@@ -2034,7 +2061,8 @@ export class MultiSourceOrchestrator {
       await this.setCustomSortSafely(
         plexClient,
         collectionRatingKey,
-        collectionName
+        collectionName,
+        created ? undefined : existingCollection?.collectionSort
       );
 
       if (plexItems.length > 1) {
@@ -2060,7 +2088,12 @@ export class MultiSourceOrchestrator {
       throw new Error(`Failed to create or find collection ${collectionName}`);
     }
 
-    // Apply metadata to the collection
+    // Apply metadata to the collection — only pass existing values when the
+    // collection was not recreated (created=1 means a fresh ratingKey)
+    if (!created) {
+      options.existingTitle = existingCollection?.title;
+      options.existingTitleSort = existingCollection?.titleSort;
+    }
     await this.updateCollectionMetadataStandardized(
       plexClient,
       collectionRatingKey,
@@ -2151,7 +2184,8 @@ export class MultiSourceOrchestrator {
       await plexClient.updateCollectionTitle(
         collectionRatingKey,
         options.config.name,
-        options.libraryKey
+        options.libraryKey,
+        options.existingTitle
       );
     }
 
@@ -2179,7 +2213,8 @@ export class MultiSourceOrchestrator {
         plexClient,
         collectionRatingKey,
         options.config.name,
-        options.config
+        options.config,
+        options.existingTitleSort
       );
     }
 
@@ -2475,8 +2510,35 @@ export class MultiSourceOrchestrator {
     configId: string,
     collectionName: string,
     libraryKey: string,
-    allCollections: PlexCollection[]
+    allCollections: PlexCollection[],
+    storedRatingKey?: string
   ): PlexCollection | null {
+    // 0. The stored key first. Steps 1 and 2 both require an agregarr label,
+    // so they cannot re-find a collection whose label never got applied — the
+    // state a create that failed part-way leaves behind. Only the key can.
+    if (storedRatingKey) {
+      const byKey = allCollections.find(
+        (collection) =>
+          String(collection.ratingKey) === String(storedRatingKey) &&
+          !(
+            collection.libraryKey &&
+            String(collection.libraryKey) !== String(libraryKey)
+          )
+      );
+      if (byKey) {
+        logger.debug(
+          `Found multi-source collection by stored ratingKey: ${storedRatingKey}`,
+          {
+            label: 'Multi-Source Orchestrator',
+            configId,
+            collectionTitle: byKey.title,
+            collectionRatingKey: byKey.ratingKey,
+          }
+        );
+        return byKey;
+      }
+    }
+
     // 1. Try to find by Agregarr label first (most reliable)
     for (const collection of allCollections) {
       // Must be in same library
@@ -2509,11 +2571,14 @@ export class MultiSourceOrchestrator {
       }
     }
 
-    // 2. Fallback to exact name matching (less reliable)
+    // 2. Fallback to exact name matching (less reliable). Any agregarr label
+    // still matches here, because step 1 misses labels that do not parse to a
+    // config ID. An unlabeled collection is the user's own and is refused.
     const nameMatch = allCollections.find(
       (collection) =>
         collection.title === collectionName &&
-        collection.libraryKey === libraryKey
+        collection.libraryKey === libraryKey &&
+        hasAgregarrLabel(collection.labels)
     );
 
     if (nameMatch) {
@@ -2805,9 +2870,13 @@ export class MultiSourceOrchestrator {
     allCollections: PlexCollection[],
     processedCollectionKeys?: Set<string>
   ): Promise<boolean> {
-    // Find existing collection
+    // Find existing collection. This path deletes what it finds, so an
+    // unlabeled collection sharing the name is refused: it is the user's own.
     const existingCollection = allCollections.find(
-      (c) => c.title === config.name && c.libraryKey === config.libraryId
+      (c) =>
+        c.title === config.name &&
+        c.libraryKey === config.libraryId &&
+        hasAgregarrLabel(c.labels)
     );
 
     if (existingCollection) {
@@ -2874,7 +2943,8 @@ export class MultiSourceOrchestrator {
     plexClient: PlexAPI,
     collectionRatingKey: string,
     collectionName: string,
-    config: MultiSourceCollectionConfig
+    config: MultiSourceCollectionConfig,
+    currentTitleSort?: string
   ): Promise<void> {
     // Only update sortTitle if we have sortOrderLibrary defined
     if (config.sortOrderLibrary === undefined) {
@@ -2929,7 +2999,8 @@ export class MultiSourceOrchestrator {
       // Update the sortTitle in Plex
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
-        sortTitle
+        sortTitle,
+        currentTitleSort
       );
 
       logger.debug(
@@ -3420,7 +3491,10 @@ export class MultiSourceOrchestrator {
   }
 
   /**
-   * Update multi-source config with rating key
+   * Update multi-source config with rating key. Call it as soon as Plex
+   * returns one: items, sort and the ownership label all come after creation
+   * and can throw, and findExistingMultiSourceCollection now refuses an
+   * unlabeled collection, so a retry with no stored key builds a duplicate.
    */
   private updateMultiSourceConfigWithRatingKey(
     config: MultiSourceCollectionConfig,
