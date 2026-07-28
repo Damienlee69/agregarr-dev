@@ -3101,6 +3101,48 @@ class PlexAPI {
     );
   }
 
+  /**
+   * Create a smart collection filtered by attribute (genre, decade, resolution, contentRating)
+   */
+  public async createAttributeCollection(
+    title: string,
+    libraryKey: string,
+    mediaType: 'movie' | 'tv',
+    attribute: string,
+    value: string,
+    labelFilter: string
+  ): Promise<string | null> {
+    return this.smartCollectionManager.createAttributeCollection(
+      title,
+      libraryKey,
+      mediaType,
+      attribute,
+      value,
+      labelFilter
+    );
+  }
+
+  /**
+   * Update an existing attribute-based smart collection's URI
+   */
+  public async updateAttributeSmartCollectionUri(
+    ratingKey: string,
+    libraryKey: string,
+    mediaType: 'movie' | 'tv',
+    attribute: string,
+    value: string,
+    labelFilter: string
+  ): Promise<void> {
+    return this.smartCollectionManager.updateAttributeSmartCollectionUri(
+      ratingKey,
+      libraryKey,
+      mediaType,
+      attribute,
+      value,
+      labelFilter
+    );
+  }
+
   // POSTER MANAGEMENT METHODS - Delegated to PlexPosterManager
 
   /**
@@ -3505,6 +3547,68 @@ class PlexAPI {
   }
 
   /**
+   * Get all library items that carry a specific label (movies or TV).
+   * Pages through the full result set so the entire labelled subset is returned.
+   */
+  public async getItemsByLabel(
+    libraryId: string,
+    label: string,
+    mediaType: 'movie' | 'tv'
+  ): Promise<PlexLibraryItem[]> {
+    const type = mediaType === 'movie' ? 1 : 2;
+    const labelFilter = encodeURIComponent(label);
+    // Exclude Agregarr's own placeholder items so they never leak into a label collection.
+    const placeholderFilter = encodeURIComponent('trailer-placeholder');
+    const pageSize = 200;
+    const items: PlexLibraryItem[] = [];
+
+    try {
+      for (let offset = 0; ; offset += pageSize) {
+        const response = await this.plexClient.query<{
+          MediaContainer: {
+            totalSize?: number;
+            size?: number;
+            Metadata?: PlexLibraryItem[];
+          };
+        }>({
+          uri: `/library/sections/${libraryId}/all?type=${type}&label=${labelFilter}&label!=${placeholderFilter}&includeGuids=1`,
+          extraHeaders: {
+            'X-Plex-Container-Start': `${offset}`,
+            'X-Plex-Container-Size': `${pageSize}`,
+          },
+        });
+
+        const batch = response.MediaContainer.Metadata || [];
+        items.push(...batch);
+
+        const total = response.MediaContainer.totalSize ?? 0;
+        if (batch.length < pageSize || items.length >= total) {
+          break;
+        }
+      }
+
+      logger.debug(
+        `Found ${items.length} items with label "${label}" in library ${libraryId}`,
+        { label: 'Plex API', plexLabel: label, libraryId, mediaType }
+      );
+
+      return items;
+    } catch (error) {
+      logger.error(
+        `Failed to fetch items for label "${label}" in library ${libraryId}`,
+        {
+          label: 'Plex API',
+          plexLabel: label,
+          libraryId,
+          mediaType,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Get all labels for a library
    * @param libraryId - Library section key
    * @returns Array of unique label names
@@ -3532,6 +3636,60 @@ class PlexAPI {
     }
   }
 
+  /**
+   * Get all values for a library attribute (genre, decade, resolution, contentRating)
+   * @param libraryId - Library section key
+   * @param attribute - Attribute type to query
+   * @param mediaType - Plex type filter (1=movie, 2=show); derived from the library if omitted
+   */
+  public async getLibraryAttributes(
+    libraryId: string,
+    attribute: 'genre' | 'decade' | 'resolution' | 'contentRating',
+    mediaType?: number
+  ): Promise<{ key: string; title: string; fastKey: string }[]> {
+    let type = mediaType;
+
+    if (type === undefined) {
+      const libraries = await this.getLibraries();
+      const library = libraries.find((lib) => lib.key === libraryId);
+
+      if (!library) {
+        throw new Error(`Library ${libraryId} not found`);
+      }
+
+      type = library.type === 'show' ? 2 : 1;
+    }
+
+    const response = await this.plexClient.query<{
+      MediaContainer: {
+        Directory?: {
+          key: string;
+          title: string;
+          fastKey: string;
+          type: string;
+        }[];
+      };
+    }>(`/library/sections/${libraryId}/${attribute}?type=${type}`);
+
+    const values = (response.MediaContainer?.Directory || []).map((d) => ({
+      key: d.key,
+      title: d.title,
+      fastKey: d.fastKey,
+    }));
+
+    logger.debug(
+      `Found ${values.length} ${attribute} values in library ${libraryId}`,
+      {
+        label: 'Plex API',
+        libraryId,
+        attribute,
+        valueCount: values.length,
+      }
+    );
+
+    return values;
+  }
+
   public async getLibraryLabels(libraryId: string): Promise<string[]> {
     try {
       // Fetch library metadata to determine media type
@@ -3557,7 +3715,9 @@ class PlexAPI {
       const directories = response.MediaContainer?.Directory || [];
       const labels = directories
         .map((d) => d.title)
-        .filter((title): title is string => !!title);
+        .filter(
+          (title): title is string => !!title && title !== 'trailer-placeholder'
+        );
 
       logger.debug(`Found ${labels.length} labels in library ${libraryId}`, {
         label: 'Plex API',

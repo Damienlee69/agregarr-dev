@@ -34,10 +34,12 @@ import ComingSoonServerSection from '@app/components/Collections/FormSections/Co
 import CustomUrlSection from '@app/components/Collections/FormSections/CustomUrlSection';
 import FilterWithMode from '@app/components/Collections/FormSections/FilterWithMode';
 import KeywordFilterWithMode from '@app/components/Collections/FormSections/KeywordFilterWithMode';
+import LibraryEssentialsPreview from '@app/components/Collections/FormSections/LibraryEssentialsPreview';
 import LibrarySelectionSection from '@app/components/Collections/FormSections/LibrarySelectionSection';
 import MultiSourceConfigSection from '@app/components/Collections/FormSections/MultiSourceConfigSection';
 import NetworksConfigSection from '@app/components/Collections/FormSections/NetworksConfigSection';
 import OriginalsConfigSection from '@app/components/Collections/FormSections/OriginalsConfigSection';
+import PlexLabelSection from '@app/components/Collections/FormSections/PlexLabelSection';
 import PosterUploadSection from '@app/components/Collections/FormSections/PosterUploadSection';
 import TemplateSection from '@app/components/Collections/FormSections/TemplateSection';
 import ThemeUploadSection from '@app/components/Collections/FormSections/ThemeUploadSection';
@@ -48,6 +50,10 @@ import VisibilitySection from '@app/components/Collections/FormSections/Visibili
 import WallpaperUploadSection from '@app/components/Collections/FormSections/WallpaperUploadSection';
 import PreviewCollectionModal from '@app/components/Collections/PreviewCollectionModal';
 import { COLLECTION_PRESETS } from '@app/utils/collectionPresets';
+import {
+  getLibraryEssentialsLabel,
+  isLibraryEssentialsPattern,
+} from '@app/utils/collections/collectionUtils';
 
 const messages = defineMessages({
   editCollection: 'Edit Collection Configuration',
@@ -114,6 +120,7 @@ const messages = defineMessages({
   validationPersonMinimumItemsMin: 'Minimum items must be at least 2',
   validationSeparatorTitleRequired: 'Separator title is required',
   validationSeparatorTitleMin: 'Separator title must be at least 2 characters',
+  validationPlexLabelRequired: 'Please select a Plex label',
   validationLibraryMin: 'Please select at least one library',
   validationLibraryRequired: 'Please select at least one library',
   validationRadarrInstanceRequired: 'Radarr instance is required',
@@ -570,13 +577,26 @@ const CollectionFormConfigForm = ({
           type === 'plex' &&
           (subtype === 'separator' ||
             (useSeparator === true &&
-              (subtype === 'actors' || subtype === 'directors'))),
+              (subtype === 'actors' ||
+                subtype === 'directors' ||
+                isLibraryEssentialsPattern(type, subtype)))),
         then: (schema) =>
           schema
             .required(
               intl.formatMessage(messages.validationSeparatorTitleRequired)
             )
             .min(2, intl.formatMessage(messages.validationSeparatorTitleMin)),
+        otherwise: (schema) => schema.notRequired(),
+      }),
+    plexLabel: Yup.string()
+      .transform((value) => value?.trim())
+      .when(['type', 'subtype'], {
+        is: (type?: string, subtype?: string) =>
+          type === 'plex' && subtype === 'label',
+        then: (schema) =>
+          schema.required(
+            intl.formatMessage(messages.validationPlexLabelRequired)
+          ),
         otherwise: (schema) => schema.notRequired(),
       }),
 
@@ -1632,6 +1652,14 @@ const CollectionFormConfigForm = ({
                   ? '{actor}'
                   : '{director}';
               }
+              if (
+                isLibraryEssentialsPattern(
+                  (config as CollectionFormConfig).type,
+                  (config as CollectionFormConfig).subtype
+                )
+              ) {
+                return '{value}';
+              }
               return '';
             })(),
           libraryId: config.libraryId || undefined,
@@ -1733,6 +1761,7 @@ const CollectionFormConfigForm = ({
             (config as CollectionFormConfig).radarrTagId ?? undefined,
           sonarrTagId:
             (config as CollectionFormConfig).sonarrTagId ?? undefined,
+          plexLabel: (config as CollectionFormConfig).plexLabel ?? undefined,
           // Coming Soon monitored server/tag filtering
           comingSoonRadarrServerId:
             (config as CollectionFormConfig).comingSoonRadarrServerId ??
@@ -1846,11 +1875,15 @@ const CollectionFormConfigForm = ({
             (config as CollectionFormConfig).enableCustomSummary ?? false,
           enableCustomTheme:
             (config as CollectionFormConfig).enableCustomTheme ?? false,
-          // Default autoPoster to false for pre-existing collections (they have their own posters),
-          // true for Agregarr-created collections
           autoPoster:
             (config as CollectionFormConfig).autoPoster ??
-            (isPreExisting ? false : true),
+            !(
+              isPreExisting ||
+              ((config as CollectionFormConfig).type === 'plex' &&
+                ['genre', 'decade', 'resolution', 'contentRating'].includes(
+                  (config as CollectionFormConfig).subtype || ''
+                ))
+            ),
           autoPosterTemplate:
             (config as CollectionFormConfig).autoPosterTemplate ?? null,
           useTmdbFranchisePoster:
@@ -1922,6 +1955,10 @@ const CollectionFormConfigForm = ({
             startDate: '01-01',
             startTime: '09:00',
           },
+          selectionMode:
+            (config as CollectionFormConfig).selectionMode ?? 'exclude',
+          excludeValues: (config as CollectionFormConfig).excludeValues ?? [],
+          includeValues: (config as CollectionFormConfig).includeValues ?? [],
         }}
         validationSchema={CollectionFormConfigSchema}
         enableReinitialize={false}
@@ -2056,16 +2093,26 @@ const CollectionFormConfigForm = ({
           const isPersonCollection =
             values.type === 'plex' &&
             (values.subtype === 'directors' || values.subtype === 'actors');
+          const isEssentials = isLibraryEssentialsPattern(
+            values.type,
+            values.subtype
+          );
           const isStandaloneSeparator =
             values.type === 'plex' && values.subtype === 'separator';
           const defaultSeparatorTitle =
             values.subtype === 'actors'
               ? 'Actor Collections'
               : 'Director Collections';
+          const essentialsSeparatorDefault = isEssentials
+            ? `${getLibraryEssentialsLabel(values.subtype)} Collections`
+            : undefined;
           const separatorTitle = isStandaloneSeparator
             ? optionalString(values.separatorTitle) || 'Separator'
             : isPersonCollection && values.useSeparator
             ? optionalString(values.separatorTitle) || defaultSeparatorTitle
+            : isEssentials && values.useSeparator
+            ? optionalString(values.separatorTitle) ||
+              essentialsSeparatorDefault
             : undefined;
 
           // Validate required template variables for multi-collection patterns
@@ -2120,6 +2167,28 @@ const CollectionFormConfigForm = ({
               );
               return; // Prevent save
             }
+          } else if (isEssentials) {
+            const actualTemplate =
+              values.template === 'custom'
+                ? ('customTVTemplate' in values
+                    ? values.customTVTemplate
+                    : undefined) ||
+                  ('customMovieTemplate' in values
+                    ? values.customMovieTemplate
+                    : undefined)
+                : values.template;
+
+            if (!actualTemplate?.includes('{value}')) {
+              const fieldToError =
+                values.template === 'custom'
+                  ? 'customMovieTemplate'
+                  : 'template';
+              setFieldError(
+                fieldToError,
+                'Template must include {value} for library essentials collections'
+              );
+              return;
+            }
           }
 
           const configToSave: CollectionFormConfig = {
@@ -2134,6 +2203,8 @@ const CollectionFormConfigForm = ({
               ? values.subtype === 'actors'
                 ? 'Auto Actor Collections'
                 : 'Auto Director Collections'
+              : isEssentials
+              ? `Auto ${essentialsSeparatorDefault}`
               : isStandaloneSeparator
               ? (separatorTitle as string)
               : values.type === 'tmdb' && values.subtype === 'auto_franchise'
@@ -2143,9 +2214,10 @@ const CollectionFormConfigForm = ({
             template: isStandaloneSeparator
               ? (separatorTitle as string)
               : values.template,
-            useSeparator: isPersonCollection
-              ? Boolean(values.useSeparator)
-              : undefined,
+            useSeparator:
+              isPersonCollection || isEssentials
+                ? Boolean(values.useSeparator)
+                : undefined,
             separatorTitle,
             customMovieTemplate:
               values.template === 'custom'
@@ -2160,10 +2232,11 @@ const CollectionFormConfigForm = ({
               ? parseInt(values.customDays.toString(), 10)
               : undefined,
             // Placeholder settings (unified for all collection types including Coming Soon)
-            createPlaceholdersForMissing:
-              values.type === 'comingsoon'
-                ? true
-                : values.createPlaceholdersForMissing ?? false,
+            createPlaceholdersForMissing: isEssentials
+              ? false
+              : values.type === 'comingsoon'
+              ? true
+              : values.createPlaceholdersForMissing ?? false,
             placeholderReleasedDays: values.createPlaceholdersForMissing
               ? values.placeholderReleasedDays
                 ? parseInt(values.placeholderReleasedDays.toString(), 10)
@@ -2344,7 +2417,16 @@ const CollectionFormConfigForm = ({
               values.type === 'comingsoon' && values.subtype === 'monitored'
                 ? values.comingSoonSonarrRootFolder
                 : undefined,
-            autoPoster: values.autoPoster,
+            selectionMode: isEssentials
+              ? values.selectionMode || 'exclude'
+              : undefined,
+            excludeValues: isEssentials
+              ? values.excludeValues || []
+              : undefined,
+            includeValues: isEssentials
+              ? values.includeValues || []
+              : undefined,
+            autoPoster: isEssentials ? false : values.autoPoster,
             autoPosterTemplate: values.autoPosterTemplate,
             useTmdbFranchisePoster: values.useTmdbFranchisePoster,
             hideIndividualItems: values.hideIndividualItems,
@@ -2385,6 +2467,10 @@ const CollectionFormConfigForm = ({
           touched,
         }) => {
           const typedValues = values;
+          const isEssentialsRender = isLibraryEssentialsPattern(
+            values.type,
+            values.subtype
+          );
           const { radarrTagId, sonarrTagId } = values as CollectionFormConfig;
           const hasSelectedRadarrTag = radarrTagId != null;
           const hasSelectedSonarrTag = sonarrTagId != null;
@@ -2426,7 +2512,7 @@ const CollectionFormConfigForm = ({
                 secondaryTooltip={linkingTooltip}
                 secondaryButtonType={isLinked ? 'warning' : 'primary'}
                 // Add preview button for collections (not hubs or pre-existing)
-                // Disable for multi-collection patterns (overseerr users, tmdb franchise, plex auto-directors/actors)
+                // Disable for multi-collection patterns (overseerr users, tmdb franchise, plex auto-directors/actors, essentials)
                 onTertiary={
                   isCollection &&
                   values.type &&
@@ -2443,7 +2529,8 @@ const CollectionFormConfigForm = ({
                     values.type === 'plex' &&
                     (values.subtype === 'directors' ||
                       values.subtype === 'actors')
-                  )
+                  ) &&
+                  !isEssentialsRender
                     ? () => setShowPreview(true)
                     : undefined
                 }
@@ -2463,7 +2550,8 @@ const CollectionFormConfigForm = ({
                     values.type === 'plex' &&
                     (values.subtype === 'directors' ||
                       values.subtype === 'actors')
-                  )
+                  ) &&
+                  !isEssentialsRender
                     ? intl.formatMessage(messages.previewCollection)
                     : undefined
                 }
@@ -2947,6 +3035,25 @@ const CollectionFormConfigForm = ({
                         />
                       )}
 
+                      {/* Library Essentials preview + selection — after library selection */}
+                      {isCollection &&
+                        isEssentialsRender &&
+                        (values.libraryIds?.length > 0 || values.libraryId) && (
+                          <LibraryEssentialsPreview />
+                        )}
+
+                      {/* Plex Label picker - rendered after library selection so a
+                          library is chosen before its labels are fetched */}
+                      {isCollection &&
+                        values.type === 'plex' &&
+                        values.subtype === 'label' && (
+                          <PlexLabelSection
+                            values={typedValues as CollectionFormConfig}
+                            setFieldValue={setFieldValue}
+                            isVisible={true}
+                          />
+                        )}
+
                       {/* Regular Form - show full form for normal collections */}
                       {isCollection &&
                         values.type &&
@@ -3358,35 +3465,37 @@ const CollectionFormConfigForm = ({
                                 );
                               })()}
 
-                            {/* Collection Visibility */}
-                            <div className="form-row">
-                              <div className="text-label">
-                                {intl.formatMessage(messages.visibility)}
+                            {/* Collection Visibility — hidden for essentials (all-false by design) */}
+                            {!isEssentialsRender && (
+                              <div className="form-row">
+                                <div className="text-label">
+                                  {intl.formatMessage(messages.visibility)}
+                                </div>
+                                <div className="form-input-area">
+                                  <VisibilitySection
+                                    values={typedValues as CollectionFormConfig}
+                                    setFieldValue={setFieldValue}
+                                    isEnhancedForm={false}
+                                    isDefaultPlexHub={isHub}
+                                    restrictToLibraryOnly={
+                                      (values.type === 'tmdb' &&
+                                        values.subtype === 'auto_franchise') ||
+                                      (values.type === 'plex' &&
+                                        (values.subtype === 'directors' ||
+                                          values.subtype === 'actors'))
+                                    }
+                                    restrictToServerOwnerOnly={
+                                      values.type === 'overseerr' &&
+                                      values.subtype === 'server_owner'
+                                    }
+                                    restrictUsersOnly={
+                                      values.type === 'overseerr' &&
+                                      values.subtype === 'users'
+                                    }
+                                  />
+                                </div>
                               </div>
-                              <div className="form-input-area">
-                                <VisibilitySection
-                                  values={typedValues as CollectionFormConfig}
-                                  setFieldValue={setFieldValue}
-                                  isEnhancedForm={false}
-                                  isDefaultPlexHub={isHub}
-                                  restrictToLibraryOnly={
-                                    (values.type === 'tmdb' &&
-                                      values.subtype === 'auto_franchise') ||
-                                    (values.type === 'plex' &&
-                                      (values.subtype === 'directors' ||
-                                        values.subtype === 'actors'))
-                                  }
-                                  restrictToServerOwnerOnly={
-                                    values.type === 'overseerr' &&
-                                    values.subtype === 'server_owner'
-                                  }
-                                  restrictUsersOnly={
-                                    values.type === 'overseerr' &&
-                                    values.subtype === 'users'
-                                  }
-                                />
-                              </div>
-                            </div>
+                            )}
 
                             {/* Target User */}
                             <div className="form-row">
@@ -3523,7 +3632,7 @@ const CollectionFormConfigForm = ({
                             </div>
 
                             {/* Smart Collection - Show Unwatched Only */}
-                            {/* Hide for: recently_added (already smart), and tmdb auto_franchise (multi-collection) */}
+                            {/* Hide for: recently_added (already smart), multi-collection patterns, and essentials */}
                             {values.type !== 'filtered_hub' &&
                               !(
                                 (values.type === 'tmdb' &&
@@ -3531,7 +3640,8 @@ const CollectionFormConfigForm = ({
                                 (values.type === 'plex' &&
                                   (values.subtype === 'directors' ||
                                     values.subtype === 'actors'))
-                              ) && (
+                              ) &&
+                              !isEssentialsRender && (
                                 <div className="form-row">
                                   <label className="text-label">
                                     {intl.formatMessage(
@@ -3830,7 +3940,7 @@ const CollectionFormConfigForm = ({
                               )}
 
                             {/* Placeholder Creation - show for external sources that can have missing items */}
-                            {/* Hide for: overseerr, tautulli, recently_added, plex directors/actors */}
+                            {/* Hide for: overseerr, tautulli, recently_added, plex directors/actors, essentials */}
                             {typedValues.type &&
                               typedValues.type !== 'overseerr' &&
                               typedValues.type !== 'tautulli' &&
@@ -3839,7 +3949,8 @@ const CollectionFormConfigForm = ({
                                 typedValues.type === 'plex' &&
                                 (typedValues.subtype === 'directors' ||
                                   typedValues.subtype === 'actors')
-                              ) && (
+                              ) &&
+                              !isEssentialsRender && (
                                 <div className="form-row">
                                   <label
                                     htmlFor="createPlaceholdersForMissing"
@@ -4645,7 +4756,7 @@ const CollectionFormConfigForm = ({
                               })()}
 
                             {/* Auto-Request Settings - only show for external sources */}
-                            {/* Hide for: overseerr, tautulli, recently_added, plex directors/actors */}
+                            {/* Hide for: overseerr, tautulli, recently_added, plex directors/actors, essentials */}
                             {typedValues.type &&
                               typedValues.type !== 'overseerr' &&
                               typedValues.type !== 'tautulli' &&
@@ -4654,7 +4765,8 @@ const CollectionFormConfigForm = ({
                                 typedValues.type === 'plex' &&
                                 (typedValues.subtype === 'directors' ||
                                   typedValues.subtype === 'actors')
-                              ) && (
+                              ) &&
+                              !isEssentialsRender && (
                                 <div className="form-row">
                                   <label className="text-label">
                                     {intl.formatMessage(
@@ -5151,6 +5263,7 @@ const CollectionFormConfigForm = ({
                         sonarrTagId: values.sonarrTagId,
                         radarrInstanceId: values.radarrInstanceId,
                         sonarrInstanceId: values.sonarrInstanceId,
+                        plexLabel: values.plexLabel,
                         // Coming Soon specific fields
                         comingSoonRadarrServerId:
                           values.comingSoonRadarrServerId,

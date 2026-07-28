@@ -6,12 +6,13 @@ import { PosterTemplate } from '@server/entity/PosterTemplate';
  * Creates smart collections based on Plex library metadata (e.g., directors, actors).
  */
 
-import type PlexAPI from '@server/api/plexapi';
+import PlexAPI from '@server/api/plexapi';
 import TheMovieDb from '@server/api/themoviedb';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
   extractTmdbIdFromGuids,
   extractTvdbIdFromGuids,
+  getAdminUser,
   getCollectionMediaType,
   hasAgregarrLabel,
   type LibraryItemsCache,
@@ -26,6 +27,7 @@ import type {
   MissingItem,
   PlexCollection,
   PlexLabel,
+  PlexLabelSourceData,
   SyncResult,
 } from '@server/lib/collections/core/types';
 import { CollectionSyncErrorType } from '@server/lib/collections/core/types';
@@ -45,6 +47,14 @@ type PersonTmdbInfo = {
 type PersonCollectionSubtype = 'directors' | 'actors';
 
 const DEFAULT_SEPARATOR_POSTER = 'generated_separator.jpg';
+
+const ESSENTIALS_SUBTYPES = [
+  'genre',
+  'decade',
+  'resolution',
+  'contentRating',
+] as const;
+type EssentialsSubtype = (typeof ESSENTIALS_SUBTYPES)[number];
 
 export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
   constructor() {
@@ -76,9 +86,17 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
     const title = config.separatorTitle?.trim();
     if (title && title.length > 0) return title;
     if (config.subtype === 'separator') return config.template || 'Separator';
-    return config.subtype === 'actors'
-      ? 'Actor Collections'
-      : 'Director Collections';
+    const subtypeLabels: Record<string, string> = {
+      genre: 'Genre',
+      decade: 'Decade',
+      resolution: 'Resolution',
+      contentRating: 'Content Rating',
+      actors: 'Actor',
+      directors: 'Director',
+    };
+    return `${
+      subtypeLabels[config.subtype ?? ''] ?? config.subtype
+    } Collections`;
   }
 
   private normalizeLabel(label: string | PlexLabel): string {
@@ -715,6 +733,18 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
     _mediaType: 'movie' | 'tv'
   ): Promise<Record<string, unknown>> {
     void _mediaType;
+
+    // Label collections are a single collection named by the config, not per-person.
+    if (config.subtype === 'label') {
+      return {
+        source: 'plex',
+        subtype: 'label',
+        plexLabel: config.plexLabel,
+        name: config.name,
+        collectionName: config.name,
+      };
+    }
+
     const personPlaceholder =
       config.subtype === 'actors' ? '{actor}' : '{director}';
 
@@ -762,21 +792,344 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
     return this.templateEngine.processTemplate(template, context);
   }
 
+  /**
+   * Library Essentials: one config generates N smart collections, one per
+   * qualifying attribute value (e.g. one collection per genre in the library)
+   */
+  private async processEssentialsConfiguration(
+    config: CollectionConfig,
+    plexClient: PlexAPI,
+    allCollections: PlexCollection[],
+    mediaType: 'movie' | 'tv',
+    subtype: EssentialsSubtype,
+    processedCollectionKeys?: Set<string>
+  ): Promise<SyncResult> {
+    if (config.useSeparator) {
+      await this.syncSeparatorCollection(
+        config,
+        plexClient,
+        allCollections,
+        mediaType,
+        processedCollectionKeys
+      );
+    } else {
+      await this.cleanupSeparatorCollection(config, plexClient, allCollections);
+    }
+
+    const labelPrefix = `AgregarrEssentials-${config.id}-${subtype}-`;
+    const labelPrefixLower = labelPrefix.toLowerCase();
+
+    const managedCollectionsFor = (collections: PlexCollection[]) =>
+      collections.filter((collection) => {
+        if (collection.libraryKey !== config.libraryId) return false;
+        const labels = Array.isArray(collection.labels)
+          ? collection.labels
+          : [];
+        return labels.some((l: string | PlexLabel) => {
+          const text = typeof l === 'string' ? l : l.tag;
+          return text?.toLowerCase().startsWith(labelPrefixLower);
+        });
+      });
+
+    try {
+      const values = await plexClient.getLibraryAttributes(
+        config.libraryId,
+        subtype
+      );
+
+      if (values.length === 0) {
+        const existingManaged = managedCollectionsFor(allCollections);
+        if (existingManaged.length > 0) {
+          logger.warn(
+            `Plex returned 0 ${subtype} values for library ${config.libraryId} but ${existingManaged.length} managed essentials collections exist. Skipping to avoid mass deletion.`,
+            {
+              label: 'Plex Library Collections',
+              configId: config.id,
+              subtype,
+              libraryId: config.libraryId,
+            }
+          );
+          return { created: 0, updated: 0 };
+        }
+      }
+
+      const selectionMode = config.selectionMode ?? 'include';
+      const excludeValues = config.excludeValues ?? [];
+      const includeValues = config.includeValues ?? [];
+
+      const filteredValues =
+        selectionMode === 'include'
+          ? values.filter((v) => includeValues.includes(v.key))
+          : values.filter((v) => !excludeValues.includes(v.key));
+
+      let created = 0;
+      let updated = 0;
+      let deleted = 0;
+
+      for (const value of filteredValues) {
+        try {
+          const context = {
+            value: value.title,
+            mediaType,
+            subtype,
+          };
+          const template =
+            config.template === 'custom'
+              ? (mediaType === 'tv'
+                  ? config.customTVTemplate
+                  : config.customMovieTemplate) || '{value}'
+              : config.template || '{value}';
+          const collectionName = this.templateEngine.processTemplate(
+            template,
+            context
+          );
+
+          const essentialsLabel = `${labelPrefix}${value.key}`;
+          const essentialsLabelLower = essentialsLabel.toLowerCase();
+
+          const existingCollection = allCollections.find((c) => {
+            if (c.libraryKey !== config.libraryId) return false;
+            const labels = Array.isArray(c.labels) ? c.labels : [];
+            return labels.some((l: string | PlexLabel) => {
+              const text = typeof l === 'string' ? l : l.tag;
+              return text?.toLowerCase() === essentialsLabelLower;
+            });
+          });
+
+          let collectionRatingKey: string | null = null;
+
+          if (existingCollection) {
+            await plexClient.updateAttributeSmartCollectionUri(
+              existingCollection.ratingKey,
+              config.libraryId,
+              mediaType,
+              subtype,
+              value.key,
+              'trailer-placeholder'
+            );
+            updated++;
+            collectionRatingKey = existingCollection.ratingKey;
+          } else {
+            collectionRatingKey = await plexClient.createAttributeCollection(
+              collectionName,
+              config.libraryId,
+              mediaType,
+              subtype,
+              value.key,
+              'trailer-placeholder'
+            );
+            if (collectionRatingKey) {
+              created++;
+            } else {
+              logger.warn(
+                `Failed to create essentials collection for ${subtype}: ${value.title}`,
+                {
+                  label: 'Plex Library Collections',
+                }
+              );
+              continue;
+            }
+          }
+
+          try {
+            await plexClient.addLabelToCollection(
+              collectionRatingKey,
+              essentialsLabel
+            );
+          } catch (labelError) {
+            logger.warn(`Failed to add label to essentials collection`, {
+              label: 'Plex Library Collections',
+              collectionName,
+              error:
+                labelError instanceof Error
+                  ? labelError.message
+                  : String(labelError),
+            });
+          }
+
+          const visibilityConfig: CollectionVisibilityConfig = {
+            usersHome: false,
+            serverOwnerHome: false,
+            libraryRecommended: false,
+            isActive: config.isActive ?? true,
+          };
+
+          await this.updateCollectionMetadata(plexClient, collectionRatingKey, {
+            collectionName,
+            mediaType,
+            visibilityConfig,
+            customLabel: essentialsLabel,
+            sortOrderLibrary: config.sortOrderLibrary,
+            isLibraryPromoted: config.isLibraryPromoted,
+            libraryKey: config.libraryId,
+            config,
+          });
+
+          processedCollectionKeys?.add(collectionRatingKey);
+        } catch (error) {
+          logger.error(
+            `Error creating essentials collection for ${subtype} value ${value.title}`,
+            {
+              label: 'Plex Library Collections',
+              value: value.title,
+              subtype,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        }
+      }
+
+      // Remove managed collections whose Plex key no longer qualifies
+      const activeKeys = new Set(filteredValues.map((v) => v.key));
+      const managedCollections = managedCollectionsFor(allCollections);
+
+      for (const collection of managedCollections) {
+        const labels = Array.isArray(collection.labels)
+          ? collection.labels
+          : [];
+        const matchingLabel = labels
+          .map((l: string | PlexLabel) => (typeof l === 'string' ? l : l.tag))
+          .find((text) => text?.toLowerCase().startsWith(labelPrefixLower));
+
+        if (!matchingLabel) continue;
+
+        const plexKey = matchingLabel.slice(labelPrefix.length);
+
+        if (!activeKeys.has(plexKey)) {
+          try {
+            await plexClient.deleteCollection(collection.ratingKey);
+            deleted++;
+            logger.info(
+              `Removed stale essentials collection: ${collection.title}`,
+              {
+                label: 'Plex Library Collections',
+                collectionName: collection.title,
+                ratingKey: collection.ratingKey,
+                plexKey,
+              }
+            );
+          } catch (deleteError) {
+            logger.warn(`Failed to delete stale essentials collection`, {
+              label: 'Plex Library Collections',
+              collectionName: collection.title,
+              error:
+                deleteError instanceof Error
+                  ? deleteError.message
+                  : String(deleteError),
+            });
+          }
+        }
+      }
+
+      if (filteredValues.length === 0 && config.useSeparator) {
+        logger.info(
+          `No qualifying ${subtype} values found, cleaning up separator collection`,
+          {
+            label: 'Plex Library Collections',
+            configName: config.name,
+          }
+        );
+        const updatedCollections = await plexClient.getAllCollections();
+        await this.cleanupSeparatorCollection(
+          config,
+          plexClient,
+          updatedCollections
+        );
+      }
+
+      return {
+        created,
+        updated,
+        mutated: created > 0 || updated > 0 || deleted > 0,
+        details: deleted ? { deleted } : undefined,
+      };
+    } catch (error) {
+      logger.error(`Failed to process ${subtype} essentials collection`, {
+        label: 'Plex Library Collections',
+        configName: config.name,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      throw this.createSyncError(
+        CollectionSyncErrorType.API_ERROR,
+        `Failed to fetch ${subtype} from library: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
   public override async fetchSourceData(
-    _config: CollectionConfig,
+    config: CollectionConfig,
     _options?: CollectionSyncOptions,
     _libraryCache?: LibraryItemsCache
   ): Promise<CollectionSourceData[]> {
-    void _config;
     void _options;
     void _libraryCache;
-    // Director collections use Plex library data gathered during processing; no external source fetch required.
-    return [];
+    // Only the 'label' subtype uses the standard fetch/map pipeline (e.g. for the
+    // collection Preview). Director/actor/separator collections build their items
+    // during processConfiguration and need no external source fetch.
+    if (config.subtype !== 'label') {
+      return [];
+    }
+    const plexLabel = config.plexLabel?.trim();
+    if (!plexLabel || !config.libraryId) {
+      return [];
+    }
+    const admin = await getAdminUser();
+    if (!admin?.plexToken) {
+      return [];
+    }
+    const plexClient = new PlexAPI({ plexToken: admin.plexToken });
+    const mediaType = getCollectionMediaType(config);
+    const plexItems = await plexClient.getItemsByLabel(
+      config.libraryId,
+      plexLabel,
+      mediaType
+    );
+    // Return the minimal source-data shape. PlexLabelSourceData is a member of
+    // the CollectionSourceData union, so this needs no cast.
+    return plexItems.map(
+      (item): PlexLabelSourceData => ({
+        ratingKey: item.ratingKey,
+        title: item.title,
+        year: item.year,
+        Guid: item.Guid,
+      })
+    );
+  }
+
+  /**
+   * Map Plex library items (label source data) to CollectionItems. Shared by the
+   * sync path (processLabelConfiguration) and the Preview path
+   * (mapSourceDataToItems) so the two can't drift.
+   */
+  private mapPlexItemsToCollectionItems(
+    items: PlexLabelSourceData[],
+    config: CollectionConfig
+  ): CollectionItem[] {
+    const mediaType = getCollectionMediaType(config);
+    return items.map((item, index) => {
+      const tmdbId = extractTmdbIdFromGuids(item.Guid);
+      const tvdbId = extractTvdbIdFromGuids(item.Guid);
+      return {
+        ratingKey: item.ratingKey,
+        title: item.title,
+        type: mediaType === 'movie' ? 'movie' : 'tv',
+        year: item.year,
+        tmdbId: tmdbId ?? undefined,
+        tvdbId: tvdbId ?? undefined,
+        metadata: {
+          libraryKey: config.libraryId,
+          originalPosition: index + 1, // Preserve source order for multi-source interleaving
+        },
+      };
+    });
   }
 
   public override async mapSourceDataToItems(
-    _sourceData: CollectionSourceData[],
-    _config: CollectionConfig,
+    sourceData: CollectionSourceData[],
+    config: CollectionConfig,
     _plexClient?: PlexAPI,
     _libraryCache?: LibraryItemsCache
   ): Promise<{
@@ -784,15 +1137,27 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
     missingItems?: MissingItem[];
     stats?: FilteringStats;
   }> {
-    void _sourceData;
-    void _config;
     void _plexClient;
     void _libraryCache;
-    // Items are derived directly from Plex during processConfiguration.
+    // Non-label plex collections derive their items during processConfiguration.
+    if (config.subtype !== 'label') {
+      return {
+        items: [],
+        missingItems: [],
+        stats: { original: 0, filtered: 0, removed: 0 },
+      };
+    }
+    // Label items are already Plex library items, so they're all in-library.
+    // Narrow the union with a type guard (ratingKey is unique to label source
+    // data) so no cast is needed.
+    const labelItems = sourceData.filter(
+      (item): item is PlexLabelSourceData => 'ratingKey' in item
+    );
+    const items = this.mapPlexItemsToCollectionItems(labelItems, config);
     return {
-      items: [],
+      items,
       missingItems: [],
-      stats: { original: 0, filtered: 0, removed: 0 },
+      stats: { original: items.length, filtered: items.length, removed: 0 },
     };
   }
 
@@ -817,6 +1182,102 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
       updated: 0,
       itemCount: 0,
     };
+  }
+
+  /**
+   * Process a label collection - builds a single collection from all library
+   * items that carry the configured Plex label, then runs them through the
+   * standard filtering/ordering/creation pipeline (same as any other source).
+   */
+  private async processLabelConfiguration(
+    config: CollectionConfig,
+    plexClient: PlexAPI,
+    allCollections: PlexCollection[],
+    processedCollectionKeys?: Set<string>,
+    libraryCache?: LibraryItemsCache
+  ): Promise<SyncResult> {
+    const plexLabel = config.plexLabel?.trim();
+    if (!plexLabel) {
+      throw this.createSyncError(
+        CollectionSyncErrorType.CONFIGURATION_ERROR,
+        `No Plex label specified for collection: ${config.name}`
+      );
+    }
+    if (!config.libraryId) {
+      throw this.createSyncError(
+        CollectionSyncErrorType.CONFIGURATION_ERROR,
+        `No library specified for label collection: ${config.name}`
+      );
+    }
+
+    const mediaType = getCollectionMediaType(config);
+
+    logger.info('Processing label collection', {
+      label: 'Plex Library Collections',
+      configName: config.name,
+      libraryId: config.libraryId,
+      plexLabel,
+    });
+
+    try {
+      const plexItems = await plexClient.getItemsByLabel(
+        config.libraryId,
+        plexLabel,
+        mediaType
+      );
+
+      const items = this.mapPlexItemsToCollectionItems(plexItems, config);
+
+      const { items: filteredItems } = await this.applyFilteringToMappedItems(
+        {
+          items,
+          missingItems: [],
+          stats: {
+            original: items.length,
+            filtered: items.length,
+            removed: 0,
+          },
+        },
+        config
+      );
+
+      if (filteredItems.length === 0) {
+        logger.warn(`No items found with label "${plexLabel}"`, {
+          label: 'Plex Library Collections',
+          configName: config.name,
+          libraryId: config.libraryId,
+          plexLabel,
+        });
+        return { created: 0, updated: 0 };
+      }
+
+      return await this.processWithMediaTypeStrategy(
+        filteredItems,
+        config,
+        plexClient,
+        allCollections,
+        processedCollectionKeys,
+        undefined,
+        libraryCache,
+        []
+      );
+    } catch (error) {
+      logger.error('Failed to process label collection', {
+        label: 'Plex Library Collections',
+        configName: config.name,
+        libraryId: config.libraryId,
+        plexLabel,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw this.createSyncError(
+        CollectionSyncErrorType.API_ERROR,
+        `Failed to build label collection "${
+          config.name
+        }" from label "${plexLabel}": ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   }
 
   /**
@@ -855,10 +1316,32 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
       }
     }
 
+    // Library Essentials: one config creates N smart collections from library attributes
+    if (ESSENTIALS_SUBTYPES.includes(subtype as EssentialsSubtype)) {
+      return this.processEssentialsConfiguration(
+        config,
+        plexClient,
+        allCollections,
+        mediaType,
+        subtype as EssentialsSubtype,
+        processedCollectionKeys
+      );
+    }
+
+    if (subtype === 'label') {
+      return this.processLabelConfiguration(
+        config,
+        plexClient,
+        allCollections,
+        processedCollectionKeys,
+        _libraryCache
+      );
+    }
+
     if (!subtype || (subtype !== 'directors' && subtype !== 'actors')) {
       throw this.createSyncError(
         CollectionSyncErrorType.CONFIGURATION_ERROR,
-        `Invalid plex subtype: ${subtype}. Currently only 'directors', 'actors', and 'separator' are supported.`
+        `Invalid plex subtype: ${subtype}. Supported: directors, actors, separator, label, genre, decade, resolution, contentRating.`
       );
     }
 

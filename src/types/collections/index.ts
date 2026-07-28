@@ -239,6 +239,9 @@ export interface CollectionFormConfig {
   readonly isLinked?: boolean; // True if collection is actively linked to other collections
   readonly linkId?: number; // Group ID for linked collections (preserved even when isLinked=false)
   readonly customSyncSchedule?: CustomSyncSchedule; // Individual sync timing
+  readonly selectionMode?: 'exclude' | 'include';
+  readonly excludeValues?: string[];
+  readonly includeValues?: string[];
   readonly isMultiSource?: boolean; // Enable multi-source mode
   readonly sources?: readonly CollectionSourceConfig[]; // Array of source configurations
   readonly combineMode?: MultiSourceCombineMode; // How to combine multiple sources
@@ -425,6 +428,8 @@ export interface CollectionFormConfig {
   readonly comingSoonSonarrRootFolder?: string; // Sonarr root folder path to filter by
   // Generic ordering options (applicable to all collection types)
   readonly sortOrder?: CollectionSortOrder; // Sort order for collection items (default: 'default')
+  // Plex Library label subtype: build a collection from items carrying this Plex label
+  readonly plexLabel?: string;
   // Unified person minimum items for plex/actors|directors
   readonly personMinimumItems?: number;
   // Plex Library separator settings for multi-collections (actors/directors)
@@ -638,6 +643,8 @@ export interface CollectionConfigCreateRequest {
   readonly comingSoonRadarrRootFolder?: string;
   readonly comingSoonSonarrRootFolder?: string;
   readonly sortOrder?: CollectionSortOrder;
+  // Plex Library label subtype: build a collection from items carrying this Plex label
+  readonly plexLabel?: string;
   // Unified person minimum items for plex actors/directors
   readonly personMinimumItems?: number;
   // Plex Library separator settings for auto person multi-collections
@@ -680,6 +687,9 @@ export interface CollectionConfigCreateRequest {
   readonly enableCustomTheme?: boolean; // Enable custom theme sync to Plex
   readonly showUnwatchedOnly?: boolean; // If true, create a smart collection that filters to unwatched items only
   readonly smartCollectionSort?: SmartCollectionSortOption; // Sort option for smart collections
+  readonly selectionMode?: 'exclude' | 'include';
+  readonly excludeValues?: string[];
+  readonly includeValues?: string[];
   readonly isMultiSource?: boolean;
   readonly sources?: readonly CollectionSourceConfig[];
   readonly combineMode?: MultiSourceCombineMode;
@@ -807,6 +817,10 @@ export const toCollectionCreateRequest = (
     // Smart collection support
     showUnwatchedOnly: config.showUnwatchedOnly,
     smartCollectionSort: config.smartCollectionSort,
+    // Library Essentials selection fields
+    selectionMode: config.selectionMode,
+    excludeValues: config.excludeValues,
+    includeValues: config.includeValues,
     // Multi-source fields
     isMultiSource: config.isMultiSource,
     sources: config.sources,
