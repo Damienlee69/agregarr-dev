@@ -40,6 +40,7 @@ const portableFields = [
   'sortOrderLibrary',
   'isLibraryPromoted',
   'randomizeHomeOrder',
+  'customSortTitle',
   'tmdbCustomCollectionUrl',
   'traktCustomListUrl',
   'imdbCustomListUrl',

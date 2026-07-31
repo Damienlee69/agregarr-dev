@@ -17,6 +17,7 @@ import {
   createCollectionLabel,
   createSyncError,
   getCollectionSyncCounter,
+  getCustomSortTitleOverride,
   getMediaTypeFromLibrary,
   hasAgregarrLabel,
   incrementCollectionSyncCounter,
@@ -2952,17 +2953,31 @@ export class MultiSourceOrchestrator {
     config: MultiSourceCollectionConfig,
     currentTitleSort?: string
   ): Promise<void> {
-    // Only update sortTitle if we have sortOrderLibrary defined
-    if (config.sortOrderLibrary === undefined) {
-      return;
-    }
-
     try {
       const settings = getSettings();
       const allConfigs = settings.plex.collectionConfigs || [];
 
       // Find this config in the settings to check everLibraryPromoted status
       const matchingConfig = allConfigs.find((c) => c.id === config.id);
+
+      // A manual Sort Title override always wins and applies to every
+      // collection, including A-Z ones that the computed logic below skips.
+      const customSortTitle = matchingConfig
+        ? getCustomSortTitleOverride(matchingConfig)
+        : undefined;
+      if (customSortTitle) {
+        await plexClient.updateCollectionSortTitle(
+          collectionRatingKey,
+          customSortTitle,
+          currentTitleSort
+        );
+        return;
+      }
+
+      // Only update sortTitle if we have sortOrderLibrary defined
+      if (config.sortOrderLibrary === undefined) {
+        return;
+      }
 
       // Only update sortTitle if everLibraryPromoted is not explicitly false
       if (matchingConfig?.everLibraryPromoted === false) {

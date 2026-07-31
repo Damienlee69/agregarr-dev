@@ -257,6 +257,9 @@ const messages = defineMessages({
   filteredPlexHubDescription:
     'Create Filtered Plex Hub collection type to replace default Plex hubs (Recently Added, Recently Released, Recently Released Episodes) with filtered versions that automatically exclude placeholder items. You can also Enable Collection Exclusion on other collections to exclude placeholders from them.',
   randomizeHomeOrder: 'Randomize Home Order',
+  customSortTitle: 'Sort Title',
+  customSortTitleHelp:
+    "Overrides how this collection is sorted in Plex. Clear it or drag the collection to revert to Agregarr's default.",
   shuffleHubCollectionHelp:
     "When enabled, this {itemType}'s position will be randomly shuffled with other collections that have this option enabled during each sync. Custom scheduling for shuffling can be set on the Jobs page.",
   targetUser: 'Target User',
@@ -288,6 +291,64 @@ const messages = defineMessages({
   connectionError: 'Connection error',
 });
 
+// Minimal shape shared by Agregarr and pre-existing collection configs, enough
+// to reconstruct a promoted collection's sort title.
+type SortTitleConfigLike = {
+  name?: string;
+  libraryId?: string | string[];
+  sortOrderLibrary?: number;
+  isLibraryPromoted?: boolean;
+};
+
+/**
+ * The sort title Agregarr would assign this collection for its CURRENT
+ * position, independent of any manual override. Mirrors the server's sync
+ * logic: promoted collections get an exclamation-mark prefix (more marks =
+ * higher up), A-Z collections keep their natural name. Used to pre-fill the
+ * Sort Title field so the user sees the real value, and to tell an unchanged
+ * value apart from a real override on save.
+ */
+function computeAgregarrSortTitle(
+  target: SortTitleConfigLike,
+  all: readonly SortTitleConfigLike[] | undefined
+): string {
+  const name = target.name || '';
+  const targetLibraryId = Array.isArray(target.libraryId)
+    ? target.libraryId[0]
+    : target.libraryId;
+  const sortOrderLibrary = target.sortOrderLibrary;
+
+  // A-Z section (or not yet positioned): natural name, no exclamation marks
+  if (
+    target.isLibraryPromoted !== true ||
+    sortOrderLibrary === undefined ||
+    sortOrderLibrary <= 0
+  ) {
+    return name;
+  }
+
+  const sameLibraryPromoted = (all || []).filter((c) => {
+    const cLibraryId = Array.isArray(c.libraryId)
+      ? c.libraryId[0]
+      : c.libraryId;
+    return (
+      cLibraryId === targetLibraryId &&
+      c.isLibraryPromoted === true &&
+      c.sortOrderLibrary !== undefined
+    );
+  });
+
+  // Seed the max with the target's own position so it is always >= it — even
+  // if the passed list does not contain the target — keeping the count >= 2
+  // and non-negative (String.prototype.repeat throws on a negative count).
+  const sortOrders = sameLibraryPromoted.map(
+    (c) => c.sortOrderLibrary as number
+  );
+  const maxSortOrder = Math.max(sortOrderLibrary, ...sortOrders);
+  const exclamationCount = Math.max(0, maxSortOrder - sortOrderLibrary + 2);
+  return `${'!'.repeat(exclamationCount)}${name}`;
+}
+
 const CollectionFormConfigForm = ({
   config,
   onSave,
@@ -295,8 +356,10 @@ const CollectionFormConfigForm = ({
   onUnlink,
   onLink,
   libraries,
+  activeTab,
   allCollectionConfigs,
   allHubConfigs,
+  allPreExistingConfigs,
 }: CollectionConfigFormProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
@@ -1002,6 +1065,40 @@ const CollectionFormConfigForm = ({
     config.collectionType === 'pre_existing' ||
     (config as CollectionFormConfig).configType === 'preExisting';
   const isCollection = !isHub && !isPreExisting; // Regular Agregarr collections
+
+  // Agregarr's default sort title for this collection's current position. Used
+  // to pre-fill the (editable) Sort Title field and to tell an untouched
+  // default apart from a real manual override on save. Applies to Agregarr and
+  // pre-existing collections (not default Plex hubs).
+  const agregarrSortTitle = isCollection
+    ? computeAgregarrSortTitle(
+        config as CollectionFormConfig,
+        allCollectionConfigs
+      )
+    : isPreExisting
+    ? // Pre-existing sort titles are ranked against pre-existing AND collection
+      // configs together (matching the server), so use the combined peer set.
+      computeAgregarrSortTitle(config as CollectionFormConfig, [
+        ...(allCollectionConfigs ?? []),
+        ...(allPreExistingConfigs ?? []),
+      ])
+    : '';
+
+  // Sort Title follows the same availability as drag-and-drop: shown in the
+  // Library, Home, and Recommended tabs, but hidden for Recommended items whose
+  // ordering is controlled in the Home tab (home-visible) — exactly where drag
+  // is locked. Callers that pass no activeTab (e.g. All Collections) hide it.
+  const sortTitleVisibilityConfig = (config as CollectionFormConfig)
+    .visibilityConfig;
+  const showSortTitleField =
+    (activeTab === 'library' ||
+      activeTab === 'home' ||
+      activeTab === 'recommended') &&
+    !(
+      activeTab === 'recommended' &&
+      (sortTitleVisibilityConfig?.usersHome ||
+        sortTitleVisibilityConfig?.serverOwnerHome)
+    );
 
   // Use unified linking approach - check if actively linked
   // If isUnlinked is true, treat as NOT linked (available for re-linking)
@@ -1852,6 +1949,11 @@ const CollectionFormConfigForm = ({
             (config as CollectionFormConfig).targetUserLabel || '',
           randomizeHomeOrder:
             (config as CollectionFormConfig).randomizeHomeOrder ?? false,
+          // Pre-fill with the manual override if set, otherwise Agregarr's
+          // current default so the user sees the real sort title and can tweak it
+          customSortTitle:
+            (config as CollectionFormConfig).customSortTitle ||
+            agregarrSortTitle,
           customPoster: (config as CollectionFormConfig).customPoster || '',
           customWallpaper:
             (config as CollectionFormConfig).customWallpaper || '',
@@ -2435,6 +2537,21 @@ const CollectionFormConfigForm = ({
             showUnwatchedOnly: values.showUnwatchedOnly,
             smartCollectionSort: values.smartCollectionSort,
             randomizeHomeOrder: values.randomizeHomeOrder,
+            // Manual sort title override. Store it only when it differs from
+            // Agregarr's default for the current position. When it matches the
+            // default (or is empty) send an explicit '' to CLEAR any existing
+            // override — undefined would be dropped by JSON and the old value
+            // would survive the server-side merge. If there was nothing to
+            // clear, omit it entirely to avoid writing empty strings everywhere.
+            customSortTitle: (() => {
+              const trimmed = (values.customSortTitle || '').trim();
+              const isOverride =
+                trimmed !== '' && trimmed !== agregarrSortTitle;
+              const hadOverride = Boolean(
+                (config as CollectionFormConfig).customSortTitle
+              );
+              return isOverride ? trimmed : hadOverride ? '' : undefined;
+            })(),
             // Wallpaper, summary, and theme settings
             customWallpaper: values.customWallpaper,
             customSummary: values.customSummary,
@@ -3125,6 +3242,44 @@ const CollectionFormConfigForm = ({
                                 />
                               </div>
                             </div>
+
+                            {/* Sort Title - manual Plex sort title override, single collections only */}
+                            {showSortTitleField &&
+                              !(
+                                (values.type === 'plex' &&
+                                  (values.subtype === 'directors' ||
+                                    values.subtype === 'actors' ||
+                                    values.subtype === 'separator')) ||
+                                (values.type === 'tmdb' &&
+                                  values.subtype === 'auto_franchise') ||
+                                (values.type === 'overseerr' &&
+                                  values.subtype === 'users')
+                              ) && (
+                                <div className="form-row">
+                                  <label
+                                    htmlFor="customSortTitle"
+                                    className="text-label"
+                                  >
+                                    {intl.formatMessage(
+                                      messages.customSortTitle
+                                    )}
+                                  </label>
+                                  <div className="form-input-area">
+                                    <div className="form-input-field">
+                                      <Field
+                                        type="text"
+                                        id="customSortTitle"
+                                        name="customSortTitle"
+                                      />
+                                    </div>
+                                    <div className="label-tip mt-2">
+                                      {intl.formatMessage(
+                                        messages.customSortTitleHelp
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
 
                             {/* Item Order - available for all collection types except multi-source and recently_added */}
                             {values.type !== 'multi-source' &&
@@ -4941,6 +5096,32 @@ const CollectionFormConfigForm = ({
                                 )}
                             </div>
                           </div>
+
+                          {/* Sort Title - pre-existing collections only, default Plex hubs don't support sortTitle */}
+                          {isPreExisting && showSortTitleField && (
+                            <div className="form-row">
+                              <label
+                                htmlFor="customSortTitle"
+                                className="text-label"
+                              >
+                                {intl.formatMessage(messages.customSortTitle)}
+                              </label>
+                              <div className="form-input-area">
+                                <div className="form-input-field">
+                                  <Field
+                                    type="text"
+                                    id="customSortTitle"
+                                    name="customSortTitle"
+                                  />
+                                </div>
+                                <div className="label-tip mt-2">
+                                  {intl.formatMessage(
+                                    messages.customSortTitleHelp
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Randomize Home Order */}
                           <div className="form-row">

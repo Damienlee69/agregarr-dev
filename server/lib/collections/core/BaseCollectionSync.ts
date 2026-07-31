@@ -28,6 +28,7 @@ import {
   createSyncError,
   extractErrorMessage,
   getCollectionMediaType,
+  getCustomSortTitleOverride,
   handleRateLimit,
   hasAgregarrLabel,
   isMultiCollectionPattern,
@@ -2237,8 +2238,19 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     const effectiveIsLibraryPromoted =
       matchingConfig?.isLibraryPromoted ?? isLibraryPromoted;
 
-    // Only update sortTitle if everLibraryPromoted is not explicitly false
-    if (
+    // A manual Sort Title override always wins and applies to every
+    // collection, including A-Z ones that the computed logic below skips.
+    const customSortTitle = matchingConfig
+      ? getCustomSortTitleOverride(matchingConfig)
+      : undefined;
+
+    if (customSortTitle) {
+      await plexClient.updateCollectionSortTitle(
+        collectionRatingKey,
+        customSortTitle,
+        options.existingTitleSort
+      );
+    } else if (
       effectiveSortOrderLibrary !== undefined &&
       matchingConfig?.everLibraryPromoted !== false
     ) {

@@ -430,6 +430,11 @@ components:
           type: boolean
           description: 'true = promoted section (uses exclamation marks), false = A-Z section'
           example: true
+        customSortTitle:
+          type: string
+          description: 'Manual Sort Title override. Always wins over the computed sortTitle, including for A-Z (non-promoted) collections. Empty string clears the override.'
+          example: ''
+          nullable: true
         randomizeHomeOrder:
           type: boolean
           description: 'If true, randomize position amongst other randomized items on home screen'
@@ -2064,6 +2069,11 @@ components:
           type: boolean
           description: 'true = promoted section (uses exclamation marks), false = A-Z section'
           example: true
+        customSortTitle:
+          type: string
+          description: 'Manual Sort Title override. Always wins over the computed sortTitle, including for A-Z (non-promoted) collections. Empty string clears the override.'
+          example: ''
+          nullable: true
         randomizeHomeOrder:
           type: boolean
           description: 'If true, randomize position amongst other randomized items on home screen'
@@ -3346,6 +3356,11 @@ components:
           description: 'Plex sortTitle field for alphabetical ordering'
           example: 'Action Movies'
           nullable: true
+        customSortTitle:
+          type: string
+          description: 'Manual Sort Title override. Always wins over the computed sortTitle, including for A-Z (non-promoted) collections. Empty string clears the override.'
+          example: ''
+          nullable: true
         randomizeHomeOrder:
           type: boolean
           description: 'If true, randomize position amongst other randomized items on home screen'
@@ -3602,6 +3617,11 @@ components:
           type: string
           description: 'Plex sortTitle field for alphabetical ordering'
           example: 'Action Movies'
+          nullable: true
+        customSortTitle:
+          type: string
+          description: 'Manual Sort Title override. Always wins over the computed sortTitle, including for A-Z (non-promoted) collections. Empty string clears the override.'
+          example: ''
           nullable: true
         randomizeHomeOrder:
           type: boolean

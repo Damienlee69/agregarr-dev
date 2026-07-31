@@ -39,6 +39,9 @@ export const saveIndividualConfigs = async (
         ...(preExistingConfig.titleSort && {
           titleSort: preExistingConfig.titleSort,
         }),
+        // Sent unconditionally (not gated on truthiness) so saving an empty
+        // string clears a previously-set override instead of being dropped.
+        customSortTitle: preExistingConfig.customSortTitle ?? '',
         ...(preExistingConfig.randomizeHomeOrder !== undefined && {
           randomizeHomeOrder: preExistingConfig.randomizeHomeOrder,
         }),
@@ -157,6 +160,9 @@ export const saveIndividualConfigs = async (
         ...(collectionConfig.sortOrderLibrary !== undefined && {
           sortOrderLibrary: collectionConfig.sortOrderLibrary,
         }),
+        // Sent unconditionally (not gated on truthiness) so saving an empty
+        // string clears a previously-set override instead of being dropped.
+        customSortTitle: collectionConfig.customSortTitle ?? '',
         ...(collectionConfig.collectionRatingKey && {
           collectionRatingKey: collectionConfig.collectionRatingKey,
         }),

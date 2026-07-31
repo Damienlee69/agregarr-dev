@@ -472,6 +472,9 @@ const AllCollectionsView: React.FC = () => {
         ...(preExistingConfig.titleSort && {
           titleSort: preExistingConfig.titleSort,
         }),
+        // Sent unconditionally so this view (which has no Sort Title field of
+        // its own) never silently wipes an override set from the Library tab.
+        customSortTitle: preExistingConfig.customSortTitle ?? '',
         ...(preExistingConfig.randomizeHomeOrder !== undefined && {
           randomizeHomeOrder: preExistingConfig.randomizeHomeOrder,
         }),
@@ -934,6 +937,7 @@ const AllCollectionsView: React.FC = () => {
           }
           allCollectionConfigs={collectionData?.collectionConfigs || []}
           allHubConfigs={hubConfigs || []}
+          allPreExistingConfigs={preExistingConfigs || []}
         />
       )}
 
@@ -970,6 +974,7 @@ const AllCollectionsView: React.FC = () => {
           }
           allCollectionConfigs={collectionData?.collectionConfigs || []}
           allHubConfigs={hubConfigs || []}
+          allPreExistingConfigs={preExistingConfigs || []}
         />
       )}
 
@@ -1006,6 +1011,7 @@ const AllCollectionsView: React.FC = () => {
           }
           allCollectionConfigs={collectionData?.collectionConfigs || []}
           allHubConfigs={hubConfigs || []}
+          allPreExistingConfigs={preExistingConfigs || []}
         />
       )}
 

@@ -405,6 +405,9 @@ const CollectionSettings = ({
           libraryName: config.libraryName,
           sortOrderHome: config.sortOrderHome,
           sortOrderLibrary: config.sortOrderLibrary,
+          // Sent unconditionally so saving an empty string clears a
+          // previously-set override instead of being dropped.
+          customSortTitle: config.customSortTitle ?? '',
           customDays: config.customDays,
           createPlaceholdersForMissing: config.createPlaceholdersForMissing,
           placeholderDaysAhead: config.placeholderDaysAhead,
@@ -959,6 +962,9 @@ const CollectionSettings = ({
         ...(preExistingConfig.titleSort && {
           titleSort: preExistingConfig.titleSort,
         }),
+        // Sent unconditionally (not gated on truthiness) so saving an empty
+        // string clears a previously-set override instead of being dropped.
+        customSortTitle: preExistingConfig.customSortTitle ?? '',
         ...(preExistingConfig.randomizeHomeOrder !== undefined && {
           randomizeHomeOrder: preExistingConfig.randomizeHomeOrder,
         }),
@@ -2363,8 +2369,10 @@ const CollectionSettings = ({
               saveCollectionConfigs,
             })
           }
+          activeTab={activeTab}
           allCollectionConfigs={localCollectionConfigs}
           allHubConfigs={localHubConfigs}
+          allPreExistingConfigs={localPreExistingConfigs}
         />
       )}
 
@@ -2397,8 +2405,10 @@ const CollectionSettings = ({
               saveCollectionConfigs,
             })
           }
+          activeTab={activeTab}
           allCollectionConfigs={localCollectionConfigs}
           allHubConfigs={localHubConfigs}
+          allPreExistingConfigs={localPreExistingConfigs}
         />
       )}
 
@@ -2409,8 +2419,10 @@ const CollectionSettings = ({
           onSave={savePreExistingConfig}
           onCancel={closePreExistingModal}
           libraries={libraries}
+          activeTab={activeTab}
           allCollectionConfigs={localCollectionConfigs}
           allHubConfigs={localHubConfigs}
+          allPreExistingConfigs={localPreExistingConfigs}
         />
       )}
 

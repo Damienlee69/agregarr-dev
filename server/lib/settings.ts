@@ -118,6 +118,7 @@ export interface CollectionConfig {
   readonly sortOrderHome?: number; // Order for Plex home screen (1+ for positioned items, 0 for void/unpositioned)
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
   readonly isLibraryPromoted?: boolean; // true = promoted section (uses exclamation marks), false = A-Z section (defaults to true for Agregarr collections)
+  readonly customSortTitle?: string; // Manual Sort Title override - always wins over the computed sortTitle, including for A-Z (non-promoted) collections
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly isLinked?: boolean; // True if collection is actively linked to other collections
   readonly linkId?: number; // Group ID for linked collections (preserved even when isLinked=false)
@@ -426,6 +427,7 @@ export interface PreExistingCollectionConfig {
   sortOrderHome: number; // Position on Plex home screen (1+ for positioned items, 0 for void)
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
   isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  customSortTitle?: string; // Manual Sort Title override - always wins over the computed sortTitle, including for A-Z (non-promoted) collections
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;

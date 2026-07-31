@@ -5,6 +5,7 @@ import {
   extractErrorMessage,
   findPlexItemsByTmdbIds,
   getCollectionMediaType,
+  getCustomSortTitleOverride,
   type LibraryItemsCache,
 } from '@server/lib/collections/core/CollectionUtilities';
 import type {
@@ -942,6 +943,17 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     const sortOrderLibrary = config.sortOrderLibrary;
     const isLibraryPromoted = config.isLibraryPromoted;
 
+    // A manual Sort Title override always wins and applies to every
+    // collection, including A-Z ones that the computed logic below skips.
+    const customSortTitle = getCustomSortTitleOverride(config);
+    if (customSortTitle) {
+      await plexClient.updateCollectionSortTitle(
+        collectionRatingKey,
+        customSortTitle
+      );
+      return;
+    }
+
     if (sortOrderLibrary === undefined) {
       return; // No sort order configured
     }
@@ -1343,11 +1355,21 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       // Apply metadata to smart collection (sort title, visibility, poster)
       // Replicate what updateCollectionMetadata does in BaseCollectionSync
       if (smartCollectionRatingKey) {
+        // A manual Sort Title override always wins and applies to every
+        // collection, including A-Z ones that the computed logic below skips.
+        const customSortTitle = getCustomSortTitleOverride(config);
+        if (customSortTitle) {
+          await plexClient.updateCollectionSortTitle(
+            smartCollectionRatingKey,
+            customSortTitle
+          );
+        }
+
         // Calculate and apply sort title (handles promotion with exclamation marks)
         const sortOrderLibrary = config.sortOrderLibrary;
         const isLibraryPromoted = config.isLibraryPromoted;
 
-        if (sortOrderLibrary !== undefined) {
+        if (!customSortTitle && sortOrderLibrary !== undefined) {
           let sortTitle: string;
 
           // Treat sortOrderLibrary > 0 as promoted even if isLibraryPromoted is undefined

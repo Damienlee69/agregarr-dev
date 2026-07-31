@@ -2,6 +2,7 @@ import type PlexAPI from '@server/api/plexapi';
 import {
   buildPromotedSortTitle,
   extractErrorMessage,
+  getCustomSortTitleOverride,
 } from '@server/lib/collections/core/CollectionUtilities';
 import { TimeRestrictionUtils } from '@server/lib/collections/utils/TimeRestrictionUtils';
 import type { CollectionItemWithPoster } from '@server/lib/posterGeneration';
@@ -1663,6 +1664,31 @@ export class HubSyncService {
 
         // Skip configs without rating keys
         if (!config.collectionRatingKey) {
+          continue;
+        }
+
+        // A manual Sort Title override always wins and applies to every
+        // collection, including A-Z ones that the computed logic below skips.
+        const customSortTitle = getCustomSortTitleOverride(config);
+        if (customSortTitle) {
+          try {
+            await plexClient.updateCollectionSortTitle(
+              config.collectionRatingKey,
+              customSortTitle
+            );
+          } catch (error) {
+            logger.error(
+              `Failed to update custom sortTitle for pre-existing collection ${
+                config.name
+              }: ${extractErrorMessage(error)}`,
+              {
+                label: 'Hub Sync Service',
+                collectionId: config.id,
+                collectionName: config.name,
+                collectionRatingKey: config.collectionRatingKey,
+              }
+            );
+          }
           continue;
         }
 

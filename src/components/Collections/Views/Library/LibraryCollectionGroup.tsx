@@ -789,9 +789,11 @@ const LibraryCollectionGroup = ({
       });
 
       if (oldIndex !== -1 && newIndex !== -1) {
+        const draggedConfig = allConfigs[oldIndex].config;
+        const draggedType = allConfigs[oldIndex].type;
+
         // On Library tab, prevent dragging between promoted and A-Z sections
         if (activeTab === 'library' && shouldShowDivider) {
-          const draggedConfig = allConfigs[oldIndex].config;
           const targetConfig = allConfigs[newIndex].config;
           const draggedIsPromoted = isLibraryPromoted(draggedConfig);
           const targetIsPromoted = isLibraryPromoted(targetConfig);
@@ -810,17 +812,34 @@ const LibraryCollectionGroup = ({
           sortOrder: number;
         }[];
 
+        // Dragging a collection to a new Library position means the user
+        // wants explicit drag-based ordering, so a manual Sort Title
+        // override on the dragged item (which would otherwise fight the
+        // drag by repositioning it via title on the next sync) is cleared.
+        const draggedHadCustomSortTitle =
+          activeTab === 'library' &&
+          Boolean(
+            (draggedConfig as { customSortTitle?: string }).customSortTitle
+          );
+
         // TRUE unified approach: send entire mixed list with positions
-        const mixedItems = newAllConfigs.map(({ config, type }, index) => ({
-          ...config,
-          configType:
-            type === 'collection'
-              ? ('collection' as FormConfigType)
-              : type === 'hub'
-              ? ('hub' as FormConfigType)
-              : ('preExisting' as FormConfigType),
-          position: index,
-        }));
+        const mixedItems = newAllConfigs.map(({ config, type }, index) => {
+          const isDraggedItem =
+            config.id === draggedConfig.id && type === draggedType;
+
+          return {
+            ...config,
+            ...(isDraggedItem &&
+              draggedHadCustomSortTitle && { customSortTitle: '' }),
+            configType:
+              type === 'collection'
+                ? ('collection' as FormConfigType)
+                : type === 'hub'
+                ? ('hub' as FormConfigType)
+                : ('preExisting' as FormConfigType),
+            position: index,
+          };
+        });
 
         // Single API call for entire mixed list
         await onReorderItems(library.key, mixedItems, 'Mixed collections');

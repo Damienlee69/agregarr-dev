@@ -106,6 +106,7 @@ export interface PreExistingCollectionConfig {
   sortOrderHome: number; // Position on Plex home screen
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
   isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  customSortTitle?: string; // Manual Sort Title override - always wins over the computed sortTitle, including for A-Z (non-promoted) collections
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;
@@ -230,6 +231,7 @@ export interface CollectionFormConfig {
   readonly sortOrderHome?: number; // Order for Plex home screen (creation time based)
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
   readonly isLibraryPromoted?: boolean; // true = promoted section (uses exclamation marks), false = A-Z section (defaults to true for Agregarr collections)
+  readonly customSortTitle?: string; // Manual Sort Title override - always wins over the computed sortTitle, including for A-Z (non-promoted) collections
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly collectionRatingKey?: string; // Plex collection rating key for single-collection configs
   readonly collectionRatingKeys?: string[]; // Plex rating keys for multi-collection configs (e.g. seerr/users) — populated during sync
@@ -934,9 +936,13 @@ export interface CollectionConfigFormProps {
   ) => void;
   isEditing?: boolean;
   libraries: Library[];
-  // Additional data needed for link/unlink detection
+  // Which list view this form was opened from — drives Sort Title field
+  // visibility (hidden when omitted, e.g. from the All Collections view)
+  activeTab?: 'home' | 'recommended' | 'library';
+  // Additional data needed for link/unlink detection and Sort Title defaults
   allCollectionConfigs?: CollectionFormConfig[];
   allHubConfigs?: PlexHubConfig[];
+  allPreExistingConfigs?: PreExistingCollectionConfig[];
 }
 
 export interface CollectionSettingsProps {

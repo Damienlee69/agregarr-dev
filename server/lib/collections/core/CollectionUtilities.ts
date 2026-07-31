@@ -57,6 +57,20 @@ export function extractErrorMessage(error: unknown): string {
 }
 
 /**
+ * A manual Sort Title override always wins over Agregarr's computed
+ * (exclamation-mark) sortTitle, and applies even to collections the computed
+ * logic would otherwise skip - e.g. never-promoted A-Z collections. Returns
+ * undefined when no override is set, so callers can fall through to the
+ * computed sortTitle logic unchanged.
+ */
+export function getCustomSortTitleOverride(config: {
+  customSortTitle?: string;
+}): string | undefined {
+  const trimmed = config.customSortTitle?.trim();
+  return trimmed || undefined;
+}
+
+/**
  * Create URL-encoded form data from object
  */
 export function createFormData(
