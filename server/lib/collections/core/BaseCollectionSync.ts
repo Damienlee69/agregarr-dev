@@ -216,6 +216,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     let updated = 0;
     let mutated = false;
     let warning: string | undefined;
+    let error: string | undefined;
     const errors: CollectionSyncError[] = [];
 
     // Filter configs for this source
@@ -318,9 +319,17 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
           created += result.created;
           updated += result.updated;
 
-          // Callers pass single-config arrays, so the last warning wins
+          // Callers pass single-config arrays, so the last warning/error wins
           if (result.warning) {
             warning = result.warning;
+          }
+          // processConfiguration can report a failure by returning `error`
+          // instead of throwing (e.g. processWithMediaTypeStrategy's internal
+          // catch). Without forwarding it here, callers only ever see
+          // `warning`, so the config gets marked synced despite failing and
+          // is silently skipped on every future sync.
+          if (result.error) {
+            error = result.error;
           }
 
           // Apply overlays if enabled for this collection
@@ -418,6 +427,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         updated,
         mutated: mutated || created > 0,
         ...(warning && { warning }),
+        ...(error && { error }),
         details: {
           processingTime: Date.now() - startTime,
           errors: errors.length,
