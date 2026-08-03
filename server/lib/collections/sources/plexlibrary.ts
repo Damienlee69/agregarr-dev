@@ -10,6 +10,7 @@ import PlexAPI from '@server/api/plexapi';
 import TheMovieDb from '@server/api/themoviedb';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
+  buildPromotedSortTitle,
   extractTmdbIdFromGuids,
   extractTvdbIdFromGuids,
   getAdminUser,
@@ -31,11 +32,7 @@ import type {
   SyncResult,
 } from '@server/lib/collections/core/types';
 import { CollectionSyncErrorType } from '@server/lib/collections/core/types';
-import {
-  getSettings,
-  getTmdbLanguage,
-  type CollectionConfig,
-} from '@server/lib/settings';
+import { getTmdbLanguage, type CollectionConfig } from '@server/lib/settings';
 import logger from '@server/logger';
 
 type PersonTmdbInfo = {
@@ -109,34 +106,14 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
     config: CollectionConfig,
     baseTitle: string
   ): string {
-    const settings = getSettings();
     const sortOrderLibrary = config.sortOrderLibrary;
     const isPromoted = config.isLibraryPromoted;
 
     if (sortOrderLibrary !== undefined && isPromoted) {
-      const allConfigs = settings.plex.collectionConfigs || [];
-      const promotedConfigs = allConfigs.filter(
-        (c) =>
-          c.libraryId === config.libraryId &&
-          c.sortOrderLibrary !== undefined &&
-          c.isLibraryPromoted === true
-      );
-
-      const maxSortOrder =
-        promotedConfigs.length > 0
-          ? Math.max(
-              ...promotedConfigs
-                .map((c) => c.sortOrderLibrary)
-                .filter((v): v is number => v !== undefined)
-            )
-          : 0;
-
-      const exclamationCount = maxSortOrder
-        ? maxSortOrder - sortOrderLibrary + 2
-        : 2;
-      // Add a digit after the prefix so it sorts before alpha titles but after plain '!'
-      const prefix = '!'.repeat(Math.max(1, exclamationCount));
-      return `${prefix}0${baseTitle}`;
+      // Positional sortTitle (see buildPromotedSortTitle). The leading '0'
+      // on baseTitle is preserved from the original scheme so a separator
+      // stays ahead of alpha names in the same A-Z bucket if ever demoted.
+      return buildPromotedSortTitle(`0${baseTitle}`, sortOrderLibrary);
     }
 
     // Non-promoted: use a digit so it stays ahead of alpha names in A-Z buckets
