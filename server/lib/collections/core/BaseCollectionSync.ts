@@ -22,6 +22,7 @@ import logger from '@server/logger';
 import path from 'path';
 import {
   applyCollectionExclusions,
+  buildPromotedSortTitle,
   clearConfigRatingKey,
   createCollectionLabel,
   createSyncError,
@@ -2237,29 +2238,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       const updateConfig: Partial<CollectionConfig> = {};
 
       if (isLibraryPromoted && sortOrderLibrary > 0) {
-        // Promoted: Set exclamation marks
-        const sameLibraryConfigs = allConfigs.filter((config) => {
-          const configLibraryId = Array.isArray(config.libraryId)
-            ? config.libraryId[0]
-            : config.libraryId;
-          return (
-            configLibraryId === options.libraryKey &&
-            config.sortOrderLibrary !== undefined &&
-            config.isLibraryPromoted === true
-          );
-        });
-
-        if (sameLibraryConfigs.length > 0) {
-          const sortOrders = sameLibraryConfigs
-            .map((c) => c.sortOrderLibrary)
-            .filter((order): order is number => order !== undefined);
-          const maxSortOrder = Math.max(...sortOrders);
-          const exclamationCount = maxSortOrder - sortOrderLibrary + 2;
-          const exclamationPrefix = '!'.repeat(exclamationCount);
-          sortTitle = `${exclamationPrefix}${collectionName}`;
-        } else {
-          sortTitle = `!!${collectionName}`;
-        }
+        // Promoted: positional sortTitle (see buildPromotedSortTitle)
+        sortTitle = buildPromotedSortTitle(collectionName, sortOrderLibrary);
       } else {
         // Demoted: Reset to natural title and mark as cleaned
         sortTitle = collectionName;

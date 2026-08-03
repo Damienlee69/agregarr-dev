@@ -312,6 +312,45 @@ export function getCollectionMediaType(
   return getMediaTypeFromLibrary(config.libraryId);
 }
 
+/**
+ * Width of the zero-padded rank in a promoted collection's sortTitle.
+ * Fixed and generous rather than derived from the current library's size,
+ * so a collection's own sortTitle never has to change just because some
+ * other collection was added, removed, or reordered elsewhere in the
+ * library. 5 digits (up to 99,999) comfortably covers any realistic
+ * promoted-collection count with plenty of room to spare.
+ */
+export const PROMOTED_SORT_TITLE_RANK_WIDTH = 5;
+
+/**
+ * Build the sortTitle Plex uses to place a promoted collection at its exact
+ * intended position in a library's Collections/Library tab.
+ *
+ * Positional encoding (the same convention Kometa's own collection sorting
+ * uses): a fixed-width, zero-padded rank number sorts collections in
+ * ascending order exactly the way ascending sortOrderLibrary values already
+ * do, so a lower sortOrderLibrary always sorts earlier. Unlike an
+ * exclamation-mark count - which has to be computed relative to the
+ * highest sortOrderLibrary among every other promoted collection in the
+ * library, and therefore changes for everyone whenever anything is added,
+ * removed, or reordered - a rank number is entirely self-contained: it
+ * only depends on this collection's own position, never on any other
+ * collection's.
+ *
+ * The leading '!' guarantees every promoted collection sorts before any
+ * A-Z (non-promoted) collection, whose title carries no such prefix.
+ */
+export function buildPromotedSortTitle(
+  name: string,
+  sortOrderLibrary: number
+): string {
+  const rank = String(Math.max(0, sortOrderLibrary)).padStart(
+    PROMOTED_SORT_TITLE_RANK_WIDTH,
+    '0'
+  );
+  return `!${rank}_${name}`;
+}
+
 // Simple utility functions - replaces over-engineered CollectionSyncUtils class
 
 /**

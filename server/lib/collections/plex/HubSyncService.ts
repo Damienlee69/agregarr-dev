@@ -1,5 +1,8 @@
 import type PlexAPI from '@server/api/plexapi';
-import { extractErrorMessage } from '@server/lib/collections/core/CollectionUtilities';
+import {
+  buildPromotedSortTitle,
+  extractErrorMessage,
+} from '@server/lib/collections/core/CollectionUtilities';
 import { TimeRestrictionUtils } from '@server/lib/collections/utils/TimeRestrictionUtils';
 import type { CollectionItemWithPoster } from '@server/lib/posterGeneration';
 import type {
@@ -1673,35 +1676,11 @@ export class HubSyncService {
         const updateConfig: Partial<PreExistingCollectionConfig> = {};
 
         if (config.isLibraryPromoted && config.sortOrderLibrary > 0) {
-          // Promoted: Set exclamation marks
-          const sameLibraryPreExisting = preExistingConfigs.filter(
-            (c) =>
-              c.libraryId === config.libraryId &&
-              c.sortOrderLibrary !== undefined &&
-              c.isLibraryPromoted === true
+          // Promoted: positional sortTitle (see buildPromotedSortTitle)
+          sortTitle = buildPromotedSortTitle(
+            config.name,
+            config.sortOrderLibrary
           );
-
-          const collectionConfigs = settings.plex.collectionConfigs || [];
-          const sameLibraryCollections = collectionConfigs.filter(
-            (c) =>
-              c.libraryId === config.libraryId &&
-              c.sortOrderLibrary !== undefined &&
-              c.isLibraryPromoted === true
-          );
-
-          const combinedSortOrders = [
-            ...sameLibraryPreExisting.map((c) => c.sortOrderLibrary),
-            ...sameLibraryCollections.map((c) => c.sortOrderLibrary),
-          ].filter((order): order is number => order !== undefined);
-
-          if (combinedSortOrders.length > 0) {
-            const maxSortOrder = Math.max(...combinedSortOrders);
-            const exclamationCount = maxSortOrder - config.sortOrderLibrary + 2;
-            const exclamationPrefix = '!'.repeat(exclamationCount);
-            sortTitle = `${exclamationPrefix}${config.name}`;
-          } else {
-            sortTitle = `!!${config.name}`;
-          }
         } else {
           // Demoted: Reset to natural title and mark as cleaned
           sortTitle = config.name;

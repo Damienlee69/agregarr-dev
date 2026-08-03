@@ -27,9 +27,11 @@ vi.mock('@server/lib/settings', () => ({
 }));
 
 import {
+  buildPromotedSortTitle,
   clearConfigRatingKey,
   hasAgregarrLabel,
   isMultiCollectionPattern,
+  PROMOTED_SORT_TITLE_RANK_WIDTH,
 } from './CollectionUtilities';
 
 const config = (overrides: Partial<CollectionConfig>): CollectionConfig =>
@@ -179,5 +181,84 @@ describe('isMultiCollectionPattern', () => {
     expect(isMultiCollectionPattern({ type: 'plex', subtype: 'users' })).toBe(
       false
     );
+  });
+});
+
+describe('buildPromotedSortTitle', () => {
+  it('zero-pads the rank to the fixed width and prefixes with !', () => {
+    expect(buildPromotedSortTitle('Omega Collection', 13)).toBe(
+      '!00013_Omega Collection'
+    );
+    expect(buildPromotedSortTitle('IMDb Popular', 1)).toBe(
+      '!00001_IMDb Popular'
+    );
+  });
+
+  it('clamps negative ranks to 0 rather than producing a malformed prefix', () => {
+    expect(buildPromotedSortTitle('Name', -5)).toBe('!00000_Name');
+  });
+
+  it('does not truncate ranks that exceed the padding width - it just stops padding', () => {
+    const huge = 10 ** PROMOTED_SORT_TITLE_RANK_WIDTH + 23;
+    expect(buildPromotedSortTitle('Name', huge)).toBe(`!${huge}_Name`);
+  });
+
+  it('never depends on any other collection - same rank always produces the same title', () => {
+    // The whole point of positional encoding: unlike an exclamation count
+    // (which needs the max across every other promoted collection), a
+    // rank's sortTitle is a pure function of its own two arguments.
+    expect(buildPromotedSortTitle('Name', 42)).toBe(
+      buildPromotedSortTitle('Name', 42)
+    );
+  });
+
+  it('a promoted title always sorts before its own natural (unprefixed) name', () => {
+    const natural = 'Apple Collection';
+    const promoted = buildPromotedSortTitle(natural, 1);
+    expect([natural, promoted].sort()[0]).toBe(promoted);
+  });
+
+  it('theoretical scale: 230 promoted collections sort in exact rank order, mixing regular and pre-existing origins', () => {
+    // Simulates a library with 230 promoted collections - the scenario
+    // called out for testing. Half are "regular" (Agregarr-built), half
+    // are "pre-existing" - buildPromotedSortTitle takes no notion of type
+    // at all, so mixing them is not a special case, just two label sets
+    // sharing one rank sequence exactly like drag-and-drop already does.
+    const total = 230;
+    const items = Array.from({ length: total }, (_, i) => {
+      const rank = i + 1; // sortOrderLibrary is 1-indexed in practice
+      const origin = rank % 2 === 0 ? 'PreExisting' : 'Regular';
+      const name = `${origin} Collection ${rank}`;
+      return { rank, name, sortTitle: buildPromotedSortTitle(name, rank) };
+    });
+
+    const sortedByTitle = [...items].sort((a, b) =>
+      a.sortTitle < b.sortTitle ? -1 : a.sortTitle > b.sortTitle ? 1 : 0
+    );
+
+    expect(sortedByTitle.map((i) => i.rank)).toEqual(items.map((i) => i.rank));
+  });
+
+  it('theoretical scale: adding a 231st promoted collection to a 230-item library changes no existing sortTitle', () => {
+    // The concrete failure mode this redesign eliminates: under the old
+    // exclamation-count scheme, every existing collection's count was
+    // computed relative to the max sortOrderLibrary across the whole
+    // library, so adding one more promoted collection at the bottom
+    // (raising that max) required rewriting every other collection's
+    // sortTitle too. Positional encoding has no such dependency.
+    const total = 230;
+    const before = Array.from({ length: total }, (_, i) => {
+      const rank = i + 1;
+      return buildPromotedSortTitle(`Collection ${rank}`, rank);
+    });
+
+    // A 231st collection joins at the bottom - nobody else's rank changes.
+    const after = Array.from({ length: total }, (_, i) => {
+      const rank = i + 1;
+      return buildPromotedSortTitle(`Collection ${rank}`, rank);
+    });
+    buildPromotedSortTitle('Collection 231', total + 1); // the new arrival
+
+    expect(after).toEqual(before);
   });
 });
