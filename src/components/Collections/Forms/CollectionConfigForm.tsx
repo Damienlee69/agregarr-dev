@@ -295,30 +295,32 @@ const messages = defineMessages({
 // to reconstruct a promoted collection's sort title.
 type SortTitleConfigLike = {
   name?: string;
-  libraryId?: string | string[];
   sortOrderLibrary?: number;
   isLibraryPromoted?: boolean;
 };
 
+// Must match PROMOTED_SORT_TITLE_RANK_WIDTH in
+// server/lib/collections/core/CollectionUtilities.ts - this file mirrors the
+// server's positional encoding without importing server code across the
+// client/server bundle boundary.
+const PROMOTED_SORT_TITLE_RANK_WIDTH = 5;
+
 /**
  * The sort title Agregarr would assign this collection for its CURRENT
- * position, independent of any manual override. Mirrors the server's sync
- * logic: promoted collections get an exclamation-mark prefix (more marks =
- * higher up), A-Z collections keep their natural name. Used to pre-fill the
- * Sort Title field so the user sees the real value, and to tell an unchanged
- * value apart from a real override on save.
+ * position, independent of any manual override. Mirrors the server's
+ * positional encoding (buildPromotedSortTitle): a promoted collection's
+ * title is a fixed-width, zero-padded rank number built purely from its own
+ * sortOrderLibrary — no other collection's position is needed, unlike the
+ * old exclamation-count scheme this replaced. A-Z collections keep their
+ * natural name. Used to pre-fill the Sort Title field so the user sees the
+ * real value, and to tell an unchanged value apart from a real override on
+ * save.
  */
-function computeAgregarrSortTitle(
-  target: SortTitleConfigLike,
-  all: readonly SortTitleConfigLike[] | undefined
-): string {
+function computeAgregarrSortTitle(target: SortTitleConfigLike): string {
   const name = target.name || '';
-  const targetLibraryId = Array.isArray(target.libraryId)
-    ? target.libraryId[0]
-    : target.libraryId;
   const sortOrderLibrary = target.sortOrderLibrary;
 
-  // A-Z section (or not yet positioned): natural name, no exclamation marks
+  // A-Z section (or not yet positioned): natural name, no rank prefix
   if (
     target.isLibraryPromoted !== true ||
     sortOrderLibrary === undefined ||
@@ -327,26 +329,11 @@ function computeAgregarrSortTitle(
     return name;
   }
 
-  const sameLibraryPromoted = (all || []).filter((c) => {
-    const cLibraryId = Array.isArray(c.libraryId)
-      ? c.libraryId[0]
-      : c.libraryId;
-    return (
-      cLibraryId === targetLibraryId &&
-      c.isLibraryPromoted === true &&
-      c.sortOrderLibrary !== undefined
-    );
-  });
-
-  // Seed the max with the target's own position so it is always >= it — even
-  // if the passed list does not contain the target — keeping the count >= 2
-  // and non-negative (String.prototype.repeat throws on a negative count).
-  const sortOrders = sameLibraryPromoted.map(
-    (c) => c.sortOrderLibrary as number
+  const rank = String(Math.max(0, sortOrderLibrary)).padStart(
+    PROMOTED_SORT_TITLE_RANK_WIDTH,
+    '0'
   );
-  const maxSortOrder = Math.max(sortOrderLibrary, ...sortOrders);
-  const exclamationCount = Math.max(0, maxSortOrder - sortOrderLibrary + 2);
-  return `${'!'.repeat(exclamationCount)}${name}`;
+  return `!${rank}_${name}`;
 }
 
 const CollectionFormConfigForm = ({
@@ -359,7 +346,6 @@ const CollectionFormConfigForm = ({
   activeTab,
   allCollectionConfigs,
   allHubConfigs,
-  allPreExistingConfigs,
 }: CollectionConfigFormProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
@@ -1069,20 +1055,13 @@ const CollectionFormConfigForm = ({
   // Agregarr's default sort title for this collection's current position. Used
   // to pre-fill the (editable) Sort Title field and to tell an untouched
   // default apart from a real manual override on save. Applies to Agregarr and
-  // pre-existing collections (not default Plex hubs).
-  const agregarrSortTitle = isCollection
-    ? computeAgregarrSortTitle(
-        config as CollectionFormConfig,
-        allCollectionConfigs
-      )
-    : isPreExisting
-    ? // Pre-existing sort titles are ranked against pre-existing AND collection
-      // configs together (matching the server), so use the combined peer set.
-      computeAgregarrSortTitle(config as CollectionFormConfig, [
-        ...(allCollectionConfigs ?? []),
-        ...(allPreExistingConfigs ?? []),
-      ])
-    : '';
+  // pre-existing collections (not default Plex hubs). Positional encoding
+  // needs only this collection's own sortOrderLibrary, so collection and
+  // pre-existing configs are computed identically — no peer list required.
+  const agregarrSortTitle =
+    isCollection || isPreExisting
+      ? computeAgregarrSortTitle(config as CollectionFormConfig)
+      : '';
 
   // Sort Title follows the same availability as drag-and-drop: shown in the
   // Library, Home, and Recommended tabs, but hidden for Recommended items whose

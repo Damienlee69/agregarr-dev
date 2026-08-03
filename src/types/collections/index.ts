@@ -939,10 +939,9 @@ export interface CollectionConfigFormProps {
   // Which list view this form was opened from — drives Sort Title field
   // visibility (hidden when omitted, e.g. from the All Collections view)
   activeTab?: 'home' | 'recommended' | 'library';
-  // Additional data needed for link/unlink detection and Sort Title defaults
+  // Additional data needed for link/unlink detection
   allCollectionConfigs?: CollectionFormConfig[];
   allHubConfigs?: PlexHubConfig[];
-  allPreExistingConfigs?: PreExistingCollectionConfig[];
 }
 
 export interface CollectionSettingsProps {

@@ -937,7 +937,6 @@ const AllCollectionsView: React.FC = () => {
           }
           allCollectionConfigs={collectionData?.collectionConfigs || []}
           allHubConfigs={hubConfigs || []}
-          allPreExistingConfigs={preExistingConfigs || []}
         />
       )}
 
@@ -974,7 +973,6 @@ const AllCollectionsView: React.FC = () => {
           }
           allCollectionConfigs={collectionData?.collectionConfigs || []}
           allHubConfigs={hubConfigs || []}
-          allPreExistingConfigs={preExistingConfigs || []}
         />
       )}
 
@@ -1011,7 +1009,6 @@ const AllCollectionsView: React.FC = () => {
           }
           allCollectionConfigs={collectionData?.collectionConfigs || []}
           allHubConfigs={hubConfigs || []}
-          allPreExistingConfigs={preExistingConfigs || []}
         />
       )}
 

@@ -2372,7 +2372,6 @@ const CollectionSettings = ({
           activeTab={activeTab}
           allCollectionConfigs={localCollectionConfigs}
           allHubConfigs={localHubConfigs}
-          allPreExistingConfigs={localPreExistingConfigs}
         />
       )}
 
@@ -2408,7 +2407,6 @@ const CollectionSettings = ({
           activeTab={activeTab}
           allCollectionConfigs={localCollectionConfigs}
           allHubConfigs={localHubConfigs}
-          allPreExistingConfigs={localPreExistingConfigs}
         />
       )}
 
@@ -2422,7 +2420,6 @@ const CollectionSettings = ({
           activeTab={activeTab}
           allCollectionConfigs={localCollectionConfigs}
           allHubConfigs={localHubConfigs}
-          allPreExistingConfigs={localPreExistingConfigs}
         />
       )}
 
