@@ -396,15 +396,21 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
               // Don't fail the sync if overlay application fails
             }
           }
-        } catch (error) {
+        } catch (configError) {
           const syncError = this.createSyncError(
             CollectionSyncErrorType.COLLECTION_ERROR,
             `Failed to process configuration ${config.name}`,
             { configId: config.id, configName: config.name },
-            error instanceof Error ? error : new Error(String(error))
+            configError instanceof Error
+              ? configError
+              : new Error(String(configError))
           );
 
           errors.push(syncError);
+          // A thrown error, same as a returned `.error`, must reach the
+          // final SyncResult or the caller marks the config synced despite
+          // this failure (see the `result.error` forwarding above).
+          error = syncError.message;
 
           if (options?.onError) {
             options.onError(syncError);
