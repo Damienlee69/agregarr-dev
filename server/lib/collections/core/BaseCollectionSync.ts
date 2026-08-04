@@ -2216,30 +2216,41 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     }
 
     // Update sort title if needed - for Agregarr-created collections
-    // Find the config to check everLibraryPromoted status
+    // Find the config to check everLibraryPromoted status. Matched by id,
+    // not collectionRatingKey: multi-collection generators (Essentials,
+    // Directors/Actors, Franchise) never store an individual generated
+    // collection's key on the shared parent config, so a ratingKey-based
+    // lookup could never resolve for them - the override check below would
+    // silently never fire. Matching by id also means sortOrderLibrary and
+    // isLibraryPromoted get read fresh from settings at write time rather
+    // than trusting whatever `options` snapshot the caller captured earlier
+    // in a long-running sync, which can be stale by the time this specific
+    // collection's turn comes up.
     const settings = getSettings();
     const allConfigs = settings.plex.collectionConfigs || [];
-    const matchingConfig = allConfigs.find((config) => {
-      const configLibraryId = Array.isArray(config.libraryId)
-        ? config.libraryId[0]
-        : config.libraryId;
-      return (
-        configLibraryId === options.libraryKey &&
-        config.collectionRatingKey === collectionRatingKey
-      );
-    });
+    const matchingConfig = options.config?.id
+      ? allConfigs.find((config) => config.id === options.config?.id)
+      : undefined;
+
+    const effectiveSortOrderLibrary =
+      matchingConfig?.sortOrderLibrary ?? sortOrderLibrary;
+    const effectiveIsLibraryPromoted =
+      matchingConfig?.isLibraryPromoted ?? isLibraryPromoted;
 
     // Only update sortTitle if everLibraryPromoted is not explicitly false
     if (
-      sortOrderLibrary !== undefined &&
+      effectiveSortOrderLibrary !== undefined &&
       matchingConfig?.everLibraryPromoted !== false
     ) {
       let sortTitle: string;
       const updateConfig: Partial<CollectionConfig> = {};
 
-      if (isLibraryPromoted && sortOrderLibrary > 0) {
+      if (effectiveIsLibraryPromoted && effectiveSortOrderLibrary > 0) {
         // Promoted: positional sortTitle (see buildPromotedSortTitle)
-        sortTitle = buildPromotedSortTitle(collectionName, sortOrderLibrary);
+        sortTitle = buildPromotedSortTitle(
+          collectionName,
+          effectiveSortOrderLibrary
+        );
       } else {
         // Demoted: Reset to natural title and mark as cleaned
         sortTitle = collectionName;
