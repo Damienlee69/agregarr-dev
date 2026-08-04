@@ -3222,13 +3222,21 @@ const CollectionFormConfigForm = ({
                               </div>
                             </div>
 
-                            {/* Sort Title - manual Plex sort title override, single collections only */}
+                            {/* Sort Title - manual Plex sort title override, single collections only.
+                                Excludes every multi-collection generator (one config -> many
+                                Plex collections, all sharing one position): a single typed
+                                override can't sensibly describe collections that are each
+                                meant to have their own distinct name. */}
                             {showSortTitleField &&
                               !(
                                 (values.type === 'plex' &&
                                   (values.subtype === 'directors' ||
                                     values.subtype === 'actors' ||
-                                    values.subtype === 'separator')) ||
+                                    values.subtype === 'separator' ||
+                                    values.subtype === 'genre' ||
+                                    values.subtype === 'decade' ||
+                                    values.subtype === 'resolution' ||
+                                    values.subtype === 'contentRating')) ||
                                 (values.type === 'tmdb' &&
                                   values.subtype === 'auto_franchise') ||
                                 (values.type === 'overseerr' &&
