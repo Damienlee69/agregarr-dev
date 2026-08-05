@@ -419,6 +419,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
           logger.error(syncError.message, {
             label: `${this.source} Collections`,
             ...syncError.details,
+            originalError: syncError.originalError?.message,
+            stack: syncError.originalError?.stack,
           });
         }
       }
