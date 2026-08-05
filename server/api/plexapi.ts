@@ -3683,11 +3683,35 @@ class PlexAPI {
       };
     }>(`/library/sections/${libraryId}/${attribute}?type=${type}`);
 
-    const values = (response.MediaContainer?.Directory || []).map((d) => ({
+    const rawValues = (response.MediaContainer?.Directory || []).map((d) => ({
       key: d.key,
       title: d.title,
       fastKey: d.fastKey,
     }));
+
+    // Plex has been observed returning the same Directory entry twice for
+    // this endpoint (same key/title), which caused Essentials to create
+    // duplicate collections for a single attribute value. Dedupe by key
+    // since a library can never validly have two distinct genre/decade/
+    // resolution/contentRating entries sharing the same key.
+    const values = Array.from(
+      new Map(rawValues.map((v) => [v.key, v])).values()
+    );
+
+    if (values.length !== rawValues.length) {
+      logger.warn(
+        `Plex returned duplicate ${attribute} entries for library ${libraryId} - deduped ${
+          rawValues.length - values.length
+        } duplicate(s)`,
+        {
+          label: 'Plex API',
+          libraryId,
+          attribute,
+          rawCount: rawValues.length,
+          dedupedCount: values.length,
+        }
+      );
+    }
 
     logger.debug(
       `Found ${values.length} ${attribute} values in library ${libraryId}`,
