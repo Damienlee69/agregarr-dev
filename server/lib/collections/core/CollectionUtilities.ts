@@ -365,6 +365,31 @@ export function buildPromotedSortTitle(
   return `!${rank}_${name}`;
 }
 
+/**
+ * Inverse of buildPromotedSortTitle: recognizes when a Sort Title field
+ * submission is really a typed-in reposition request rather than a literal
+ * override. The Sort Title field is pre-filled with this collection's
+ * current computed value (e.g. "!00001_IMDb Popular"); if the user edits
+ * only the rank digits and leaves the name suffix matching this collection's
+ * actual name, they mean "move this to rank N" - the same intent as
+ * dragging it there - not "give this collection a custom literal title".
+ *
+ * Returns the parsed rank only when the name suffix matches exactly, so an
+ * unrelated literal override (which may happen to start with '!' and
+ * digits) is never misread as a reposition.
+ */
+export function parseTypedRepositionRank(
+  submittedSortTitle: string,
+  collectionName: string
+): number | undefined {
+  const match = /^!(\d+)_(.*)$/.exec(submittedSortTitle.trim());
+  if (!match) return undefined;
+  const [, rankDigits, nameSuffix] = match;
+  if (nameSuffix !== collectionName) return undefined;
+  const rank = parseInt(rankDigits, 10);
+  return Number.isFinite(rank) && rank > 0 ? rank : undefined;
+}
+
 // Simple utility functions - replaces over-engineered CollectionSyncUtils class
 
 /**

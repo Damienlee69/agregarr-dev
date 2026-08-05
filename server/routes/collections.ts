@@ -266,6 +266,84 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
 
     const existingConfig = configs[existingConfigIndex];
 
+    // Detect a typed-in reposition: the Sort Title field is pre-filled with
+    // this collection's current computed value (e.g. "!00001_Name"), so if
+    // the user edited only the rank digits and left the name suffix
+    // matching, they mean "move this to rank N" - the same intent as
+    // dragging it there - not "give this a literal custom title". This
+    // reorders every other promoted collection in the library to make room,
+    // the same way the drag-and-drop /reorder endpoint does, instead of
+    // storing the typed text as a literal sortTitle override.
+    let repositionTargetRank: number | undefined;
+    if (
+      typeof req.body.customSortTitle === 'string' &&
+      existingConfig.isLibraryPromoted === true
+    ) {
+      const { parseTypedRepositionRank } = await import(
+        '@server/lib/collections/core/CollectionUtilities'
+      );
+      const parsedRank = parseTypedRepositionRank(
+        req.body.customSortTitle,
+        existingConfig.name
+      );
+
+      if (
+        parsedRank !== undefined &&
+        parsedRank !== existingConfig.sortOrderLibrary
+      ) {
+        const targetLibraryId = Array.isArray(existingConfig.libraryId)
+          ? existingConfig.libraryId[0]
+          : existingConfig.libraryId;
+
+        const promotedPeers = configs
+          .filter(
+            (c) =>
+              c.id !== existingConfig.id &&
+              c.isLibraryPromoted === true &&
+              (Array.isArray(c.libraryId) ? c.libraryId[0] : c.libraryId) ===
+                targetLibraryId
+          )
+          .sort(
+            (a, b) => (a.sortOrderLibrary ?? 0) - (b.sortOrderLibrary ?? 0)
+          );
+
+        const insertAt = Math.max(
+          0,
+          Math.min(parsedRank - 1, promotedPeers.length)
+        );
+        promotedPeers.splice(insertAt, 0, existingConfig);
+
+        promotedPeers.forEach((peer, index) => {
+          const newRank = index + 1;
+          if (peer.id === existingConfig.id) {
+            repositionTargetRank = newRank;
+            return;
+          }
+          if (peer.sortOrderLibrary !== newRank) {
+            const peerIndex = configs.findIndex((c) => c.id === peer.id);
+            if (peerIndex !== -1) {
+              configs[peerIndex] = {
+                ...configs[peerIndex],
+                sortOrderLibrary: newRank,
+              };
+              settings.markCollectionModified(peer.id, 'collection');
+            }
+          }
+        });
+
+        logger.info(
+          `Typed Sort Title reposition: moving "${existingConfig.name}" to rank ${repositionTargetRank}`,
+          {
+            label: 'Collections API',
+            collectionId: existingConfig.id,
+            fromRank: existingConfig.sortOrderLibrary,
+            toRank: repositionTargetRank,
+            peersShifted: promotedPeers.length - 1,
+          }
+        );
+      }
+    }
+
     // Debug logging for person settings payload (directors/actors)
     if (
       req.body?.type === 'plex' &&
@@ -674,7 +752,7 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
       }
 
       // Merge settings while preserving computed fields and library-specific fields
-      const updatedConfig: CollectionConfig = {
+      let updatedConfig: CollectionConfig = {
         ...configToUpdate, // Preserve all existing fields including computed ones
         ...req.body, // Apply user changes
         name: processedName, // Use processed template name
@@ -713,6 +791,19 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
         lastSyncWarningAt: configToUpdate.lastSyncWarningAt, // Sync warning timestamp is per-library
         missing: configToUpdate.missing, // Missing status is per-library (can exist in one library but not another)
       };
+
+      // Apply the typed-in reposition computed above, for the specific
+      // config that was actually edited (not any other linked sibling).
+      if (
+        repositionTargetRank !== undefined &&
+        configToUpdate.id === existingConfig.id
+      ) {
+        updatedConfig = {
+          ...updatedConfig,
+          sortOrderLibrary: repositionTargetRank,
+          customSortTitle: '',
+        };
+      }
 
       // Handle firstSyncAt for custom sync schedules
       if (updatedConfig.customSyncSchedule?.enabled) {
@@ -1935,6 +2026,29 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
       });
     }
 
+    // Guard against this same collection already being synced by its own
+    // scheduled job (IndividualCollectionScheduler) - without this, a
+    // manual trigger landing near a scheduled run has no mutual exclusion
+    // and both execute concurrently against the same Plex collection(s).
+    const { IndividualCollectionScheduler } = await import(
+      '@server/lib/collections/services/IndividualCollectionScheduler'
+    );
+    if (IndividualCollectionScheduler.isCollectionSyncing(id)) {
+      logger.warn(
+        'Manual individual sync blocked - this collection is already being synced',
+        {
+          label: 'Individual Collection Sync',
+          collectionId: id,
+          collectionName: collectionConfig.name,
+        }
+      );
+      return res.status(409).json({
+        status: 'error',
+        message: `"${collectionConfig.name}" is already being synced. Please wait for it to complete.`,
+      });
+    }
+    IndividualCollectionScheduler.markCollectionSyncStart(id);
+
     logger.info(
       `Starting manual sync for collection: ${collectionConfig.name}`,
       {
@@ -1956,6 +2070,7 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
     const admin = await getAdminUser();
 
     if (!admin) {
+      IndividualCollectionScheduler.markCollectionSyncEnd(id);
       return res.status(500).json({
         status: 'error',
         message: 'Admin user not found',
@@ -2136,6 +2251,8 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
         settings.setCollectionSyncError(id, errorMessage);
         settings.save();
         throw error;
+      } finally {
+        IndividualCollectionScheduler.markCollectionSyncEnd(id);
       }
     })();
 
@@ -2155,6 +2272,17 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
     });
   } catch (error) {
     logger.error('Error starting individual collection sync:', error);
+
+    // Defensive: release the guard if something threw between acquiring it
+    // and syncPromise's own finally taking over responsibility for it. A
+    // stuck guard here would permanently block manual sync for this
+    // collection until server restart.
+    if (req.params.id) {
+      const { IndividualCollectionScheduler } = await import(
+        '@server/lib/collections/services/IndividualCollectionScheduler'
+      );
+      IndividualCollectionScheduler.markCollectionSyncEnd(req.params.id);
+    }
 
     return res.status(500).json({
       status: 'error',

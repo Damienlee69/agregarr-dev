@@ -31,6 +31,7 @@ import {
   clearConfigRatingKey,
   hasAgregarrLabel,
   isMultiCollectionPattern,
+  parseTypedRepositionRank,
   PROMOTED_SORT_TITLE_RANK_WIDTH,
 } from './CollectionUtilities';
 
@@ -260,5 +261,57 @@ describe('buildPromotedSortTitle', () => {
     buildPromotedSortTitle('Collection 231', total + 1); // the new arrival
 
     expect(after).toEqual(before);
+  });
+});
+
+describe('parseTypedRepositionRank', () => {
+  it('parses a rank out of exactly what buildPromotedSortTitle would produce for that collection', () => {
+    const name = 'IMDb Popular';
+    const sortTitle = buildPromotedSortTitle(name, 19);
+    expect(parseTypedRepositionRank(sortTitle, name)).toBe(19);
+  });
+
+  it('is not fooled by leading zeros - "000019" parses the same as "00019"', () => {
+    expect(parseTypedRepositionRank('!000019_Name', 'Name')).toBe(19);
+  });
+
+  it('trims surrounding whitespace before parsing', () => {
+    expect(parseTypedRepositionRank('  !00019_Name  ', 'Name')).toBe(19);
+  });
+
+  it('returns undefined when the name suffix does not match this collection - a literal override, not a reposition', () => {
+    expect(
+      parseTypedRepositionRank('!00019_Some Other Name', 'IMDb Popular')
+    ).toBeUndefined();
+  });
+
+  it('returns undefined for arbitrary literal overrides that do not follow the rank format', () => {
+    expect(
+      parseTypedRepositionRank('0Force This First', 'IMDb Popular')
+    ).toBeUndefined();
+    expect(parseTypedRepositionRank('', 'IMDb Popular')).toBeUndefined();
+    expect(
+      parseTypedRepositionRank('IMDb Popular', 'IMDb Popular')
+    ).toBeUndefined();
+  });
+
+  it('rejects a rank of 0 - ranks are 1-indexed, and 0 has no valid target position', () => {
+    expect(parseTypedRepositionRank('!00000_Name', 'Name')).toBeUndefined();
+  });
+
+  it('rejects a negative-looking rank - the leading "-" breaks the digit-only match', () => {
+    expect(parseTypedRepositionRank('!-5_Name', 'Name')).toBeUndefined();
+  });
+
+  it('requires the underscore separator - digits butted against the name are not a match', () => {
+    expect(parseTypedRepositionRank('!00019Name', 'Name')).toBeUndefined();
+  });
+
+  it('is the exact inverse of buildPromotedSortTitle across a range of ranks', () => {
+    const name = 'Some Collection';
+    for (const rank of [1, 2, 5, 19, 100, 99999]) {
+      const sortTitle = buildPromotedSortTitle(name, rank);
+      expect(parseTypedRepositionRank(sortTitle, name)).toBe(rank);
+    }
   });
 });
