@@ -57,6 +57,26 @@ export class IndividualCollectionScheduler {
   private static libraryQueues: Map<string, LibraryQueue> = new Map();
   private static fullSyncRunning = false;
   private static apiQueues: Map<string, ApiQueue> = new Map();
+  // Tracks collection IDs currently being individually synced, whether
+  // triggered by this scheduler's own cron queue or by a manual API call
+  // (see collectionsRoutes POST /:id/sync). Without this, a collection's
+  // own scheduled sync and a manual trigger can land within seconds of
+  // each other with no mutual exclusion, racing on the same Plex writes -
+  // for Essentials-style multi-collection configs this produced duplicate
+  // Plex collections since sub-collections aren't tracked by ratingKey.
+  private static activeCollectionSyncs: Set<string> = new Set();
+
+  public static isCollectionSyncing(collectionId: string): boolean {
+    return this.activeCollectionSyncs.has(collectionId);
+  }
+
+  public static markCollectionSyncStart(collectionId: string): void {
+    this.activeCollectionSyncs.add(collectionId);
+  }
+
+  public static markCollectionSyncEnd(collectionId: string): void {
+    this.activeCollectionSyncs.delete(collectionId);
+  }
 
   /**
    * Parse custom sync schedule and return either interval hours or cron expression
@@ -769,6 +789,17 @@ export class IndividualCollectionScheduler {
   private static async executeCollectionSync(
     collectionId: string
   ): Promise<void> {
+    if (this.isCollectionSyncing(collectionId)) {
+      logger.warn(
+        `Skipping scheduled sync for ${collectionId} - a sync for this collection (manual or scheduled) is already in progress`,
+        {
+          label: 'Individual Collection Scheduler',
+          collectionId,
+        }
+      );
+      return;
+    }
+    this.markCollectionSyncStart(collectionId);
     try {
       const settings = getSettings();
       const collectionConfig = settings.plex.collectionConfigs?.find(
@@ -953,6 +984,7 @@ export class IndividualCollectionScheduler {
       if (collectionConfig) {
         this.releaseApiAccess(collectionConfig.type);
       }
+      this.markCollectionSyncEnd(collectionId);
     }
   }
 
