@@ -15,9 +15,10 @@ import type {
   LogsResultsResponse,
   SettingsAboutResponse,
 } from '@server/interfaces/api/settingsInterfaces';
-import { scheduledJobs } from '@server/job/schedule';
+import { getJobRuns, scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
+import { runHealthChecks } from '@server/lib/healthcheck';
 // ImageProxy removed - not needed for collections-only app
 // Plex scanner import removed - not needed for collections-only app
 import type {
@@ -41,7 +42,7 @@ import type { Request } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import fs from 'fs';
-import { escapeRegExp, merge, set, sortBy } from 'lodash';
+import { escapeRegExp, merge, pick, set, sortBy } from 'lodash';
 import { rescheduleJob } from 'node-schedule';
 import path from 'path';
 import { URL } from 'url';
@@ -50,9 +51,18 @@ import radarrRoutes from './radarr';
 import sonarrRoutes from './sonarr';
 const settingsRoutes = Router();
 
+settingsRoutes.use((req, res, next) => {
+  if (req.session?.userId !== 1 || req.user?.id !== 1) {
+    return res.status(403).json({
+      status: 403,
+      error: 'Only the server owner can access settings.',
+    });
+  }
+  next();
+});
+
 settingsRoutes.use('/radarr', radarrRoutes);
 settingsRoutes.use('/sonarr', sonarrRoutes);
-// Discover settings routes removed - discovery functionality not needed in Agregarr
 
 const filteredMainSettings = (
   user: User,
@@ -138,11 +148,19 @@ settingsRoutes.post('/plex', async (req, res, next) => {
   const userRepository = getRepository(User);
   const settings = getSettings();
 
+  const candidate = pick(req.body, [
+    'ip',
+    'port',
+    'useSsl',
+    'webAppUrl',
+    'autoEmptyTrash',
+  ]);
+
   logger.debug('Plex settings update requested', {
     label: 'Plex Settings',
-    ip: req.body.ip,
-    port: req.body.port,
-    useSsl: req.body.useSsl,
+    ip: candidate.ip,
+    port: candidate.port,
+    useSsl: candidate.useSsl,
   });
 
   try {
@@ -151,20 +169,20 @@ settingsRoutes.post('/plex', async (req, res, next) => {
       where: { id: 1 },
     });
 
-    Object.assign(settings.plex, req.body);
+    const candidatePlex = { ...settings.plex, ...candidate };
 
-    const connectionUrl = `${settings.plex.useSsl ? 'https' : 'http'}://${
-      settings.plex.ip
-    }:${settings.plex.port}`;
-    logger.debug('Testing Plex connection with new settings', {
+    const connectionUrl = `${candidatePlex.useSsl ? 'https' : 'http'}://${
+      candidatePlex.ip
+    }:${candidatePlex.port}`;
+    logger.debug('Testing Plex connection with candidate settings', {
       label: 'Plex Settings',
       url: connectionUrl,
     });
 
-    // Note: Collections sync is now handled by scheduled job (every 12 hours)
-    // or manual "Save & Run" button - no auto-trigger on enable
-
-    const plexClient = new PlexAPI({ plexToken: admin.plexToken });
+    const plexClient = new PlexAPI({
+      plexToken: admin.plexToken,
+      plexSettings: candidatePlex,
+    });
 
     const result = await plexClient.getStatus();
 
@@ -172,6 +190,7 @@ settingsRoutes.post('/plex', async (req, res, next) => {
       throw new Error('Server not found');
     }
 
+    Object.assign(settings.plex, candidate);
     settings.plex.machineId = result.MediaContainer.machineIdentifier;
     settings.plex.name = result.MediaContainer.friendlyName;
 
@@ -184,37 +203,25 @@ settingsRoutes.post('/plex', async (req, res, next) => {
         result.MediaContainer.machineIdentifier.substring(0, 8) + '...',
     });
 
-    // Collections sync now only triggered by:
-    // 1. Scheduled job (every 12 hours) when collections are enabled
-    // 2. Manual "Save & Run" button in UI
+    runHealthChecks();
 
-    // Return the updated Plex settings
-    const response = {
-      ...settings.plex,
-    };
-
-    return res.status(200).json(response);
+    return res.status(200).json({ ...settings.plex });
   } catch (e) {
-    const connectionUrl = `${settings.plex.useSsl ? 'https' : 'http'}://${
-      settings.plex.ip
-    }:${settings.plex.port}`;
-
-    logger.error('Failed to connect to Plex with new settings', {
+    logger.error('Failed to connect to Plex with candidate settings', {
       label: 'Plex Settings',
       error: e.message,
       errorType: e.constructor?.name,
       errorCode: e.code,
-      connectionUrl,
       requestedSettings: {
-        ip: req.body.ip,
-        port: req.body.port,
-        ssl: req.body.useSsl,
+        ip: candidate.ip,
+        port: candidate.port,
+        ssl: candidate.useSsl,
       },
     });
 
     return next({
       status: 500,
-      message: `Unable to connect to Plex at ${connectionUrl}: ${e.message}`,
+      message: `Unable to connect to Plex: ${e.message}`,
     });
   }
 
@@ -1189,6 +1196,7 @@ settingsRoutes.get('/jobs', (_req, res) => {
         }
       }
 
+      const runs = getJobRuns(job.id);
       return {
         id: job.id,
         name: job.name,
@@ -1198,6 +1206,7 @@ settingsRoutes.get('/jobs', (_req, res) => {
         nextExecutionTime: nextExecution,
         followingExecutionTime: followingExecution,
         running: job.running ? job.running() : false,
+        lastRun: runs[0] ?? null,
       };
     })
   );

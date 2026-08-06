@@ -2008,7 +2008,22 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
           );
           const orchestrator = new MultiSourceOrchestrator();
 
-          // Convert to MultiSourceCollectionConfig format
+          for (const source of extendedConfig.sources || []) {
+            if (source.customUrl) {
+              const urlCheck = validateExternalUrl(
+                source.customUrl,
+                source.type
+              );
+              if (!urlCheck.isValid) {
+                return res.status(400).json({
+                  error:
+                    urlCheck.error ||
+                    `Invalid custom URL for ${source.type} source`,
+                });
+              }
+            }
+          }
+
           const multiSourceConfig = {
             ...extendedConfig,
             type: 'multi-source' as const,
@@ -2033,6 +2048,7 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
                 sonarrTagServerId: source.sonarrTagServerId,
                 sonarrTagId: source.sonarrTagId,
                 sonarrTagLabel: source.sonarrTagLabel,
+                resolvedTitle: source.resolvedTitle,
               })) || [],
             combineMode:
               (extendedConfig.combineMode as
@@ -2570,6 +2586,10 @@ collectionsRoutes.use('/fetch-title', fetchTitleRoutes);
 // Mount media-type routes
 import mediaTypeRoutes from './media-type';
 collectionsRoutes.use('/detect-media-type', mediaTypeRoutes);
+
+// Mount export/import routes
+import collectionExportImportRoutes from './collectionExportImport';
+collectionsRoutes.use('/', collectionExportImportRoutes);
 
 // Mount poster routes (at root level since they have varied paths)
 import collectionPostersRoutes from './collection-posters';
