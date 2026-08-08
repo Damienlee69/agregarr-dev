@@ -17,7 +17,7 @@ import path from 'path';
 
 type HealthCheckStatus = 'ok' | 'warning' | 'error' | 'skipped';
 
-interface HealthCheck {
+export interface HealthCheck {
   id: string;
   name: string;
   run: () => Promise<{ status: HealthCheckStatus; message?: string }>;
@@ -216,28 +216,77 @@ const connectionRatingsProxyCheck: HealthCheck = {
   },
 };
 
-const connectionFlareSolverrCheck: HealthCheck = {
+export const connectionFlareSolverrCheck: HealthCheck = {
   id: 'connection:flaresolverr',
-  name: 'FlareSolverr Connection',
+  name: 'Cloudflare Solver Connection',
 
   run: async () => {
-    const url = getSettings().main.flareSolverrUrl;
-    if (!url) return { status: 'skipped' };
+    const solvers = (getSettings().main.cloudflareSolvers ?? []).filter(
+      (s) => s?.url
+    );
+    if (!solvers.length) return { status: 'skipped' };
 
-    try {
-      const base = url.replace(/\/+$/, '');
-      await axios.get(base, { timeout: 5000 });
-      return { status: 'ok' };
-    } catch (err) {
+    // Parallel: sequential 5s probes of dead solvers would trip the
+    // 10s runner timeout and lose the per-instance message
+    const probes = await Promise.allSettled(
+      solvers.map((solver) =>
+        axios.get(solver.url.replace(/\/+$/, ''), { timeout: 5000 })
+      )
+    );
+    const failures: string[] = [];
+    probes.forEach((probe, i) => {
+      if (probe.status === 'rejected') {
+        const solver = solvers[i];
+        const err = probe.reason;
+        failures.push(
+          sanitize(
+            `'${solver.name || solver.url}' (${solver.url}) unreachable: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          )
+        );
+      }
+    });
+
+    if (!failures.length) {
       return {
-        status: 'error',
-        message: sanitize(
-          `FlareSolverr unreachable: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        ),
+        status: 'ok',
+        message: `${solvers.length}/${solvers.length} solver${
+          solvers.length === 1 ? '' : 's'
+        } reachable`,
       };
     }
+    return {
+      status: failures.length === solvers.length ? 'error' : 'warning',
+      message: failures.join('; '),
+    };
+  },
+};
+
+// Missing-flagged configs still sync (CollectionSyncService filters only filtered_hub),
+// so they still require the solver — no missing exclusion here.
+export const flareSolverrRequiredCheck: HealthCheck = {
+  id: 'flaresolverr-required',
+  name: 'Cloudflare Solver',
+
+  run: async () => {
+    const { main, plex } = getSettings();
+    const usesFlixPatrol = (plex.collectionConfigs ?? []).some(
+      (c) =>
+        c.type === 'networks' ||
+        (c.sources ?? []).some((s) => s.type === 'networks')
+    );
+    if (!usesFlixPatrol) return { status: 'skipped' };
+
+    if (!main.cloudflareSolvers?.some((s) => s?.url)) {
+      return {
+        status: 'error',
+        message:
+          'Networks Top 10 collections fetch from FlixPatrol, which sits behind a Cloudflare challenge the built-in browser cannot reliably pass. Install FlareSolverr or Byparr and add it as a Cloudflare solver in Settings > Sources.',
+      };
+    }
+
+    return { status: 'ok', message: 'Solver configured' };
   },
 };
 
@@ -602,6 +651,7 @@ const checks: HealthCheck[] = [
   connectionTmdbCheck,
   connectionRatingsProxyCheck,
   connectionFlareSolverrCheck,
+  flareSolverrRequiredCheck,
   connectionMaintainerrCheck,
   orphanedCollectionKeysCheck,
   plexLibrariesCheck,
