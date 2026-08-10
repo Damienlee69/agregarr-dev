@@ -1,3 +1,4 @@
+import type { ApplicationCondition } from '@app/components/OverlayEditor/types';
 import { Dialog, Transition } from '@headlessui/react';
 import { Squares2X2Icon } from '@heroicons/react/24/outline';
 import {
@@ -57,6 +58,7 @@ export interface LayeredElement {
   width: number;
   height: number;
   rotation?: number; // Rotation in degrees (0-360)
+  condition?: ApplicationCondition;
 
   // Type-specific properties (discriminated union)
   properties:
@@ -132,6 +134,7 @@ export interface PreviewCollectionConfig {
   id?: string;
   name: string;
   type?: string;
+  subtype?: string;
   mediaType?: 'movie' | 'tv';
   sourceName?: string;
   posterUrls?: string[];
@@ -716,6 +719,7 @@ export const PosterEditorModal: React.FC<PosterEditorModalProps> = ({
                               name: previewName,
                               sourceName: selected.name,
                               type: selected.type,
+                              subtype: selected.subtype,
                               mediaType: selected.mediaType || 'movie',
                             });
                             setSelectedPreviewCollectionId(selected.id);
