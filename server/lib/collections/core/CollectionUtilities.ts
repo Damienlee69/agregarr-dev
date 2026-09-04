@@ -57,6 +57,26 @@ export function extractErrorMessage(error: unknown): string {
 }
 
 /**
+ * Convert an unknown catch value into a fresh Error, preferring a nested
+ * CollectionSyncError's originalError message so re-wrapping doesn't discard
+ * the deepest available cause. Always builds a new Error instance (never
+ * returns the caught value by reference) — logging-only helper, so the
+ * original stack/identity is not preserved, only its message text.
+ */
+export function extractErrorCause(error: unknown): Error {
+  if (error instanceof Error) return error;
+  if (
+    error &&
+    typeof error === 'object' &&
+    'originalError' in error &&
+    error.originalError instanceof Error
+  ) {
+    return new Error(error.originalError.message);
+  }
+  return new Error(extractErrorMessage(error));
+}
+
+/**
  * Create URL-encoded form data from object
  */
 export function createFormData(
@@ -1247,6 +1267,30 @@ export function filterItemsByPosition<T extends { originalPosition: number }>(
 
   // Return only items that were within the position limit in the original list
   return items.filter((item) => item.originalPosition <= maxPosition);
+}
+
+/**
+ * Cap matched + missing preview items to a shared maxItems budget.
+ * Matched items are sliced to maxItems; missing items get whatever budget
+ * remains, so the combined preview total never exceeds maxItems.
+ * Mirrors Plex collection contents (matched-first), not the sync request set - a missing item within position budget can be hidden here while sync still requests it.
+ */
+export function capPreviewItemsToMaxItems<TItem, TMissing>(
+  items: TItem[],
+  missingItems: TMissing[],
+  maxItems?: number
+): { items: TItem[]; missingItems: TMissing[] } {
+  if (!maxItems || maxItems <= 0) {
+    return { items, missingItems };
+  }
+
+  const limitedItems = items.slice(0, maxItems);
+  const limitedMissingItems = missingItems.slice(
+    0,
+    Math.max(0, maxItems - limitedItems.length)
+  );
+
+  return { items: limitedItems, missingItems: limitedMissingItems };
 }
 
 /**

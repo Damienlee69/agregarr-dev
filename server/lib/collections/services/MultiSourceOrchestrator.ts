@@ -246,15 +246,19 @@ export class MultiSourceOrchestrator {
 
         if (this.dynamicCycleTitle) {
           const previousName = config.name;
-          collectionNameForSync = this.dynamicCycleTitle;
+          const prefix = config.dynamicTitlePrefix || '';
+          const prefixedName = prefix
+            ? `${prefix} ${this.dynamicCycleTitle}`
+            : this.dynamicCycleTitle;
+          collectionNameForSync = prefixedName;
           configForSync = {
             ...configForSync,
-            name: this.dynamicCycleTitle,
+            name: prefixedName,
           } as MultiSourceCollectionConfig;
 
           // Persist updated name and source title for subsequent syncs
           this.updateCollectionConfigField(config.id, {
-            name: this.dynamicCycleTitle,
+            name: prefixedName,
           });
           this.updateSourceResolvedTitle(
             config.id,
@@ -1702,7 +1706,8 @@ export class MultiSourceOrchestrator {
             labelName,
             mediaType,
             options.config.smartCollectionSort?.value,
-            options.config.maxItems
+            options.config.maxItems,
+            options.config.filterUnwatched ?? true
           );
 
           // Migrate config
@@ -1757,7 +1762,8 @@ export class MultiSourceOrchestrator {
             labelName,
             mediaType,
             options.config.smartCollectionSort?.value,
-            options.config.maxItems
+            options.config.maxItems,
+            options.config.filterUnwatched ?? true
           );
 
           // Update title if it changed (for DYNAMIC_CYCLE_TITLE)
@@ -1807,7 +1813,8 @@ export class MultiSourceOrchestrator {
             mediaType,
             options.config.smartCollectionSort?.value,
             customLabel,
-            options.config.maxItems
+            options.config.maxItems,
+            options.config.filterUnwatched ?? true
           );
 
         if (!newSmartCollectionRatingKey) {
@@ -2956,7 +2963,7 @@ export class MultiSourceOrchestrator {
       try {
         await plexClient.updateCollectionSortTitle(
           collectionRatingKey,
-          config.sortTitleOverride,
+          `${config.sortTitleOverride}${collectionName}`,
           currentTitleSort
         );
       } catch (error) {

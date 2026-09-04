@@ -938,11 +938,11 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     config: CollectionConfig,
     plexClient: PlexAPI
   ): Promise<void> {
-    // Sort title override: user-provided value wins unconditionally
+    // Sort title override: prefix + collection name
     if (config.sortTitleOverride) {
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
-        config.sortTitleOverride
+        `${config.sortTitleOverride}${collectionName}`
       );
       return;
     }
@@ -1306,7 +1306,8 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
             itemLabelName,
             mediaType,
             sortOption,
-            config.maxItems
+            config.maxItems,
+            config.filterUnwatched ?? true
           );
           updated = 1;
         } catch (error) {
@@ -1340,7 +1341,8 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
             mediaType,
             sortOption,
             smartLabel, // Add Agregarr management label
-            config.maxItems
+            config.maxItems,
+            config.filterUnwatched ?? true
           );
 
         if (!createdSmartCollectionRatingKey) {
@@ -1377,11 +1379,11 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       // Apply metadata to smart collection (sort title, visibility, poster)
       // Replicate what updateCollectionMetadata does in BaseCollectionSync
       if (smartCollectionRatingKey) {
-        // Sort title override: user-provided value wins unconditionally
+        // Sort title override: prefix + collection name
         if (config.sortTitleOverride) {
           await plexClient.updateCollectionSortTitle(
             smartCollectionRatingKey,
-            config.sortTitleOverride
+            `${config.sortTitleOverride}${config.name}`
           );
         } else if (config.sortOrderLibrary !== undefined) {
           const sortOrderLibrary = config.sortOrderLibrary;

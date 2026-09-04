@@ -1,6 +1,32 @@
 import type PlexAPI from '@server/api/plexapi';
-import { getSettings } from '@server/lib/settings';
+import { getSettings, type CollectionSortOrder } from '@server/lib/settings';
 import logger from '@server/logger';
+
+/**
+ * Maps the UI's sort order to a Plex smart-filter `sort=` value.
+ * Returns undefined for orders Plex can't express server-side (random,
+ * reverse, IMDb rating) so callers omit the param and keep Plex's default.
+ */
+export function mapSortOrderToPlexSort(
+  sortOrder?: CollectionSortOrder
+): string | undefined {
+  switch (sortOrder) {
+    case 'date_added_desc':
+      return 'addedAt:desc';
+    case 'date_added_asc':
+      return 'addedAt:asc';
+    case 'release_date_desc':
+      return 'originallyAvailableAt:desc';
+    case 'release_date_asc':
+      return 'originallyAvailableAt:asc';
+    case 'alphabetical_asc':
+      return 'titleSort:asc';
+    case 'alphabetical_desc':
+      return 'titleSort:desc';
+    default:
+      return undefined;
+  }
+}
 
 /**
  * PlexSmartCollectionManager - Handles Plex smart collection operations
@@ -25,6 +51,7 @@ class PlexSmartCollectionManager {
    * @param sortOption - Sort parameter (e.g., 'titleSort', 'year:desc')
    * @param agregarrLabel - Agregarr management label to add to the smart collection
    * @param maxItems - Maximum number of items to include in the smart collection
+   * @param filterUnwatched - Restrict to unwatched items (default true)
    * @returns The rating key of the created smart collection or null if failed
    */
   public async createLabelBasedSmartCollection(
@@ -34,7 +61,8 @@ class PlexSmartCollectionManager {
     mediaType: 'movie' | 'tv' = 'movie',
     sortOption?: string,
     agregarrLabel?: string,
-    maxItems?: number
+    maxItems?: number,
+    filterUnwatched = true
   ): Promise<string | null> {
     try {
       logger.debug(
@@ -54,27 +82,22 @@ class PlexSmartCollectionManager {
 
       // Build filter URI: label AND unwatched
       // TV shows use different filter parameters than movies
-      let filterUri: string;
-      if (mediaType === 'tv') {
-        // TV: Filter by label AND unwatched episodes
-        filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}&show.unwatchedLeaves=1&and=1&label=${encodeURIComponent(
-          labelName
-        )}`;
-      } else {
-        // Movie: Filter by label AND unwatched
-        filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}&unwatched=1&and=1&label=${encodeURIComponent(
-          labelName
-        )}`;
-      }
+      const unwatchedClause = filterUnwatched
+        ? mediaType === 'tv'
+          ? '&show.unwatchedLeaves=1&and=1'
+          : '&unwatched=1&and=1'
+        : '';
+      const filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}${unwatchedClause}&label=${encodeURIComponent(
+        labelName
+      )}`;
 
       // Add limit parameter if specified
-      if (maxItems && maxItems > 0) {
-        filterUri += `&limit=${maxItems}`;
-      }
+      const filterUriWithLimit =
+        maxItems && maxItems > 0 ? `${filterUri}&limit=${maxItems}` : filterUri;
 
       const uri = `server://${
         getSettings().plex.machineId
-      }/com.plexapp.plugins.library${filterUri}`;
+      }/com.plexapp.plugins.library${filterUriWithLimit}`;
 
       const createUrl = `/library/collections?type=${type}&title=${encodeURIComponent(
         title
@@ -188,6 +211,7 @@ class PlexSmartCollectionManager {
    * @param mediaType - 'movie' or 'tv'
    * @param sortOption - Sort parameter (e.g., 'year:desc', 'titleSort')
    * @param maxItems - Maximum number of items to include in the smart collection
+   * @param filterUnwatched - Restrict to unwatched items (default true)
    * @returns Promise<void>
    */
   public async updateLabelBasedSmartCollectionUri(
@@ -196,7 +220,8 @@ class PlexSmartCollectionManager {
     labelName: string,
     mediaType: 'movie' | 'tv' = 'movie',
     sortOption?: string,
-    maxItems?: number
+    maxItems?: number,
+    filterUnwatched = true
   ): Promise<void> {
     try {
       logger.debug(
@@ -216,27 +241,22 @@ class PlexSmartCollectionManager {
       const sortParam = sortOption || 'originallyAvailableAt:desc'; // Default to release date (newest first)
 
       // Build filter URI: label AND unwatched
-      let filterUri: string;
-      if (mediaType === 'tv') {
-        // TV: Filter by label AND unwatched episodes
-        filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}&show.unwatchedLeaves=1&and=1&label=${encodeURIComponent(
-          labelName
-        )}`;
-      } else {
-        // Movie: Filter by label AND unwatched
-        filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}&unwatched=1&and=1&label=${encodeURIComponent(
-          labelName
-        )}`;
-      }
+      const unwatchedClause = filterUnwatched
+        ? mediaType === 'tv'
+          ? '&show.unwatchedLeaves=1&and=1'
+          : '&unwatched=1&and=1'
+        : '';
+      const filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}${unwatchedClause}&label=${encodeURIComponent(
+        labelName
+      )}`;
 
       // Add limit parameter if specified
-      if (maxItems && maxItems > 0) {
-        filterUri += `&limit=${maxItems}`;
-      }
+      const filterUriWithLimit =
+        maxItems && maxItems > 0 ? `${filterUri}&limit=${maxItems}` : filterUri;
 
       const uri = `server://${
         getSettings().plex.machineId
-      }/com.plexapp.plugins.library${filterUri}`;
+      }/com.plexapp.plugins.library${filterUriWithLimit}`;
 
       // Update the smart collection URI using PUT request
       const updateUrl = `/library/collections/${smartCollectionRatingKey}/items?uri=${encodeURIComponent(
@@ -294,7 +314,8 @@ class PlexSmartCollectionManager {
     subtype:
       | 'recently_added'
       | 'recently_released'
-      | 'recently_released_episodes',
+      | 'recently_released_episodes'
+      | 'recently_added_episodes',
     maxItems?: number,
     excludeCollectionTitles?: string[]
   ): Promise<string | null> {
@@ -310,7 +331,12 @@ class PlexSmartCollectionManager {
         }
       );
 
-      const type = mediaType === 'movie' ? 1 : 2;
+      const type =
+        subtype === 'recently_added_episodes'
+          ? 4
+          : mediaType === 'movie'
+          ? 1
+          : 2;
 
       // All filtered hubs use label-based exclusion (same mechanism for movies and TV)
       const labelFilter = encodeURIComponent('trailer-placeholder');
@@ -333,12 +359,22 @@ class PlexSmartCollectionManager {
         }
         const sortParam = 'episode.addedAt:desc';
         filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}&label!=${labelFilter}`;
+      } else if (subtype === 'recently_added_episodes') {
+        if (mediaType !== 'tv') {
+          throw new Error(
+            `recently_added_episodes subtype is only supported for TV libraries`
+          );
+        }
+        filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=addedAt:desc&show.label!=${labelFilter}`;
       } else {
         throw new Error(`Unsupported filtered hub subtype: ${subtype}`);
       }
 
-      // Add collection exclusion filters
-      if (excludeCollectionTitles?.length) {
+      // Add collection exclusion filters (skipped for episode-level hubs — Plex ignores them at type=4)
+      if (
+        excludeCollectionTitles?.length &&
+        subtype !== 'recently_added_episodes'
+      ) {
         for (const colTitle of excludeCollectionTitles) {
           filterUri += `&collection!=${encodeURIComponent(colTitle.trim())}`;
         }
@@ -429,7 +465,8 @@ class PlexSmartCollectionManager {
     libraryKey: string,
     mediaType: 'movie' | 'tv',
     directorName: string,
-    limit?: number
+    limit?: number,
+    sortOrder?: CollectionSortOrder
   ): Promise<string | null> {
     try {
       logger.debug(
@@ -453,6 +490,11 @@ class PlexSmartCollectionManager {
 
       if (limit && limit > 0) {
         filterUri += `&limit=${limit}`;
+      }
+
+      const sortParam = mapSortOrderToPlexSort(sortOrder);
+      if (sortParam) {
+        filterUri += `&sort=${sortParam}`;
       }
 
       const uri = `server://${
@@ -531,7 +573,8 @@ class PlexSmartCollectionManager {
     libraryKey: string,
     mediaType: 'movie' | 'tv',
     actorName: string,
-    limit?: number
+    limit?: number,
+    sortOrder?: CollectionSortOrder
   ): Promise<string | null> {
     try {
       logger.debug(
@@ -555,6 +598,11 @@ class PlexSmartCollectionManager {
 
       if (limit && limit > 0) {
         filterUri += `&limit=${limit}`;
+      }
+
+      const sortParam = mapSortOrderToPlexSort(sortOrder);
+      if (sortParam) {
+        filterUri += `&sort=${sortParam}`;
       }
 
       const uri = `server://${
@@ -631,7 +679,8 @@ class PlexSmartCollectionManager {
     mediaType: 'movie' | 'tv',
     attribute: string,
     value: string,
-    labelFilter: string
+    labelFilter: string,
+    sortOrder?: CollectionSortOrder
   ): Promise<string | null> {
     try {
       logger.debug(
@@ -649,9 +698,14 @@ class PlexSmartCollectionManager {
       const type = mediaType === 'movie' ? 1 : 2;
 
       // value used as-is: content rating keys arrive pre-encoded from Plex
-      const filterUri = `/library/sections/${libraryKey}/all?type=${type}&${attribute}=${value}&label!=${encodeURIComponent(
+      let filterUri = `/library/sections/${libraryKey}/all?type=${type}&${attribute}=${value}&label!=${encodeURIComponent(
         labelFilter
       )}`;
+
+      const sortParam = mapSortOrderToPlexSort(sortOrder);
+      if (sortParam) {
+        filterUri += `&sort=${sortParam}`;
+      }
 
       const uri = `server://${
         getSettings().plex.machineId
@@ -731,7 +785,8 @@ class PlexSmartCollectionManager {
     mediaType: 'movie' | 'tv',
     attribute: string,
     value: string,
-    labelFilter: string
+    labelFilter: string,
+    sortOrder?: CollectionSortOrder
   ): Promise<void> {
     try {
       logger.debug(
@@ -749,9 +804,14 @@ class PlexSmartCollectionManager {
       const type = mediaType === 'movie' ? 1 : 2;
 
       // value used as-is: content rating keys arrive pre-encoded from Plex
-      const filterUri = `/library/sections/${libraryKey}/all?type=${type}&${attribute}=${value}&label!=${encodeURIComponent(
+      let filterUri = `/library/sections/${libraryKey}/all?type=${type}&${attribute}=${value}&label!=${encodeURIComponent(
         labelFilter
       )}`;
+
+      const sortParam = mapSortOrderToPlexSort(sortOrder);
+      if (sortParam) {
+        filterUri += `&sort=${sortParam}`;
+      }
 
       const uri = `server://${
         getSettings().plex.machineId
@@ -803,7 +863,8 @@ class PlexSmartCollectionManager {
     subtype:
       | 'recently_added'
       | 'recently_released'
-      | 'recently_released_episodes',
+      | 'recently_released_episodes'
+      | 'recently_added_episodes',
     maxItems?: number,
     excludeCollectionTitles?: string[]
   ): Promise<void> {
@@ -820,7 +881,12 @@ class PlexSmartCollectionManager {
         }
       );
 
-      const type = mediaType === 'movie' ? 1 : 2;
+      const type =
+        subtype === 'recently_added_episodes'
+          ? 4
+          : mediaType === 'movie'
+          ? 1
+          : 2;
 
       // All filtered hubs use label-based exclusion (same logic as createFilteredHub)
       const labelFilter = encodeURIComponent('trailer-placeholder');
@@ -843,12 +909,22 @@ class PlexSmartCollectionManager {
         }
         const sortParam = 'episode.addedAt:desc';
         filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=${sortParam}&label!=${labelFilter}`;
+      } else if (subtype === 'recently_added_episodes') {
+        if (mediaType !== 'tv') {
+          throw new Error(
+            `recently_added_episodes subtype is only supported for TV libraries`
+          );
+        }
+        filterUri = `/library/sections/${libraryKey}/all?type=${type}&sort=addedAt:desc&show.label!=${labelFilter}`;
       } else {
         throw new Error(`Unsupported filtered hub subtype: ${subtype}`);
       }
 
-      // Add collection exclusion filters
-      if (excludeCollectionTitles?.length) {
+      // Add collection exclusion filters (skipped for episode-level hubs — Plex ignores them at type=4)
+      if (
+        excludeCollectionTitles?.length &&
+        subtype !== 'recently_added_episodes'
+      ) {
         for (const colTitle of excludeCollectionTitles) {
           filterUri += `&collection!=${encodeURIComponent(colTitle.trim())}`;
         }

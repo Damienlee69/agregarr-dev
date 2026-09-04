@@ -43,8 +43,9 @@ const BASE_CONTEXT: Partial<OverlayRenderContext> = {
 
   // Audio specs
   audioCodec: 'truehd',
+  audioProfile: 'truehd_atmos',
   audioChannels: 8,
-  audioChannelLayout: 'atmos',
+  audioChannelLayout: '7.1',
   audioFormat: 'English (Dolby TrueHD Atmos 7.1)',
 
   // Audio language
@@ -167,6 +168,10 @@ export function createSampleOverlayContext(
     // leaves this undefined for shows. Previewing it as false would let a
     // condition match here and never match live.
     context.isEstimatedReleaseDate = undefined;
+    // Stream-derived; the show path never sets it (episode aggregation only
+    // fills audioCodec), so previewing one would promise a badge live shows
+    // never get.
+    context.audioProfile = undefined;
   }
 
   return context;

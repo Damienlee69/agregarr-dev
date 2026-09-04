@@ -347,23 +347,23 @@ const CollectionTypeSection = ({
         return [
           {
             value: 'genre',
-            label: 'Genre Collections',
+            label: 'Auto Genre Collections',
             description: 'One smart collection per genre in your library',
           },
           {
             value: 'decade',
-            label: 'Decade Collections',
+            label: 'Auto Decade Collections',
             description: 'One smart collection per decade (2020s, 2010s...)',
           },
           {
             value: 'resolution',
-            label: 'Resolution Collections',
+            label: 'Auto Resolution Collections',
             description:
               'One smart collection per quality level (4K, 1080p...)',
           },
           {
             value: 'contentRating',
-            label: 'Content Rating Collections',
+            label: 'Auto Content Rating Collections',
             description: 'One smart collection per content rating',
           },
           {
@@ -403,6 +403,11 @@ const CollectionTypeSection = ({
             label: 'Top 250 English',
             description:
               'Highest rated English-language movies on IMDb (movies only)',
+          },
+          {
+            value: 'bottom_100',
+            label: 'Bottom 100',
+            description: 'Lowest rated movies on IMDb (movies only)',
           },
           {
             value: 'popular',
@@ -547,6 +552,12 @@ const CollectionTypeSection = ({
             label: 'Recently Added Episodes',
             description:
               'Shows sorted by most recent episode added (TV libraries only)',
+          },
+          {
+            value: 'recently_added_episodes',
+            label: 'Recently Added Episodes (Individual)',
+            description:
+              'Individual episodes sorted by date added (TV libraries only)',
           },
         ];
       default:

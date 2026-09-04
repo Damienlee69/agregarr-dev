@@ -164,6 +164,10 @@ components:
         csrfProtection:
           type: boolean
           example: false
+        excludeFromOrderingLabel:
+          type: string
+          description: Comma-separated Plex labels. Collections carrying any of these labels are excluded from ordering, visibility, and sort title enforcement.
+          example: shortlist
         hideAvailable:
           type: boolean
           example: false
@@ -970,6 +974,11 @@ components:
           description: 'Create a smart collection that shows only unwatched items from this collection'
           example: false
           nullable: true
+        filterUnwatched:
+          type: boolean
+          description: 'Within a smart collection, restrict to unwatched items (default true)'
+          example: true
+          nullable: true
         smartCollectionSort:
           type: object
           description: 'Sort option for smart collections'
@@ -1533,6 +1542,11 @@ components:
           description: 'Custom MDBList list URL (e.g., https://mdblist.com/lists/username/listname)'
           example: 'https://mdblist.com/lists/garycrawfordgc/netflix-shows'
           nullable: true
+        anilistCustomListUrl:
+          type: string
+          description: 'Custom AniList list URL (e.g., https://anilist.co/animelist/{listname} or https://anilist.co/user/{username}/animelist/{listname})'
+          example: 'https://anilist.co/user/username/animelist/my-list'
+          nullable: true
         sortOrder:
           type: string
           enum:
@@ -1858,6 +1872,11 @@ components:
           type: boolean
           description: 'Create a smart collection that shows only unwatched items from this collection'
           example: false
+          nullable: true
+        filterUnwatched:
+          type: boolean
+          description: 'Within a smart collection, restrict to unwatched items (default true)'
+          example: true
           nullable: true
         smartCollectionSort:
           type: object
@@ -2399,6 +2418,11 @@ components:
           description: "Selected country for Networks collections (e.g., 'united-states', 'world')"
           example: 'united-states'
           nullable: true
+        anilistCustomListUrl:
+          type: string
+          description: 'Custom AniList list URL (e.g., https://anilist.co/animelist/{listname} or https://anilist.co/user/{username}/animelist/{listname})'
+          example: 'https://anilist.co/user/username/animelist/my-list'
+          nullable: true
         sortOrder:
           type: string
           enum:
@@ -2734,6 +2758,11 @@ components:
           type: boolean
           description: 'Create a smart collection that shows only unwatched items from this collection'
           example: false
+          nullable: true
+        filterUnwatched:
+          type: boolean
+          description: 'Within a smart collection, restrict to unwatched items (default true)'
+          example: true
           nullable: true
         smartCollectionSort:
           type: object
@@ -15288,6 +15317,9 @@ paths:
                   audioFormat:
                     type: string
                     example: 'Dolby Atmos'
+                  audioProfile:
+                    type: string
+                    example: 'truehd_atmos'
                   videoCodec:
                     type: string
                     example: 'HEVC'
@@ -15671,6 +15703,38 @@ paths:
                     example: 'full-sync-running'
         '500':
           description: Failed to start single item overlay application
+
+  /overlay-library-configs/{libraryId}/stop:
+    post:
+      summary: Stop overlay application for a library
+      description: Requests cancellation of a running overlay application job for the specified library.
+      tags:
+        - overlays
+      parameters:
+        - name: libraryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Plex library ID
+      responses:
+        '200':
+          description: Stop requested or already in progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Stop requested'
+                  libraryId:
+                    type: string
+                    example: '4'
+        '401':
+          description: Authentication required
+        '404':
+          description: No running job found for this library
 
   /overlay-library-configs/{libraryId}/status:
     get:

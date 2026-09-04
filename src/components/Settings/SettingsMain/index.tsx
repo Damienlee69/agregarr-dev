@@ -52,12 +52,18 @@ const messages = defineMessages({
   watchProviderRegion: 'Watch Provider Region',
   watchProviderRegionTip:
     'Region used by the Streaming Provider overlay to determine available services',
+  overlayConcurrency: 'Parallel Items',
+  overlayConcurrencyTip:
+    'Number of items to process simultaneously during overlay application. Higher values are faster but use more memory.',
   enableTmdbPosterCache: 'Enable TMDB Poster Cache',
   enableTmdbPosterCacheTip:
     'Cache TMDB posters for 7 days to reduce API calls and improve performance (recommended)',
   enableHealthChecks: 'Enable Health Checks',
   enableHealthChecksTip:
     'Run periodic health checks to detect connection issues and configuration problems',
+  excludeFromOrderingLabel: 'Exclude from Ordering (Plex Label)',
+  excludeFromOrderingLabelTip:
+    'Collections with any of these Plex labels (comma-separated) will be excluded from ordering, visibility, and sort title enforcement. Useful when other tools (Shortlist, Kometa) manage their own collections.',
   logLevel: 'Log Level',
   logLevelTip: 'Controls how much detail appears in logs',
   resetAgregarr: 'Reset',
@@ -87,9 +93,9 @@ const SettingsMain = () => {
     data,
     error,
     mutate: revalidate,
-  } = useSWR<MainSettings & { watchProviderRegion?: string }>(
-    '/api/v1/settings/main'
-  );
+  } = useSWR<
+    MainSettings & { watchProviderRegion?: string; overlayConcurrency?: number }
+  >('/api/v1/settings/main');
   const { data: countriesData } = useSWR<TmdbCountry[]>('/api/v1/countries');
 
   const MainSettingsSchema = Yup.object().shape({
@@ -171,7 +177,9 @@ const SettingsMain = () => {
             tmdbLanguage: data?.tmdbLanguage ?? 'en',
             enableTmdbPosterCache: data?.enableTmdbPosterCache ?? true,
             healthChecksEnabled: data?.healthChecksEnabled ?? true,
+            excludeFromOrderingLabel: data?.excludeFromOrderingLabel ?? '',
             watchProviderRegion: data?.watchProviderRegion ?? 'US',
+            overlayConcurrency: data?.overlayConcurrency ?? 1,
             trustProxy: data?.trustProxy,
             logLevel: data?.logLevel ?? 'info',
           }}
@@ -187,7 +195,9 @@ const SettingsMain = () => {
                 tmdbLanguage: values.tmdbLanguage,
                 enableTmdbPosterCache: values.enableTmdbPosterCache,
                 healthChecksEnabled: values.healthChecksEnabled,
+                excludeFromOrderingLabel: values.excludeFromOrderingLabel || '',
                 watchProviderRegion: values.watchProviderRegion,
+                overlayConcurrency: values.overlayConcurrency,
                 trustProxy: values.trustProxy,
                 logLevel: values.logLevel,
               });
@@ -373,6 +383,35 @@ const SettingsMain = () => {
                   </div>
                 </div>
                 <div className="form-row">
+                  <label htmlFor="overlayConcurrency" className="text-label">
+                    {intl.formatMessage(messages.overlayConcurrency)}
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.overlayConcurrencyTip)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field">
+                      <Field
+                        type="number"
+                        id="overlayConcurrency"
+                        name="overlayConcurrency"
+                        min="1"
+                        max="10"
+                        className="short"
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          const val = Number(e.target.value);
+                          if (Number.isFinite(val)) {
+                            setFieldValue(
+                              'overlayConcurrency',
+                              Math.max(1, Math.min(10, Math.floor(val)))
+                            );
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="form-row">
                   <label
                     htmlFor="enableTmdbPosterCache"
                     className="checkbox-label"
@@ -422,6 +461,27 @@ const SettingsMain = () => {
                         );
                       }}
                     />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label
+                    htmlFor="excludeFromOrderingLabel"
+                    className="text-label"
+                  >
+                    {intl.formatMessage(messages.excludeFromOrderingLabel)}
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.excludeFromOrderingLabelTip)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field">
+                      <Field
+                        id="excludeFromOrderingLabel"
+                        name="excludeFromOrderingLabel"
+                        type="text"
+                        placeholder="e.g. shortlist, kometa"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="form-row">

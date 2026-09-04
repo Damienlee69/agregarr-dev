@@ -5,6 +5,24 @@ import type {
 } from '@app/types/collections';
 import axios from 'axios';
 
+// Shared with CollectionSettings.tsx's saveCollectionConfigs whitelist
+export const buildSelectionFieldsPayload = (
+  config: Pick<
+    CollectionFormConfig,
+    'selectionMode' | 'excludeValues' | 'includeValues'
+  >
+) => ({
+  ...(config.selectionMode !== undefined && {
+    selectionMode: config.selectionMode,
+  }),
+  ...(config.excludeValues !== undefined && {
+    excludeValues: config.excludeValues,
+  }),
+  ...(config.includeValues !== undefined && {
+    includeValues: config.includeValues,
+  }),
+});
+
 // Helper function to save individual configs using individual endpoints
 export const saveIndividualConfigs = async (
   configsToUpdate: (
@@ -138,6 +156,9 @@ export const saveIndividualConfigs = async (
         }),
         ...(collectionConfig.customTVTemplate && {
           customTVTemplate: collectionConfig.customTVTemplate,
+        }),
+        ...(collectionConfig.dynamicTitlePrefix !== undefined && {
+          dynamicTitlePrefix: collectionConfig.dynamicTitlePrefix,
         }),
         visibilityConfig: collectionConfig.visibilityConfig,
         ...(collectionConfig.maxItems !== undefined && {
@@ -310,15 +331,7 @@ export const saveIndividualConfigs = async (
           comingSoonSonarrRootFolder:
             collectionConfig.comingSoonSonarrRootFolder,
         }),
-        ...(collectionConfig.selectionMode !== undefined && {
-          selectionMode: collectionConfig.selectionMode,
-        }),
-        ...(collectionConfig.excludeValues !== undefined && {
-          excludeValues: collectionConfig.excludeValues,
-        }),
-        ...(collectionConfig.includeValues !== undefined && {
-          includeValues: collectionConfig.includeValues,
-        }),
+        ...buildSelectionFieldsPayload(collectionConfig),
         ...(collectionConfig.isMultiSource !== undefined && {
           isMultiSource: collectionConfig.isMultiSource,
         }),
@@ -413,6 +426,9 @@ export const saveIndividualConfigs = async (
         }),
         ...(collectionConfig.showUnwatchedOnly !== undefined && {
           showUnwatchedOnly: collectionConfig.showUnwatchedOnly,
+        }),
+        ...(collectionConfig.filterUnwatched !== undefined && {
+          filterUnwatched: collectionConfig.filterUnwatched,
         }),
         ...(collectionConfig.smartCollectionSort !== undefined && {
           smartCollectionSort: collectionConfig.smartCollectionSort,

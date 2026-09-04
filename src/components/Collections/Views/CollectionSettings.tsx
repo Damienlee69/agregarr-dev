@@ -15,7 +15,10 @@ import type {
   Library,
 } from '@app/types/collections';
 import { CollectionType } from '@app/types/collections';
-import { saveIndividualConfigs } from '@app/utils/collections/apiHandlers';
+import {
+  buildSelectionFieldsPayload,
+  saveIndividualConfigs,
+} from '@app/utils/collections/apiHandlers';
 import { prepareLinkedConfigForEditing } from '@app/utils/collections/collectionUtils';
 import { discoverPlexHubs } from '@app/utils/collections/discoveryHandlers';
 import {
@@ -398,6 +401,7 @@ const CollectionSettings = ({
           template: config.template,
           customMovieTemplate: config.customMovieTemplate,
           customTVTemplate: config.customTVTemplate,
+          dynamicTitlePrefix: config.dynamicTitlePrefix,
           visibilityConfig: config.visibilityConfig,
           maxItems: config.maxItems,
           mediaType: config.mediaType,
@@ -430,6 +434,8 @@ const CollectionSettings = ({
           tmdbCustomCollectionUrl: config.tmdbCustomCollectionUrl,
           imdbCustomListUrl: config.imdbCustomListUrl,
           letterboxdCustomListUrl: config.letterboxdCustomListUrl,
+          mdblistCustomListUrl: config.mdblistCustomListUrl,
+          anilistCustomListUrl: config.anilistCustomListUrl,
           radarrInstanceId: config.radarrInstanceId,
           radarrTagId: config.radarrTagId,
           sonarrInstanceId: config.sonarrInstanceId,
@@ -451,6 +457,7 @@ const CollectionSettings = ({
           hideIndividualItems: config.hideIndividualItems,
           applyOverlaysDuringSync: config.applyOverlaysDuringSync,
           showUnwatchedOnly: config.showUnwatchedOnly,
+          filterUnwatched: config.filterUnwatched,
           smartCollectionSort: config.smartCollectionSort,
           // Plex Library person collections
           personMinimumItems: config.personMinimumItems,
@@ -586,6 +593,7 @@ const CollectionSettings = ({
           ...(config.targetUserLabel !== undefined && {
             targetUserLabel: config.targetUserLabel,
           }),
+          ...buildSelectionFieldsPayload(config),
         };
         await axios.put(
           `/api/v1/collections/${config.id}/settings`,
@@ -627,6 +635,7 @@ const CollectionSettings = ({
       template: '',
       customMovieTemplate: '', // Initialize empty custom movie template
       customTVTemplate: '', // Initialize empty custom TV template
+      dynamicTitlePrefix: '', // Initialize empty dynamic title prefix
       visibilityConfig: {
         usersHome: true,
         serverOwnerHome: true,

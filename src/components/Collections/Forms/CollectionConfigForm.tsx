@@ -94,8 +94,9 @@ const messages = defineMessages({
   timeRestrictions: 'Time Restrictions',
   createCollection: 'Create Collection',
   updateCollection: 'Update Collection',
-  showUnwatchedOnly: 'Show Unwatched Items Only',
+  smartCollectionToggle: 'Smart Collection',
   showUnwatchedOnlyDescription: 'Create Smart Collection',
+  filterUnwatched: 'Filter to Unwatched Items Only',
   smartCollectionSort: 'Smart Collection Sort Order',
   cancel: 'Cancel',
   preview: 'Preview:',
@@ -218,8 +219,8 @@ const messages = defineMessages({
   limitCollectionItems:
     'Limit the Collection to this many items{smartCollectionNote}',
   limitCollectionItemsSmartNote: ' (applies to smart collection)',
-  smartCollectionDescription:
-    'When enabled, creates a smart collection with the unwatched filter to show only unwatched items for the user viewing the collection. The original collection will be pushed to the bottom in the Collections Tab.',
+  smartCollectionHelp:
+    'When enabled, creates a smart collection for the user viewing the collection.',
   smartCollectionSortNote:
     'Choose how items in the smart collection should be sorted. Due to Plex limitations, the original list order cannot be preserved when using smart collections.',
   placeholderCreation: 'Placeholder Creation',
@@ -959,6 +960,7 @@ const CollectionFormConfigForm = ({
     isMultiSource: Yup.boolean(),
     // Smart collection validation
     showUnwatchedOnly: Yup.boolean(),
+    filterUnwatched: Yup.boolean(),
     smartCollectionSort: Yup.object()
       .shape({
         value: Yup.string(),
@@ -1900,6 +1902,8 @@ const CollectionFormConfigForm = ({
             (config as CollectionFormConfig).hideIndividualItems ?? false,
           showUnwatchedOnly:
             (config as CollectionFormConfig).showUnwatchedOnly ?? false,
+          filterUnwatched:
+            (config as CollectionFormConfig).filterUnwatched ?? true,
           smartCollectionSort:
             (config as CollectionFormConfig).smartCollectionSort ??
             SMART_COLLECTION_SORT_OPTIONS[5], // Default to release date (newest first)
@@ -2439,6 +2443,7 @@ const CollectionFormConfigForm = ({
             useTmdbFranchisePoster: values.useTmdbFranchisePoster,
             hideIndividualItems: values.hideIndividualItems,
             showUnwatchedOnly: values.showUnwatchedOnly,
+            filterUnwatched: values.filterUnwatched,
             smartCollectionSort: values.smartCollectionSort,
             randomizeHomeOrder: values.randomizeHomeOrder,
             // Wallpaper, summary, and theme settings
@@ -3659,7 +3664,7 @@ const CollectionFormConfigForm = ({
                                 <div className="form-row">
                                   <label className="text-label">
                                     {intl.formatMessage(
-                                      messages.showUnwatchedOnly
+                                      messages.smartCollectionToggle
                                     )}
                                   </label>
                                   <div className="form-input-area">
@@ -3681,9 +3686,32 @@ const CollectionFormConfigForm = ({
                                     </div>
                                     <div className="mt-2 text-xs text-gray-400">
                                       {intl.formatMessage(
-                                        messages.smartCollectionDescription
+                                        messages.smartCollectionHelp
                                       )}
                                     </div>
+                                    {/* Filter Unwatched + Sort Order - only shown when showUnwatchedOnly is enabled */}
+                                    {values.showUnwatchedOnly && (
+                                      <div className="form-row">
+                                        <div className="form-input-area">
+                                          <div className="flex items-center">
+                                            <Field
+                                              type="checkbox"
+                                              id="filterUnwatched"
+                                              name="filterUnwatched"
+                                              className="form-checkbox"
+                                            />
+                                            <label
+                                              htmlFor="filterUnwatched"
+                                              className="ml-2 text-sm text-gray-300"
+                                            >
+                                              {intl.formatMessage(
+                                                messages.filterUnwatched
+                                              )}
+                                            </label>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                     {/* Smart Collection Sort Order - only show when showUnwatchedOnly is enabled */}
                                     {values.showUnwatchedOnly && (
                                       <div className="form-row">
@@ -3872,21 +3900,19 @@ const CollectionFormConfigForm = ({
                                       {intl.formatMessage(messages.sortTitle)}
                                     </label>
                                     <div className="form-input-area">
-                                      <div className="form-input-field">
-                                        <Field
-                                          type="text"
-                                          id="sortTitleOverride"
-                                          name="sortTitleOverride"
-                                          placeholder={intl.formatMessage(
-                                            messages.sortTitlePlaceholder
-                                          )}
-                                          className="block w-full rounded-md border border-stone-600 bg-stone-800 px-3 py-2 text-sm text-white placeholder-stone-400 focus:border-orange-500 focus:outline-none"
-                                        />
-                                        <div className="label-tip mt-1">
-                                          {intl.formatMessage(
-                                            messages.sortTitleHelp
-                                          )}
-                                        </div>
+                                      <Field
+                                        type="text"
+                                        id="sortTitleOverride"
+                                        name="sortTitleOverride"
+                                        placeholder={intl.formatMessage(
+                                          messages.sortTitlePlaceholder
+                                        )}
+                                        className="block w-full rounded-md border border-stone-600 bg-stone-800 px-3 py-2 text-sm text-white placeholder-stone-400 focus:border-orange-500 focus:outline-none"
+                                      />
+                                      <div className="label-tip mt-1">
+                                        {intl.formatMessage(
+                                          messages.sortTitleHelp
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -5201,21 +5227,19 @@ const CollectionFormConfigForm = ({
                                     {intl.formatMessage(messages.sortTitle)}
                                   </label>
                                   <div className="form-input-area">
-                                    <div className="form-input-field">
-                                      <Field
-                                        type="text"
-                                        id="sortTitleOverride"
-                                        name="sortTitleOverride"
-                                        placeholder={intl.formatMessage(
-                                          messages.sortTitlePlaceholder
-                                        )}
-                                        className="block w-full rounded-md border border-stone-600 bg-stone-800 px-3 py-2 text-sm text-white placeholder-stone-400 focus:border-orange-500 focus:outline-none"
-                                      />
-                                      <div className="label-tip mt-1">
-                                        {intl.formatMessage(
-                                          messages.sortTitleHelp
-                                        )}
-                                      </div>
+                                    <Field
+                                      type="text"
+                                      id="sortTitleOverride"
+                                      name="sortTitleOverride"
+                                      placeholder={intl.formatMessage(
+                                        messages.sortTitlePlaceholder
+                                      )}
+                                      className="block w-full rounded-md border border-stone-600 bg-stone-800 px-3 py-2 text-sm text-white placeholder-stone-400 focus:border-orange-500 focus:outline-none"
+                                    />
+                                    <div className="label-tip mt-1">
+                                      {intl.formatMessage(
+                                        messages.sortTitleHelp
+                                      )}
                                     </div>
                                   </div>
                                 </div>

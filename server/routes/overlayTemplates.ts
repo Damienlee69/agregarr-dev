@@ -173,6 +173,7 @@ interface PreviewPosterMetadata {
   network?: string;
   resolution: string;
   audioFormat: string;
+  audioProfile?: string;
   videoCodec: string;
   status: string;
   daysUntilRelease?: number;
@@ -325,6 +326,7 @@ router.get('/preview-metadata/:posterId', async (req, res, next) => {
         studio,
         resolution: '4K', // Simulated technical info
         audioFormat: 'Dolby Atmos',
+        audioProfile: 'truehd_atmos',
         videoCodec: 'HEVC',
         status: 'Available',
         releaseDate: movieDetails.release_date,
@@ -385,6 +387,7 @@ router.get('/preview-metadata/:posterId', async (req, res, next) => {
         network,
         resolution: '1080p', // Simulated technical info
         audioFormat: '5.1',
+        audioProfile: 'plus',
         videoCodec: 'H.264',
         status:
           tvDetails.status === 'Ended' || tvDetails.status === 'Canceled'
@@ -497,12 +500,14 @@ router.post('/', async (req, res, next) => {
     }
 
     // Validate template data structure - check for variable elements
-    const variableElements =
+    // Conditional variable elements are mutually exclusive at render time
+    const unconditionalVariables =
       templateData.elements?.filter(
-        (el: { type: string }) => el.type === 'variable'
+        (el: { type: string; condition?: unknown }) =>
+          el.type === 'variable' && !el.condition
       ) || [];
 
-    if (variableElements.length > 1) {
+    if (unconditionalVariables.length > 1) {
       return res.status(400).json({
         error:
           'Template has multiple variable elements. Each template can only contain one variable element.',
@@ -594,13 +599,13 @@ router.put('/:id', async (req, res, next) => {
     if (description !== undefined) template.description = description;
     if (type !== undefined) template.type = type;
     if (templateData) {
-      // Validate template data structure - check for variable elements
-      const variableElements =
+      const unconditionalVariables =
         templateData.elements?.filter(
-          (el: { type: string }) => el.type === 'variable'
+          (el: { type: string; condition?: unknown }) =>
+            el.type === 'variable' && !el.condition
         ) || [];
 
-      if (variableElements.length > 1) {
+      if (unconditionalVariables.length > 1) {
         return res.status(400).json({
           error:
             'Template has multiple variable elements. Each template can only contain one variable element.',

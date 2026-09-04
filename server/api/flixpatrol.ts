@@ -38,6 +38,8 @@ export interface FlixPatrolPlatformData {
   date: string;
   tvShows: FlixPatrolListItem[];
   movies: FlixPatrolListItem[];
+  /** Requested list was filled from the platform's overall chart, not its own Movies/TV table */
+  fallbackOnly?: boolean;
   platformLogo?: {
     spriteUrl: string;
     position: string;
@@ -303,6 +305,7 @@ class FlixPatrolAPI extends ExternalAPI {
 
       // Try today's date first, then yesterday if needed
       const dates = this.getDatesToTry(region);
+      let todayResult: FlixPatrolPlatformData | undefined;
 
       for (const dateInfo of dates) {
         try {
@@ -362,10 +365,17 @@ class FlixPatrolAPI extends ExternalAPI {
             }
           }
 
-          if (!hasData && dateInfo.isYesterday === false) {
-            // Today's data is empty, try yesterday
+          // ponytail: overall-only platforms (Crunchyroll) pay one extra fetch per sync; allowlist them if it matters
+          if (
+            !this.hasNativeData(result, requestedMediaType) &&
+            dateInfo.isYesterday === false &&
+            dates.length > 1
+          ) {
+            todayResult = result;
             logger.warn(
-              `No data found for today (${dateInfo.date}), trying yesterday`,
+              result.fallbackOnly
+                ? `Only the overall chart is published for today (${dateInfo.date}), trying yesterday`
+                : `No data found for today (${dateInfo.date}), trying yesterday`,
               {
                 label: 'FlixPatrol API',
                 platform,
@@ -373,6 +383,15 @@ class FlixPatrolAPI extends ExternalAPI {
               }
             );
             continue;
+          }
+
+          if (
+            dateInfo.isYesterday &&
+            todayResult &&
+            !this.hasNativeData(result, requestedMediaType) &&
+            this.hasRequestedData(todayResult, requestedMediaType)
+          ) {
+            return todayResult;
           }
 
           if (dateInfo.isYesterday) {
@@ -402,6 +421,10 @@ class FlixPatrolAPI extends ExternalAPI {
               }
             );
             continue;
+          }
+
+          if (todayResult) {
+            return todayResult;
           }
 
           // If this is yesterday's attempt or we only had one date, throw the error
@@ -499,6 +522,24 @@ class FlixPatrolAPI extends ExternalAPI {
     }
 
     return null;
+  }
+
+  private hasRequestedData(
+    result: FlixPatrolPlatformData,
+    requestedMediaType?: 'movie' | 'tv' | 'both'
+  ): boolean {
+    if (requestedMediaType === 'tv') return result.tvShows.length > 0;
+    if (requestedMediaType === 'movie') return result.movies.length > 0;
+    return result.movies.length > 0 || result.tvShows.length > 0;
+  }
+
+  private hasNativeData(
+    result: FlixPatrolPlatformData,
+    requestedMediaType?: 'movie' | 'tv' | 'both'
+  ): boolean {
+    return (
+      this.hasRequestedData(result, requestedMediaType) && !result.fallbackOnly
+    );
   }
 
   /**
@@ -1025,6 +1066,7 @@ class FlixPatrolAPI extends ExternalAPI {
           // Apply fallback logic: use overall content only if specific content wasn't found
           if (overallItems.length > 0) {
             if (requestedMediaType === 'tv' && result.tvShows.length === 0) {
+              result.fallbackOnly = true;
               result.tvShows = overallItems.map((item) => ({
                 ...item,
                 type: 'tv' as const,
@@ -1041,6 +1083,7 @@ class FlixPatrolAPI extends ExternalAPI {
               requestedMediaType === 'movie' &&
               result.movies.length === 0
             ) {
+              result.fallbackOnly = true;
               result.movies = overallItems.map((item) => ({
                 ...item,
                 type: 'movie' as const,
@@ -1055,6 +1098,9 @@ class FlixPatrolAPI extends ExternalAPI {
               );
             } else if (requestedMediaType === 'both') {
               // For "both", always include overall content
+              if (result.movies.length === 0 && result.tvShows.length === 0) {
+                result.fallbackOnly = true;
+              }
               result.movies = [
                 ...(result.movies || []),
                 ...overallItems.map((item) => ({
@@ -1373,7 +1419,11 @@ class FlixPatrolAPI extends ExternalAPI {
         const sectionText = topSections[i].toLowerCase().trim();
 
         // Look for explicit content type indicators immediately after "TOP 10"
-        if (sectionText.startsWith('overall')) {
+        const label = sectionText.split(/\d+\./, 1)[0];
+        if (tableCount > 1 && /\(from\s[^)]*channel/.test(label)) {
+          // Supplementary storefront chart with different title links; never a fallback
+          sectionType = 'channels';
+        } else if (sectionText.startsWith('overall')) {
           sectionType = 'overall';
         } else if (
           sectionText.startsWith('movies') ||

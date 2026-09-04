@@ -405,6 +405,8 @@ export const getSubtypeLabel = (type: string, subtype?: string): string => {
           return 'Recently Released';
         case 'recently_released_episodes':
           return 'Recently Added Episodes';
+        case 'recently_added_episodes':
+          return 'Recently Added Episodes (Individual)';
         default:
           return subtype;
       }
@@ -615,13 +617,15 @@ export const CustomSyncScheduleBadge: React.FC<
 // Unwatched Badge
 interface UnwatchedBadgeProps {
   showUnwatchedOnly?: boolean;
+  filterUnwatched?: boolean;
 }
 
 export const UnwatchedBadge: React.FC<UnwatchedBadgeProps> = ({
   showUnwatchedOnly,
+  filterUnwatched,
 }) => {
   const intl = useIntl();
-  if (!showUnwatchedOnly) return null;
+  if (!showUnwatchedOnly || filterUnwatched === false) return null;
 
   return (
     <Badge badgeType="default" className="!bg-opacity-30">

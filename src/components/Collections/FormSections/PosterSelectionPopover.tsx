@@ -59,6 +59,7 @@ interface PosterSelectionPopoverProps {
   ) => void;
   // Collection config for poster generation
   collectionConfig?: {
+    id?: string;
     name: string;
     type?: string;
     subtype?: string;
@@ -100,8 +101,12 @@ const PosterSelectionPopover: React.FC<PosterSelectionPopoverProps> = ({
     }[];
   } | null>(null);
 
-  // Close popover when clicking outside
+  // Close popover when clicking outside (suspend while a portaled child modal is open)
   useEffect(() => {
+    if (!isOpen || isEditorOpen || deleteConfirmation !== null) {
+      return;
+    }
+
     const handleClickOutside = (event: MouseEvent) => {
       if (
         popoverRef.current &&
@@ -111,12 +116,9 @@ const PosterSelectionPopover: React.FC<PosterSelectionPopoverProps> = ({
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () =>
-        document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [isOpen, onClose]);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, isEditorOpen, deleteConfirmation, onClose]);
 
   // Reset URL input state when popover closes
   useEffect(() => {
@@ -650,8 +652,10 @@ const PosterSelectionPopover: React.FC<PosterSelectionPopoverProps> = ({
         mode="create-poster"
         onSave={handlePosterSave}
         previewCollectionConfig={{
+          id: collectionConfig?.id,
           name: collectionConfig?.name || 'Collection',
           type: collectionConfig?.type,
+          subtype: collectionConfig?.subtype,
           mediaType: collectionConfig?.mediaType || 'movie',
         }}
       />

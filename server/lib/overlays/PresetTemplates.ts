@@ -3199,6 +3199,52 @@ export const PRESET_TEMPLATES: {
       ],
     },
   },
+
+  // Audio Codec
+  {
+    name: 'Audio Codec',
+    description:
+      'Shows the best audio format badge (Atmos, DTS-HD MA, DD+, etc.) detected from Plex stream data. Movie libraries only.',
+    type: 'technical',
+    tags: ['Technical'],
+    applicationCondition: {
+      sections: [
+        {
+          rules: [{ field: 'audioProfile', operator: 'exists', value: true }],
+        },
+      ],
+    },
+    templateData: {
+      width: 1000,
+      height: 1500,
+      elements: [
+        {
+          id: 'audio-codec-icon',
+          layerOrder: 0,
+          type: 'mapped-icon',
+          x: 0,
+          y: 650,
+          width: 120,
+          height: 120,
+          properties: {
+            field: 'audioProfile',
+            // Empty on purpose: the renderer falls back to merged mappings
+            // per value, so this preset honours user edits without a re-save.
+            // The hash also folds in those merged mappings (metadataHashing.ts),
+            // so an edit still triggers regeneration.
+            mappings: [],
+            layout: 'horizontal',
+            iconSize: 120,
+            spacingX: 0,
+            spacingY: 0,
+            maxIcons: 1,
+            grayscale: false,
+            opacity: 100,
+          },
+        },
+      ],
+    },
+  },
 ];
 
 /**

@@ -14,6 +14,11 @@ export class LetterboxdHttpClient {
   private static instance: AxiosInstance | null = null;
   private static cookieJar: CookieJar | null = null;
   private static isInitialized = false;
+  private static lastChallengeDetected: Date | null = null;
+
+  static getLastChallengeDetected(): Date | null {
+    return this.lastChallengeDetected;
+  }
 
   private static initialize(): void {
     if (this.isInitialized) {
@@ -77,6 +82,7 @@ export class LetterboxdHttpClient {
           throw new Error('Cloudflare challenge detected');
         }
 
+        this.lastChallengeDetected = null;
         return html;
       } catch (error) {
         const isCloudflare =
@@ -105,6 +111,9 @@ export class LetterboxdHttpClient {
         }
 
         // Final failure - let caller handle it
+        if (isCloudflare || is403or503) {
+          this.lastChallengeDetected = new Date();
+        }
         const message = error instanceof Error ? error.message : String(error);
         logger.error(`Letterboxd HTTP fetch failed: ${message}`, {
           label: 'Letterboxd HTTP',

@@ -207,6 +207,7 @@ export interface CollectionFormConfig {
   readonly template?: string; // Collection title template (for preset templates or single media type) - optional for hubs/pre-existing
   readonly customMovieTemplate?: string; // Custom template for movie collections when mediaType is 'both'
   readonly customTVTemplate?: string; // Custom template for TV collections when mediaType is 'both'
+  readonly dynamicTitlePrefix?: string; // Text to prepend to dynamic titles (DYNAMIC_RANDOM_TITLE / DYNAMIC_CYCLE_TITLE)
   readonly visibilityConfig: {
     usersHome: boolean;
     serverOwnerHome: boolean;
@@ -235,6 +236,7 @@ export interface CollectionFormConfig {
   readonly collectionRatingKey?: string; // Plex collection rating key for single-collection configs
   readonly collectionRatingKeys?: string[]; // Plex rating keys for multi-collection configs (e.g. seerr/users) — populated during sync
   readonly showUnwatchedOnly?: boolean; // Create smart collection that shows only unwatched items
+  readonly filterUnwatched?: boolean; // Within a smart collection, restrict to unwatched items (default true)
   readonly smartCollectionRatingKey?: string; // LEGACY: Old dual-collection system smart collection rating key (for migration only)
   readonly smartCollectionSort?: SmartCollectionSortOption; // Sort option for smart collections
   readonly isLinked?: boolean; // True if collection is actively linked to other collections
@@ -409,6 +411,8 @@ export interface CollectionFormConfig {
   readonly imdbCustomListUrl?: string; // Custom IMDb list URL
   // Letterboxd custom list fields
   readonly letterboxdCustomListUrl?: string; // Custom Letterboxd list URL
+  // MDBList custom list fields
+  readonly mdblistCustomListUrl?: string; // Custom MDBList list URL
   // Networks fields
   readonly networksCountry?: string; // Selected country for Networks collections
   // AniList custom list fields
@@ -521,6 +525,7 @@ export interface CollectionConfigCreateRequest {
   readonly template?: string;
   readonly customMovieTemplate?: string;
   readonly customTVTemplate?: string;
+  readonly dynamicTitlePrefix?: string;
   readonly visibilityConfig: {
     usersHome: boolean;
     serverOwnerHome: boolean;
@@ -629,6 +634,7 @@ export interface CollectionConfigCreateRequest {
   readonly tmdbAdvancedFilters?: Record<string, unknown>;
   readonly imdbCustomListUrl?: string;
   readonly letterboxdCustomListUrl?: string;
+  readonly mdblistCustomListUrl?: string;
   readonly networksCountry?: string;
   readonly anilistCustomListUrl?: string;
   readonly radarrInstanceId?: number;
@@ -689,6 +695,7 @@ export interface CollectionConfigCreateRequest {
   readonly enableCustomTheme?: boolean; // Enable custom theme sync to Plex
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
   readonly showUnwatchedOnly?: boolean; // If true, create a smart collection that filters to unwatched items only
+  readonly filterUnwatched?: boolean; // Within a smart collection, restrict to unwatched items (default true)
   readonly smartCollectionSort?: SmartCollectionSortOption; // Sort option for smart collections
   readonly selectionMode?: 'exclude' | 'include';
   readonly excludeValues?: string[];
@@ -714,6 +721,7 @@ export const toCollectionCreateRequest = (
     template: config.template,
     customMovieTemplate: config.customMovieTemplate,
     customTVTemplate: config.customTVTemplate,
+    dynamicTitlePrefix: config.dynamicTitlePrefix,
     visibilityConfig: config.visibilityConfig,
     // Explicitly exclude isActive - backend computes this
     maxItems: config.maxItems,
@@ -785,6 +793,7 @@ export const toCollectionCreateRequest = (
       | undefined,
     imdbCustomListUrl: config.imdbCustomListUrl,
     letterboxdCustomListUrl: config.letterboxdCustomListUrl,
+    mdblistCustomListUrl: config.mdblistCustomListUrl,
     networksCountry: config.networksCountry,
     anilistCustomListUrl: config.anilistCustomListUrl,
     radarrInstanceId: config.radarrInstanceId,
@@ -820,6 +829,7 @@ export const toCollectionCreateRequest = (
     sortTitleOverride: config.sortTitleOverride,
     // Smart collection support
     showUnwatchedOnly: config.showUnwatchedOnly,
+    filterUnwatched: config.filterUnwatched,
     smartCollectionSort: config.smartCollectionSort,
     // Library Essentials selection fields
     selectionMode: config.selectionMode,

@@ -1404,6 +1404,13 @@ export class DiscoveryService {
     try {
       allCollections = await plexClient.getAllCollections();
 
+      const exclusionLabels = (
+        getSettings().main.excludeFromOrderingLabel ?? ''
+      )
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
       // Add ALL collections - this is the source of truth for accurate titles
       for (const collection of allCollections) {
         const libraryId = String(collection.libraryKey);
@@ -1457,6 +1464,23 @@ export class DiscoveryService {
                 config.libraryId === libraryId
             );
 
+          const hasExclusionLabel =
+            exclusionLabels.length > 0 &&
+            (collection.labels ?? []).some((tag) => {
+              const t = String(tag).toLowerCase();
+              return exclusionLabels.some(
+                (excl) => t === excl || t.startsWith(excl + '_')
+              );
+            });
+
+          if (existingPreExisting) {
+            // Update exclusion flag on every discovery pass so adding/removing the label takes effect
+            if (existingPreExisting.excludeFromOrdering !== hasExclusionLabel) {
+              existingPreExisting.excludeFromOrdering = hasExclusionLabel;
+              settings.save();
+            }
+          }
+
           if (
             existingPreExisting &&
             existingPreExisting.name !== collection.title
@@ -1508,6 +1532,12 @@ export class DiscoveryService {
               isPromotedToHub: boolean;
             }
           ).isPromotedToHub = false;
+
+          if (hasExclusionLabel) {
+            (
+              collectionConfig as PreExistingCollectionConfig
+            ).excludeFromOrdering = true;
+          }
 
           // Link discovered poster to this config (if we downloaded one)
           // Check if we have a poster stored for this collection
@@ -1888,10 +1918,12 @@ export class DiscoveryService {
                 config.collectionRatingKeys.length > 0))
         );
 
-        // Check pre-existing collections for this library
+        // Check pre-existing collections for this library (skip excluded ones)
         const libraryPreExisting = preExistingConfigs.filter(
           (config) =>
-            config.libraryId === library.key && config.collectionRatingKey
+            config.libraryId === library.key &&
+            config.collectionRatingKey &&
+            !config.excludeFromOrdering
         );
 
         // Process both types of collections

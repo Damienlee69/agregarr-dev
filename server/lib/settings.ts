@@ -93,6 +93,7 @@ export interface CollectionConfig {
   readonly template: string; // Collection template
   readonly customMovieTemplate?: string; // Custom template for movie collections when mediaType is 'both'
   readonly customTVTemplate?: string; // Custom template for TV collections when mediaType is 'both'
+  readonly dynamicTitlePrefix?: string; // Text to prepend to dynamic titles (DYNAMIC_RANDOM_TITLE / DYNAMIC_CYCLE_TITLE)
   readonly visibilityConfig: {
     usersHome: boolean;
     serverOwnerHome: boolean;
@@ -128,6 +129,7 @@ export interface CollectionConfig {
   readonly collectionRatingKey?: string; // Plex collection rating key for single-collection configs
   readonly collectionRatingKeys?: string[]; // Plex rating keys for multi-collection configs (e.g. overseerr/users, tmdb/auto_franchise) — populated during sync
   readonly showUnwatchedOnly?: boolean; // If true, create a smart collection that filters to unwatched items only
+  readonly filterUnwatched?: boolean; // Within a smart collection, restrict to unwatched items (default true)
   readonly smartCollectionRatingKey?: string; // LEGACY: Old dual-collection system smart collection rating key (for migration only)
   readonly smartCollectionSort?: SmartCollectionSortOption; // Sort option for smart collections
   // Custom URL fields for external collections
@@ -436,6 +438,7 @@ export interface PreExistingCollectionConfig {
   };
   isActive: boolean; // Whether collection is currently active (computed from time restrictions)
   missing?: boolean; // True if collection no longer exists in Plex
+  excludeFromOrdering?: boolean; // True if collection has the ordering-exclusion label
   // Sync status tracking fields
   lastSyncedAt?: string; // ISO string timestamp of last successful sync to Plex
   lastModifiedAt?: string; // ISO string timestamp when config was last modified
@@ -704,6 +707,7 @@ export interface MainSettings {
   letterboxdUsePlainHttp?: boolean; // Use plain HTTP (axios) instead of Playwright for Letterboxd page fetching (default: true)
   // Cloudflare solver instances (FlareSolverr/Byparr), tried in array order. Empty = built-in Playwright.
   cloudflareSolvers?: CloudflareSolverInstance[];
+  excludeFromOrderingLabel?: string; // Comma-separated Plex labels — collections with any of these are excluded from ordering/visibility enforcement
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
   healthChecksEnabled?: boolean;
   silencedHealthChecks?: string[];
@@ -735,6 +739,7 @@ export interface OverlaySettings {
   defaultPosterSource: 'tmdb' | 'plex' | 'local';
   initialSetupComplete: boolean;
   watchProviderRegion?: string;
+  overlayConcurrency?: number;
 }
 
 export type JobId =
@@ -2355,6 +2360,7 @@ export interface MultiSourceCollectionConfig {
   readonly libraryName: string;
   readonly maxItems?: number;
   readonly template?: string;
+  readonly dynamicTitlePrefix?: string; // Text to prepend to dynamic titles (DYNAMIC_RANDOM_TITLE / DYNAMIC_CYCLE_TITLE)
   readonly sources: readonly SourceDefinition[];
   readonly combineMode: MultiSourceCombineMode;
   readonly customSyncSchedule?: CustomSyncSchedule;
@@ -2464,6 +2470,7 @@ export interface MultiSourceCollectionConfig {
   readonly smartCollectionRatingKey?: string; // LEGACY: Old dual-collection system smart collection rating key (for migration only)
   // Smart collection settings (unwatched filter feature)
   readonly showUnwatchedOnly?: boolean; // If true, create a smart collection that filters to unwatched items only
+  readonly filterUnwatched?: boolean; // Within a smart collection, restrict to unwatched items (default true)
   readonly smartCollectionSort?: SmartCollectionSortOption; // Sort option for smart collections
   // Wallpaper, summary, and theme settings
   readonly customWallpaper?: string | Record<string, string>; // Path to custom wallpaper (art) image file, or per-library wallpaper mapping

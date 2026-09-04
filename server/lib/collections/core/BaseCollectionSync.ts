@@ -25,6 +25,7 @@ import {
   clearConfigRatingKey,
   createCollectionLabel,
   createSyncError,
+  extractErrorCause,
   extractErrorMessage,
   getCollectionMediaType,
   handleRateLimit,
@@ -392,7 +393,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             CollectionSyncErrorType.COLLECTION_ERROR,
             `Failed to process configuration ${config.name}`,
             { configId: config.id, configName: config.name },
-            error instanceof Error ? error : new Error(String(error))
+            extractErrorCause(error)
           );
 
           errors.push(syncError);
@@ -404,6 +405,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
           logger.error(syncError.message, {
             label: `${this.source} Collections`,
             ...syncError.details,
+            error: extractErrorMessage(error),
+            cause: syncError.originalError?.message,
           });
         }
       }
@@ -428,12 +431,13 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         CollectionSyncErrorType.CONFIGURATION_ERROR,
         `Failed to process ${this.source} collections`,
         {},
-        error instanceof Error ? error : new Error(String(error))
+        extractErrorCause(error)
       );
 
       logger.error(syncError.message, {
         label: `${this.source} Collections`,
-        error: syncError.details,
+        error: extractErrorMessage(error),
+        cause: syncError.originalError?.message,
       });
 
       return { created: 0, updated: 0, error: syncError.message };
@@ -495,7 +499,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     // Handle special dynamic random title template
     if (config.template === 'DYNAMIC_RANDOM_TITLE') {
       // DYNAMIC_RANDOM_TITLE should be handled by each subclass in fetchSourceData
-      // Fall back to config.name if not handled
+      // Fall back to config.name (which may already include prefix from a previous sync)
       return config.name;
     }
 
@@ -1352,7 +1356,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             labelName,
             mediaType,
             options.config.smartCollectionSort?.value,
-            options.config.maxItems
+            options.config.maxItems,
+            options.config.filterUnwatched ?? true
           );
 
           // Step 4: Migrate config - move smartCollectionRatingKey to collectionRatingKey
@@ -1403,7 +1408,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             labelName,
             mediaType,
             options.config.smartCollectionSort?.value,
-            options.config.maxItems
+            options.config.maxItems,
+            options.config.filterUnwatched ?? true
           );
           updated = 1;
         } else {
@@ -1431,7 +1437,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             mediaType,
             options.config.smartCollectionSort?.value,
             customLabel,
-            options.config.maxItems
+            options.config.maxItems,
+            options.config.filterUnwatched ?? true
           );
 
         if (!newSmartCollectionRatingKey) {

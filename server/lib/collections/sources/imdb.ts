@@ -167,7 +167,8 @@ export class ImdbCollectionSync extends BaseCollectionSync<'imdb'> {
           'imdb',
           9999,
           mediaType,
-          libraryCache
+          libraryCache,
+          config.id
         );
         if (!randomResult) {
           throw this.createSyncError(
@@ -181,7 +182,9 @@ export class ImdbCollectionSync extends BaseCollectionSync<'imdb'> {
         // Store the dynamic title for use in generateCollectionNameWithCustom
         if (config.template === 'DYNAMIC_RANDOM_TITLE') {
           this.dynamicRandomTitle = listTitle;
-          this.updateCollectionConfigField(config.id, { name: listTitle });
+          const prefix = config.dynamicTitlePrefix || '';
+          const prefixedName = prefix ? `${prefix} ${listTitle}` : listTitle;
+          this.updateCollectionConfigField(config.id, { name: prefixedName });
         }
 
         logger.info(`Using random IMDb list: ${randomUrl}`, {
@@ -911,7 +914,10 @@ export class ImdbCollectionSync extends BaseCollectionSync<'imdb'> {
   ): Promise<string> {
     // Handle DYNAMIC_RANDOM_TITLE using stored title from fetchSourceData
     if (config.template === 'DYNAMIC_RANDOM_TITLE' && this.dynamicRandomTitle) {
-      return this.dynamicRandomTitle;
+      const prefix = config.dynamicTitlePrefix || '';
+      return prefix
+        ? `${prefix} ${this.dynamicRandomTitle}`
+        : this.dynamicRandomTitle;
     }
 
     // Fall back to base implementation for other templates
@@ -1067,6 +1073,8 @@ export class ImdbCollectionSync extends BaseCollectionSync<'imdb'> {
         return mediaType === 'tv' ? '/chart/toptv/' : '/chart/top/';
       case 'top_250_english':
         return '/chart/top-english-movies/';
+      case 'bottom_100':
+        return '/chart/bottom/';
       case 'popular':
         return mediaType === 'tv' ? '/chart/tvmeter/' : '/chart/moviemeter/';
       case 'boxoffice':

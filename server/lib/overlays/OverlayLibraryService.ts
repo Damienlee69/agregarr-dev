@@ -7,6 +7,7 @@ import type { SonarrSeries } from '@server/api/servarr/sonarr';
 import TheMovieDb from '@server/api/themoviedb';
 import { getRepository } from '@server/datasource';
 import { OverlayLibraryConfig } from '@server/entity/OverlayLibraryConfig';
+import type { IconMapping } from '@server/entity/OverlayTemplate';
 import { OverlayTemplate } from '@server/entity/OverlayTemplate';
 import cacheManager from '@server/lib/cache';
 import { getSettings } from '@server/lib/settings';
@@ -1604,55 +1605,32 @@ class OverlayLibraryService {
         await this.runEpisodeScan(plexApi, libraryId, requiredContextFields);
       }
 
-      // Process each item
-      for (const item of allItems) {
-        // CRITICAL: Skip episodes and seasons - overlays only apply to movies and shows
+      // Process each item (concurrency-limited)
+      const rawConcurrency = Number(getSettings().overlays?.overlayConcurrency);
+      const concurrency =
+        Number.isFinite(rawConcurrency) && rawConcurrency >= 1
+          ? Math.min(10, Math.floor(rawConcurrency))
+          : 1;
+      let cancelled = false;
+
+      const processItem = async (item: PlexLibraryItem) => {
         if (item.type === 'episode' || item.type === 'season') {
           this.updateProgress(libraryId, (p) => {
-            p.currentItem++; // Advance currentItem to maintain accurate progress %
+            p.currentItem++;
             p.filteredCount++;
           });
-          continue;
+          return;
         }
 
-        // Check for cancellation FIRST
-        if (checkCancelled && checkCancelled()) {
-          // Transition to cancelling state
-          const progress = this.runningLibraries.get(libraryId);
-          if (progress) {
-            progress.state = 'cancelling';
-          }
-
-          logger.info(
-            'Overlay application cancelled during library processing',
-            {
-              label: 'OverlayLibrary',
-              libraryId,
-              processedItems: progress?.currentItem || 0,
-              totalItems: allItems.length,
-            }
-          );
-
-          // Mark cancelled (not completed)
-          if (progress) {
-            progress.state = 'cancelled';
-            progress.completedAt = Date.now();
-          }
-          return; // Exit early, don't continue processing
-        }
-
-        // Update current item title (before processing)
         this.updateProgress(libraryId, (p) => {
           p.currentTitle = item.title || '';
         });
 
         try {
-          // Use batch-prefetched metadata, falling back to individual fetch on miss
           const fullMetadata =
             batchMetadata.get(item.ratingKey) ??
             (await plexApi.getMetadata(item.ratingKey));
 
-          // Merge full metadata with library item
           const itemWithFullMetadata = {
             ...item,
             Media: fullMetadata.Media,
@@ -1670,16 +1648,12 @@ class OverlayLibraryService {
             seasonFallbackFor(config)
           );
 
-          // Update counts AFTER outcome is known
           this.updateProgress(libraryId, (p) => {
             p.currentItem++;
-
-            // Track timing for ETA
             p._recentItemTimes.push(Date.now());
             if (p._recentItemTimes.length > 20) {
               p._recentItemTimes.shift();
             }
-
             if (result.skipped) {
               p.skippedCount++;
             } else {
@@ -1687,11 +1661,9 @@ class OverlayLibraryService {
             }
           });
         } catch (error) {
-          // Update error count AFTER failure
           this.updateProgress(libraryId, (p) => {
             p.currentItem++;
             p.errorCount++;
-
             if (p.itemErrors.length < 50) {
               const raw =
                 error instanceof Error ? error.message : String(error);
@@ -1701,8 +1673,6 @@ class OverlayLibraryService {
                 error: scrubSecrets(raw).slice(0, 200),
               });
             }
-
-            // Track timing for ETA even on errors
             p._recentItemTimes.push(Date.now());
             if (p._recentItemTimes.length > 20) {
               p._recentItemTimes.shift();
@@ -1716,8 +1686,44 @@ class OverlayLibraryService {
             stack: error instanceof Error ? error.stack : undefined,
             errorDetails: error,
           });
-          // Continue with next item
         }
+      };
+
+      const active: Promise<void>[] = [];
+      try {
+        for (const item of allItems) {
+          if (checkCancelled?.()) {
+            cancelled = true;
+            break;
+          }
+          const p = processItem(item).finally(() => {
+            active.splice(active.indexOf(p), 1);
+          });
+          active.push(p);
+          if (active.length >= concurrency) {
+            await Promise.race(active);
+          }
+        }
+      } finally {
+        await Promise.allSettled(active);
+      }
+
+      if (cancelled) {
+        const progress = this.runningLibraries.get(libraryId);
+        if (progress) {
+          progress.state = 'cancelling';
+        }
+        logger.info('Overlay application cancelled during library processing', {
+          label: 'OverlayLibrary',
+          libraryId,
+          processedItems: progress?.currentItem || 0,
+          totalItems: allItems.length,
+        });
+        if (progress) {
+          progress.state = 'cancelled';
+          progress.completedAt = Date.now();
+        }
+        return;
       }
 
       // Seasons never appear in the library listing above; Maintainerr nominates
@@ -2345,8 +2351,11 @@ class OverlayLibraryService {
       // Extract which context fields are actually used by MATCHING templates
       // CRITICAL: Hash uses matching template IDs + variable field values + condition field values
       // Template IDs capture which templates match, field values capture all data affecting rendering
-      const { calculateOverlayInputHash, extractUsedContextFields } =
-        await import('@server/utils/metadataHashing');
+      const {
+        calculateOverlayInputHash,
+        extractUsedContextFields,
+        extractMappedIconFields,
+      } = await import('@server/utils/metadataHashing');
 
       const templateDataArray = matchingTemplates.map((t) =>
         t.getTemplateData()
@@ -2359,11 +2368,29 @@ class OverlayLibraryService {
         applicationConditions
       );
 
+      // Fold effective (user-override-aware) icon mappings for fields matching
+      // mapped-icon elements read, so a mapping edit invalidates the hash even
+      // though the mapping itself lives outside templateData. getMergedMappings
+      // shares UserMappingsService's mtime-guarded cache with the renderer, so
+      // this reads the same snapshot the render below will use.
+      const mappedIconFields = extractMappedIconFields(templateDataArray);
+      let mappedIconMappings: Record<string, IconMapping[]> | undefined;
+      if (mappedIconFields.size > 0) {
+        const { getMergedMappings } = await import(
+          '@server/lib/overlays/UserMappingsService'
+        );
+        mappedIconMappings = {};
+        for (const field of mappedIconFields) {
+          mappedIconMappings[field] = getMergedMappings(field);
+        }
+      }
+
       const overlayInputHash = calculateOverlayInputHash({
         templateIds: matchingTemplates.map((t) => t.id).sort(),
         templateData: templateDataArray,
         usedFields: usedFields,
         context: context as Record<string, unknown>,
+        mappedIconMappings,
       });
 
       // Debug logging for hash comparison
@@ -2392,6 +2419,17 @@ class OverlayLibraryService {
         },
       });
 
+      // Whether the CURRENT Plex poster is the one we last uploaded. Used
+      // after the render loop below to tell "nothing to remove" (skip the
+      // upload) from "overlays need to come off" (fall through to the
+      // existing removal-by-reupload path) when a run renders zero overlay
+      // elements. Defaults to true (favor the pre-fix upload path, not a
+      // skip) if the check below throws before it runs - the catch below
+      // exists to fall through to the overlay flow on a transient failure,
+      // and a stale-overlay-left-in-place outcome must not become the
+      // default on that path.
+      let currentPosterIsOurs = true;
+
       // OPTIMIZATION: Check if overlay inputs changed BEFORE downloading poster
       // This prevents expensive poster downloads when nothing has changed
       try {
@@ -2411,6 +2449,7 @@ class OverlayLibraryService {
           metadata?.ourOverlayPosterUrl,
           currentPosterUrl
         );
+        currentPosterIsOurs = !plexPosterMissing;
 
         // Debug logging for poster URL comparison
         logger.debug('Poster URL comparison', {
@@ -2557,10 +2596,31 @@ class OverlayLibraryService {
             context
           );
 
-        if (templateOverlays) {
+        if (templateOverlays?.length) {
           allOverlays.push(...templateOverlays);
           templatesApplied++;
         }
+      }
+
+      if (allOverlays.length === 0 && !currentPosterIsOurs) {
+        // No overlay elements rendered, and the current Plex poster isn't one
+        // we uploaded - nothing to draw and nothing of ours to remove.
+        // Compositing now would only produce a lossy re-encode of a poster we
+        // never touched. No bookkeeping to write here: the ownership
+        // mismatch that got us into this branch is exactly what the "nothing
+        // changed" gate above re-checks every run (its !plexPosterMissing
+        // requirement), so no input-hash write could ever short-circuit it -
+        // this item re-renders and re-skips each run. Cheap relative to the
+        // upload it replaces; a negative cache is a separate change if it's
+        // ever worth it.
+        logger.info('No overlay elements rendered - skipping upload', {
+          label: 'OverlayLibrary',
+          itemTitle: item.title,
+          ratingKey: item.ratingKey,
+          matchingTemplates: matchingTemplates.length,
+        });
+
+        return { skipped: true };
       }
 
       // Single composite + WebP encode for all templates
