@@ -1940,12 +1940,29 @@ class PlexAPI {
     }
   }
 
+  /**
+   * `lock: false` releases the field instead of writing it: the value is
+   * cleared and titleSort.locked goes to 0, handing the sort title back to
+   * Plex. That is not the same as writing the collection's own name, which
+   * is what this used to do whenever Agregarr had nothing to impose. Plex
+   * generates its own sort title by stripping a leading article - "The
+   * Crow" files under C - but only for fields it still owns, and every
+   * write here sets titleSort.locked. So a collection Agregarr had
+   * normalized and then stopped normalizing (article handling switched to
+   * 'off') was left holding an empty BUT LOCKED titleSort, which suppresses
+   * Plex's own stripping and files it under "The" - worse than if the
+   * setting had never been switched on, and unreachable from Agregarr's UI.
+   * Confirmed against a live server: unlocking the field alone is enough,
+   * Plex repopulates it on its own.
+   */
   public async updateCollectionSortTitle(
     collectionRatingKey: string,
     sortTitle: string,
-    currentTitleSort?: string
+    currentTitleSort?: string,
+    lock = true
   ): Promise<void> {
     if (
+      lock &&
       currentTitleSort !== undefined &&
       sortTitle === currentTitleSort &&
       this.shouldSkipUnchangedWrites()
@@ -1956,8 +1973,8 @@ class PlexAPI {
       const params = {
         type: 18,
         id: collectionRatingKey,
-        'titleSort.value': sortTitle,
-        'titleSort.locked': 1,
+        'titleSort.value': lock ? sortTitle : '',
+        'titleSort.locked': lock ? 1 : 0,
       };
 
       const queryString = Object.entries(params)

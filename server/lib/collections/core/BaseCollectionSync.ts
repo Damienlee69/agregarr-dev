@@ -22,6 +22,8 @@ import logger from '@server/logger';
 import path from 'path';
 import {
   applyCollectionExclusions,
+  buildPromotedSortTitle,
+  buildSortTitleFromOverride,
   clearConfigRatingKey,
   createCollectionLabel,
   createSyncError,
@@ -30,8 +32,11 @@ import {
   getCollectionMediaType,
   handleRateLimit,
   hasAgregarrLabel,
+  isAgregarrOwnedSortTitle,
   isMultiCollectionPattern,
   logCollectionProcessingResults,
+  normalizeSortTitleArticle,
+  resolveMultiCollectionBase,
   sanitizeCollectionName,
   updateConfigWithRatingKey,
   validateAndSanitizeItems,
@@ -2222,71 +2227,155 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     }
 
     // Update sort title if needed - for Agregarr-created collections
-    // Find the config to check everLibraryPromoted status
+    // Find the config to check everLibraryPromoted status. Matched by id,
+    // not collectionRatingKey: multi-collection generators (Essentials,
+    // Directors/Actors, Franchise) never store an individual generated
+    // collection's key on the shared parent config, so a ratingKey-based
+    // lookup could never resolve for them - the override check below would
+    // silently never fire. Matching by id also means sortOrderLibrary and
+    // isLibraryPromoted get read fresh from settings at write time rather
+    // than trusting whatever `options` snapshot the caller captured earlier
+    // in a long-running sync, which can be stale by the time this specific
+    // collection's turn comes up.
     const settings = getSettings();
     const allConfigs = settings.plex.collectionConfigs || [];
-    const matchingConfig = allConfigs.find((config) => {
-      const configLibraryId = Array.isArray(config.libraryId)
-        ? config.libraryId[0]
-        : config.libraryId;
-      return (
-        configLibraryId === options.libraryKey &&
-        config.collectionRatingKey === collectionRatingKey
-      );
-    });
+    const matchingConfig = options.config?.id
+      ? allConfigs.find((config) => config.id === options.config?.id)
+      : undefined;
 
-    // Sort title override: prefix + collection name
+    const effectiveSortOrderLibrary =
+      matchingConfig?.sortOrderLibrary ?? sortOrderLibrary;
+    const effectiveIsLibraryPromoted =
+      matchingConfig?.isLibraryPromoted ?? isLibraryPromoted;
+
+    // A manual Sort Title override always wins and applies to every
+    // collection, including the A-Z ones the computed logic below skips.
     const effectiveOverride =
       options.config?.sortTitleOverride || matchingConfig?.sortTitleOverride;
-    if (effectiveOverride) {
+
+    // Multi-collection configs put every collection they generate behind one
+    // shared prefix, so the name following that prefix is what actually orders
+    // them against each other - unlike a single collection, whose own rank
+    // already decides its position and whose name is never compared. That name
+    // therefore has to carry the same leading-article normalization an A-Z
+    // title would, or one sibling files under "The" while the rest file under
+    // their real initial: "!010_Babysitter, !010_Defender, !010_The Crow"
+    // instead of "!010_Babysitter, !010_Crow, !010_Defender".
+    //
+    // No sortTitleArticleNormalized bookkeeping is needed here, unlike the A-Z
+    // branch below: these paths rewrite the sortTitle from the raw name on
+    // every sync, so switching the setting to 'off' restores the natural title
+    // on its own.
+    const sortKeyName = isMultiCollectionPattern(matchingConfig)
+      ? normalizeSortTitleArticle(
+          collectionName,
+          settings.plex.sortTitleArticleHandling
+        )
+      : collectionName;
+
+    // A demoted multi-collection group falls back to its parent config's name
+    // as the shared base, so its members stay together under it instead of
+    // scattering to their own initials while the separator sits alone at the
+    // top of the library. Promoted groups need no fallback - the rank prefix
+    // they already share groups them.
+    const groupBase = isMultiCollectionPattern(matchingConfig)
+      ? resolveMultiCollectionBase(
+          effectiveOverride,
+          effectiveIsLibraryPromoted ? undefined : matchingConfig?.name
+        )
+      : effectiveOverride;
+
+    if (groupBase) {
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
-        `${effectiveOverride}${collectionName}`,
+        buildSortTitleFromOverride(
+          groupBase,
+          sortKeyName,
+          isMultiCollectionPattern(matchingConfig)
+        ),
         options.existingTitleSort
       );
     } else if (
       // Only update sortTitle if everLibraryPromoted is not explicitly false
-      sortOrderLibrary !== undefined &&
-      matchingConfig?.everLibraryPromoted !== false
+      effectiveSortOrderLibrary !== undefined &&
+      // Previously-touched collections always qualify, same as before. A
+      // collection Agregarr has never promoted/demoted also qualifies now
+      // when leading-article normalization is enabled - a lightweight
+      // cosmetic sort fix, not a claim of ownership over the collection's
+      // position the way positional (promoted) sortTitle is, which stays
+      // gated behind promotion history inside the branch below.
+      (matchingConfig?.everLibraryPromoted !== false ||
+        effectiveIsLibraryPromoted ||
+        (settings.plex.sortTitleArticleHandling &&
+          settings.plex.sortTitleArticleHandling !== 'off') ||
+        // Switching to 'off' still has to restore anything previously
+        // normalized, or "off" would just strand the last enabled mode's
+        // value in place forever.
+        matchingConfig?.sortTitleArticleNormalized === true) &&
+      // A sort title the user set in Plex outranks article handling:
+      // normalization is the rule for collections without a deliberate one,
+      // not a licence to replace one that exists.
+      //
+      // Two exemptions. Promoted collections: their position is Agregarr's to
+      // own and the positional scheme below is the only thing that can express
+      // it. Dynamic-title collections: they are renamed on every sync, so the
+      // sort title left over from the previous name can never match the
+      // current one and would read as a human's edit, stopping Agregarr from
+      // maintaining the sort title from the first rename onward.
+      (effectiveIsLibraryPromoted ||
+        matchingConfig?.template === 'DYNAMIC_RANDOM_TITLE' ||
+        matchingConfig?.template === 'DYNAMIC_CYCLE_TITLE' ||
+        isAgregarrOwnedSortTitle(
+          options.existingTitleSort,
+          collectionName,
+          matchingConfig?.sortTitleArticleNormalized,
+          matchingConfig?.everLibraryPromoted
+        ))
     ) {
       let sortTitle: string;
       const updateConfig: Partial<CollectionConfig> = {};
 
-      if (isLibraryPromoted && sortOrderLibrary > 0) {
-        // Promoted: Set exclamation marks
-        const sameLibraryConfigs = allConfigs.filter((config) => {
-          const configLibraryId = Array.isArray(config.libraryId)
-            ? config.libraryId[0]
-            : config.libraryId;
-          return (
-            configLibraryId === options.libraryKey &&
-            config.sortOrderLibrary !== undefined &&
-            config.isLibraryPromoted === true
-          );
-        });
-
-        if (sameLibraryConfigs.length > 0) {
-          const sortOrders = sameLibraryConfigs
-            .map((c) => c.sortOrderLibrary)
-            .filter((order): order is number => order !== undefined);
-          const maxSortOrder = Math.max(...sortOrders);
-          const exclamationCount = maxSortOrder - sortOrderLibrary + 2;
-          const exclamationPrefix = '!'.repeat(exclamationCount);
-          sortTitle = `${exclamationPrefix}${collectionName}`;
-        } else {
-          sortTitle = `!!${collectionName}`;
-        }
+      if (effectiveIsLibraryPromoted && effectiveSortOrderLibrary > 0) {
+        // Promoted: positional sortTitle (see buildPromotedSortTitle).
+        // sortKeyName, not collectionName - a promoted multi-collection
+        // config shares one rank across everything it generates, so the
+        // same tiebreaker applies as in the override path above.
+        sortTitle = buildPromotedSortTitle(
+          sortKeyName,
+          effectiveSortOrderLibrary
+        );
       } else {
-        // Demoted: Reset to natural title and mark as cleaned
-        sortTitle = collectionName;
+        // A-Z: reset/normalize to the natural title (normalized per the
+        // configured leading-article handling - see
+        // normalizeSortTitleArticle). Applies even to collections
+        // Agregarr has never promoted/demoted before, as long as article
+        // handling is actually enabled (checked above).
+        sortTitle = normalizeSortTitleArticle(
+          collectionName,
+          settings.plex.sortTitleArticleHandling
+        );
+        // Track whether what we just wrote is actually a normalized value,
+        // so a later switch to 'off' knows to restore this one.
+        const isNormalized = sortTitle !== collectionName;
+        if (
+          isNormalized !==
+          (matchingConfig?.sortTitleArticleNormalized === true)
+        ) {
+          updateConfig.sortTitleArticleNormalized = isNormalized;
+        }
         // After reset, set everLibraryPromoted back to false
         updateConfig.everLibraryPromoted = false;
       }
 
+      // Lock only where Agregarr is actually imposing a value. A promoted
+      // rank or a normalized title is Agregarr's to own; the bare natural
+      // name is not, and locking that is what suppressed Plex's own
+      // article stripping (see updateCollectionSortTitle).
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
         sortTitle,
-        options.existingTitleSort
+        options.existingTitleSort,
+        sortTitle !== collectionName
       );
 
       // Update config if everLibraryPromoted needs to be reset

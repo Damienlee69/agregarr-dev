@@ -1,5 +1,6 @@
 import type PlexAPI from '@server/api/plexapi';
 import type { PlexLibrary } from '@server/api/plexapi';
+import { isAgregarrOwnedSortTitle } from '@server/lib/collections/core/CollectionUtilities';
 import type { PlexCollection } from '@server/lib/collections/core/types';
 import {
   categorizeDiscoveredItem,
@@ -1479,6 +1480,63 @@ export class DiscoveryService {
               existingPreExisting.excludeFromOrdering = hasExclusionLabel;
               settings.save();
             }
+          }
+
+          // Plex is authoritative for a sort title set in Plex, so refresh
+          // the stored copy on every discovery pass the same way the name is
+          // refreshed below. Without this it stayed frozen at whatever it was
+          // when the collection was first discovered, went stale the moment
+          // anyone edited the sort title in Plex, and could not be trusted for
+          // ordering or for telling a manual value apart from one Agregarr
+          // wrote itself (see isAgregarrOwnedSortTitle).
+          const discoveredTitleSort =
+            typeof collection.titleSort === 'string'
+              ? collection.titleSort
+              : undefined;
+          if (
+            existingPreExisting &&
+            existingPreExisting.titleSort !== discoveredTitleSort
+          ) {
+            const oldTitleSort = existingPreExisting.titleSort;
+            existingPreExisting.titleSort = discoveredTitleSort;
+
+            // Plex's value changed to something Agregarr would not have
+            // produced, so a human edited it there. Drop the record of
+            // Agregarr having normalized this one, or Agregarr keeps
+            // believing the sort title is its own and reclaims it on the
+            // next sync - silently undoing the edit.
+            if (
+              existingPreExisting.sortTitleArticleNormalized === true &&
+              !isAgregarrOwnedSortTitle(
+                discoveredTitleSort,
+                existingPreExisting.name
+              )
+            ) {
+              existingPreExisting.sortTitleArticleNormalized = false;
+              logger.info(
+                `Sort title for "${existingPreExisting.name}" was changed in Plex - Agregarr will leave it alone from now on`,
+                {
+                  label: 'Discovery Service',
+                  configId: existingPreExisting.id,
+                  ratingKey: collection.ratingKey,
+                  libraryId,
+                }
+              );
+            }
+
+            settings.save();
+
+            logger.info(
+              `Updated pre-existing collection sort title: "${
+                oldTitleSort ?? '(none)'
+              }" -> "${discoveredTitleSort ?? '(none)'}"`,
+              {
+                label: 'Discovery Service',
+                configId: existingPreExisting.id,
+                ratingKey: collection.ratingKey,
+                libraryId,
+              }
+            );
           }
 
           if (

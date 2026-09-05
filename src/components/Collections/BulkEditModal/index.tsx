@@ -45,6 +45,11 @@ const messages = defineMessages({
   libraryRecommended: 'Library Recommended',
   maxItems: 'Max Items',
   randomizeHomeOrder: 'Randomize Home Order',
+  collectionSuffix: 'Collection Suffix',
+  collectionSuffixLeave: 'Leave As Is',
+  collectionSuffixStrip: 'Remove " Collection"',
+  collectionSuffixAdd: 'Add " Collection"',
+  noChange: 'No change',
   sortOrder: 'Sort Order',
   downloadMode: 'Download Mode',
   searchMissingMovies: 'Search Missing Movies',
@@ -100,6 +105,8 @@ type UnifiedCollection = {
   // Common fields
   maxItems?: number;
   randomizeHomeOrder?: boolean;
+  // Pre-existing only: a real Plex rename, see resolveCollectionSuffixMode
+  collectionSuffixMode?: 'leave' | 'strip' | 'add';
   // Collection-specific fields
   sortOrder?: CollectionSortOrder;
   downloadMode?: 'overseerr' | 'direct';
@@ -152,6 +159,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
     };
     maxItems?: number | '';
     randomizeHomeOrder?: boolean;
+    collectionSuffixMode?: 'leave' | 'strip' | 'add' | '';
     sortOrder?: CollectionSortOrder | '';
     downloadMode?: 'overseerr' | 'direct' | '';
     searchMissingMovies?: boolean;
@@ -236,6 +244,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
         libraryId: pre.libraryId,
         visibilityConfig: pre.visibilityConfig,
         randomizeHomeOrder: pre.randomizeHomeOrder,
+        collectionSuffixMode: pre.collectionSuffixMode ?? 'leave',
         originalConfig: pre,
       });
     });
@@ -474,6 +483,12 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
       return type === 'collection';
     }
 
+    // Renaming is only ever done to pre-existing collections: Agregarr builds
+    // its own collections' names, and hubs are Plex's.
+    if (field === 'collectionSuffixMode') {
+      return type === 'preExisting';
+    }
+
     return false;
   };
 
@@ -533,6 +548,13 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
             editValues.maxItems === '' ? undefined : editValues.maxItems;
         }
 
+        if (
+          editValues.collectionSuffixMode !== undefined &&
+          editValues.collectionSuffixMode !== '' &&
+          isFieldApplicable('collectionSuffixMode', collection.type)
+        ) {
+          updatedFields.collectionSuffixMode = editValues.collectionSuffixMode;
+        }
         if (
           editValues.randomizeHomeOrder !== undefined &&
           isFieldApplicable('randomizeHomeOrder', collection.type)
@@ -762,7 +784,7 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
         </p>
 
         {/* Controls bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-gray-700 bg-stone-800 p-3">
+        <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-gray-700 bg-stone-800 p-3">
           <div className="flex items-center gap-3">
             <Button buttonSize="sm" onClick={handleSelectAll}>
               <CheckIcon className="mr-1 h-4 w-4" />
@@ -821,11 +843,11 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
         </div>
 
         {/* Table container with horizontal scroll */}
-        <div className="overflow-x-auto rounded-lg border border-gray-700">
+        <div className="max-h-[60vh] overflow-auto rounded-lg border border-gray-700">
           <table className="w-full min-w-max table-fixed">
-            <thead className="sticky top-0 z-10 bg-stone-800">
+            <thead className="sticky top-0 z-20 bg-stone-800">
               <tr className="border-b border-gray-700">
-                <th className="sticky left-0 z-20 w-12 bg-stone-800 px-3 py-2 text-left text-xs font-medium text-gray-400 shadow-[2px_0_4px_rgba(0,0,0,0.3)]">
+                <th className="sticky left-0 z-30 w-12 bg-stone-800 px-3 py-2 text-left text-xs font-medium text-gray-400 shadow-[2px_0_4px_rgba(0,0,0,0.3)]">
                   <input
                     type="checkbox"
                     checked={
@@ -844,14 +866,14 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
                   />
                 </th>
                 <th
-                  className="min-w-48 sticky left-12 z-20 cursor-pointer select-none bg-stone-800 px-3 py-2 text-left text-xs font-medium text-gray-400 shadow-[2px_0_4px_rgba(0,0,0,0.3)] hover:text-gray-300"
+                  className="sticky left-12 z-30 w-48 cursor-pointer select-none bg-stone-800 px-3 py-2 text-left text-xs font-medium text-gray-400 shadow-[2px_0_4px_rgba(0,0,0,0.3)] hover:text-gray-300"
                   onClick={() => handleColumnSort('name')}
                 >
                   {intl.formatMessage(messages.collectionName)}
                   {renderSortIndicator('name')}
                 </th>
                 <th
-                  className="sticky left-60 z-20 w-32 cursor-pointer select-none bg-stone-800 px-3 py-2 text-left text-xs font-medium text-gray-400 shadow-[2px_0_0_0_rgb(75,85,99)] hover:text-gray-300"
+                  className="sticky left-60 z-30 w-32 cursor-pointer select-none bg-stone-800 px-3 py-2 text-left text-xs font-medium text-gray-400 shadow-[2px_0_0_0_rgb(75,85,99)] hover:text-gray-300"
                   onClick={() => handleColumnSort('library')}
                 >
                   {intl.formatMessage(messages.library)}
@@ -884,6 +906,9 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
                 >
                   {intl.formatMessage(messages.libraryRecommended)}
                   {renderSortIndicator('libraryRecommended')}
+                </th>
+                <th className="w-36 select-none px-3 py-2 text-center text-xs font-medium text-gray-400">
+                  {intl.formatMessage(messages.collectionSuffix)}
                 </th>
                 <th
                   className="w-24 cursor-pointer select-none px-3 py-2 text-center text-xs font-medium text-gray-400 hover:text-gray-300"
@@ -1127,6 +1152,27 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
                               : 'text-gray-600'
                           }`}
                         />
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-center text-sm ${
+                          !isFieldApplicable(
+                            'collectionSuffixMode',
+                            collection.type
+                          )
+                            ? 'text-gray-600 opacity-30'
+                            : 'text-gray-300'
+                        }`}
+                      >
+                        {!isFieldApplicable(
+                          'collectionSuffixMode',
+                          collection.type
+                        )
+                          ? '-'
+                          : collection.collectionSuffixMode === 'strip'
+                          ? intl.formatMessage(messages.collectionSuffixStrip)
+                          : collection.collectionSuffixMode === 'add'
+                          ? intl.formatMessage(messages.collectionSuffixAdd)
+                          : intl.formatMessage(messages.collectionSuffixLeave)}
                       </td>
                       <td
                         className={`px-3 py-2 text-center text-sm ${
@@ -1477,6 +1523,32 @@ const BulkEditModal: React.FC<BulkEditModalProps> = ({
                         </option>
                         <option value="false">
                           {intl.formatMessage(messages.no)}
+                        </option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={editValues.collectionSuffixMode || ''}
+                        onChange={(e) =>
+                          setEditValues({
+                            ...editValues,
+                            collectionSuffixMode:
+                              e.target.value === ''
+                                ? undefined
+                                : (e.target.value as 'leave' | 'strip' | 'add'),
+                          })
+                        }
+                        className="w-full rounded border border-gray-600 bg-stone-700 px-2 py-1 text-xs text-white"
+                      >
+                        <option value="">-</option>
+                        <option value="leave">
+                          {intl.formatMessage(messages.collectionSuffixLeave)}
+                        </option>
+                        <option value="strip">
+                          {intl.formatMessage(messages.collectionSuffixStrip)}
+                        </option>
+                        <option value="add">
+                          {intl.formatMessage(messages.collectionSuffixAdd)}
                         </option>
                       </select>
                     </td>

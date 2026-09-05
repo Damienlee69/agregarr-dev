@@ -118,13 +118,14 @@ export interface CollectionConfig {
   readonly libraryName: string; // Library name for display
   readonly sortOrderHome?: number; // Order for Plex home screen (1+ for positioned items, 0 for void/unpositioned)
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
-  readonly isLibraryPromoted?: boolean; // true = promoted section (uses exclamation marks), false = A-Z section (defaults to true for Agregarr collections)
+  readonly isLibraryPromoted?: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section (defaults to true for Agregarr collections)
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto !-prefix)
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly isLinked?: boolean; // True if collection is actively linked to other collections
   readonly linkId?: number; // Group ID for linked collections (preserved even when isLinked=false)
   readonly isUnlinked?: boolean; // True if this collection was deliberately unlinked and should not be grouped with siblings
   everLibraryPromoted?: boolean; // True if this collection has ever been promoted to the promoted section (once true, stays true until sortTitle reset)
+  sortTitleArticleNormalized?: boolean; // True while this collection's sortTitle is an article-normalized value Agregarr wrote. Lets 'off' restore the natural title on the next sync instead of leaving the previous mode's value stranded
   readonly isPromotedToHub?: boolean; // True if collection exists as a promotable hub in Plex (appears in hub management list)
   readonly collectionRatingKey?: string; // Plex collection rating key for single-collection configs
   readonly collectionRatingKeys?: string[]; // Plex rating keys for multi-collection configs (e.g. overseerr/users, tmdb/auto_franchise) — populated during sync
@@ -370,7 +371,7 @@ export interface PlexHubConfig {
   mediaType: 'movie' | 'tv'; // Media type (hubs are always single type)
   sortOrderHome: number; // Position on Plex home screen (1+ for positioned items, 0 for void)
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
-  isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;
@@ -428,7 +429,7 @@ export interface PreExistingCollectionConfig {
   titleSort?: string; // Plex sortTitle field for alphabetical ordering
   sortOrderHome: number; // Position on Plex home screen (1+ for positioned items, 0 for void)
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
-  isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
   sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
@@ -450,6 +451,9 @@ export interface PreExistingCollectionConfig {
   isUnlinked?: boolean; // True if this collection was deliberately unlinked and should not be grouped with siblings
   everLibraryPromoted?: boolean; // True if this collection has ever been promoted to the promoted section (once true, stays true until sortTitle reset)
   isPromotedToHub?: boolean; // True if collection exists as a promotable hub in Plex (appears in hub management list)
+  collectionSuffixMode?: 'leave' | 'strip' | 'add'; // Per-collection " Collection" suffix handling. 'leave' (default) never renames; 'strip' removes the suffix when present; 'add' appends it when missing. Falls back to the global stripCollectionSuffix when unset - see resolveCollectionSuffixMode
+  sortTitleResetRequested?: boolean; // One-shot: the user cleared the Sort Title field, asking Agregarr to take the sort title back and rewrite its own value. Needed because an empty sortTitleOverride cannot say whether it was just cleared or never set. Consumed and cleared by the next sync
+  sortTitleArticleNormalized?: boolean; // True while this collection's sortTitle is an article-normalized value Agregarr wrote. Lets 'off' restore the natural title on the next sync instead of leaving the previous mode's value stranded
   // Time restriction settings
   readonly timeRestriction?: {
     readonly alwaysActive: boolean; // If true, collection is always active (default)
@@ -499,6 +503,15 @@ export interface PlexSettings {
   hubConfigs?: PlexHubConfig[]; // Plex built-in hub configurations
   preExistingCollectionConfigs?: PreExistingCollectionConfig[]; // Pre-existing Plex collections discovered by hub discovery
   autoEmptyTrash?: boolean; // Auto-empty Plex trash after placeholder cleanup (default: true)
+  // Leading-article handling ("The"/"A"/"An") when computing a collection's
+  // default (non-override) sortTitle for the A-Z section - never affects
+  // promoted collections, which are always positional. 'strip' removes the
+  // article ("The Accountant" sorts as "Accountant"), 'moveToEnd' reorders
+  // it ("Accountant, The"), 'off' leaves titles untouched. Default: 'strip'
+  sortTitleArticleHandling?: 'strip' | 'moveToEnd' | 'off';
+  // Strip a trailing " Collection" suffix from pre-existing collections'
+  // actual Plex title (a real rename, not just a sortTitle tweak) - e.g.
+  // "The Accountant Collection" becomes "The Accountant". Default: false
 }
 
 export interface TraktSettings {
@@ -814,6 +827,7 @@ class Settings {
         collectionConfigs: [],
         hubConfigs: [],
         preExistingCollectionConfigs: [],
+        sortTitleArticleHandling: 'strip',
       },
       tautulli: {},
       maintainerr: {},

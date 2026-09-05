@@ -1,5 +1,14 @@
 import type PlexAPI from '@server/api/plexapi';
-import { extractErrorMessage } from '@server/lib/collections/core/CollectionUtilities';
+import {
+  addCollectionSuffix,
+  buildPromotedSortTitle,
+  buildSortTitleFromOverride,
+  extractErrorMessage,
+  isAgregarrOwnedSortTitle,
+  normalizeSortTitleArticle,
+  resolveCollectionSuffixMode,
+  stripCollectionSuffix,
+} from '@server/lib/collections/core/CollectionUtilities';
 import { TimeRestrictionUtils } from '@server/lib/collections/utils/TimeRestrictionUtils';
 import type { CollectionItemWithPoster } from '@server/lib/posterGeneration';
 import type {
@@ -1652,8 +1661,15 @@ export class HubSyncService {
    * Sync pre-existing collection sortTitles based on isLibraryPromoted status
    * Only updates sortTitle when collections are in promoted state
    */
+  /**
+   * @param onlyConfigId restricts the pass to a single collection, for the
+   * individual sync route. The collision index below is still built from
+   * every config either way - a rename has to check the whole library for
+   * the name it is moving to, not just the one collection being synced.
+   */
   public async syncPreExistingCollectionSortTitles(
-    plexClient: PlexAPI
+    plexClient: PlexAPI,
+    onlyConfigId?: string
   ): Promise<void> {
     if (this.cancelled) return;
 
@@ -1662,8 +1678,34 @@ export class HubSyncService {
       const preExistingConfigs =
         settings.plex.preExistingCollectionConfigs || [];
 
+      // Plex rejects a rename with 409 Conflict when another collection in
+      // the same library already holds the target name - and a trailing
+      // " Collection" suffix is exactly the case where a same-named
+      // sibling tends to exist ("Troll (2022) Collection" alongside
+      // "Troll (2022)"). Without this pre-check the rename is attempted,
+      // 409s, and logs an error on every single sync forever. Built once
+      // per run rather than per config, keyed by library.
+      const namesByLibrary = new Map<string, Set<string>>();
+      const noteName = (libraryId: string, name: string) => {
+        const key = String(libraryId);
+        const existing = namesByLibrary.get(key);
+        if (existing) {
+          existing.add(name);
+        } else {
+          namesByLibrary.set(key, new Set([name]));
+        }
+      };
+      for (const c of preExistingConfigs) {
+        noteName(c.libraryId, c.name);
+      }
+      for (const c of settings.plex.collectionConfigs || []) {
+        const libId = Array.isArray(c.libraryId) ? c.libraryId[0] : c.libraryId;
+        if (libId) noteName(libId, c.name);
+      }
+
       for (const config of preExistingConfigs) {
         if (this.cancelled) return;
+        if (onlyConfigId && config.id !== onlyConfigId) continue;
 
         // Skip configs without rating keys
         if (!config.collectionRatingKey) {
@@ -1674,13 +1716,223 @@ export class HubSyncService {
           continue;
         }
 
-        // Sort title override: prefix + collection name
+        // A-Z only, same scoping as leading-article handling below -
+        // promoted collections are Agregarr's own positional ordering and
+        // are left alone here.
+        const isCurrentlyPromoted =
+          config.isLibraryPromoted && config.sortOrderLibrary > 0;
+
+        // Optionally rename the actual Plex collection to strip a trailing
+        // " Collection" suffix (e.g. TMDb collections named "The
+        // Accountant Collection") - a real title change, not just a
+        // sortTitle tweak, so it has to happen before the sortTitle logic
+        // below, which sorts off of whatever name is actually current.
+        //
+        // Deliberately NOT gated on a manual Sort Title override: the sort
+        // title is a hidden sorting key and the name is the front-facing
+        // label, so customizing one says nothing about the other. Gating
+        // on it meant a collection with any custom sort title silently
+        // opted out of a setting the user had explicitly turned on, with
+        // no feedback explaining why nothing happened.
+        let effectiveName = config.name;
+        // Set when this pass renames the collection in Plex. A rename has to
+        // carry the sort title with it - see the guard below.
+        let renamedThisPass = false;
+
+        // Decided per collection, falling back to the global setting for
+        // installs that have never set one. The suffix is a TMDb franchise
+        // convention and nothing here distinguishes a franchise from a
+        // network - "Alien" and "Netflix" are structurally identical - so a
+        // library-wide "add" would rename every network alongside them.
+        const suffixMode = resolveCollectionSuffixMode(
+          config.collectionSuffixMode
+        );
+
+        // Unlike leading-article handling below, this applies to promoted
+        // collections too. That scoping exists because a rank already fixes
+        // a promoted collection's position, so normalizing behind it changes
+        // Plex data for no ordering benefit - but this renames the title,
+        // which is the front-facing label and purely cosmetic. Position is
+        // unaffected either way: the rank prefix decides it, and the next
+        // sync simply rebuilds the sort title around the new name.
+        //
+        // 'add' appends the suffix wherever it is missing, read from the
+        // title rather than from a recorded original. Collections stripped
+        // by Kometa before Agregarr ever saw them have no recorded original,
+        // so nothing else could give their suffix back.
+        const withSuffix = addCollectionSuffix(
+          config.name,
+          suffixMode === 'add'
+        );
+        const restoredName =
+          withSuffix !== config.name ? withSuffix : undefined;
+
+        const strippedName = stripCollectionSuffix(
+          config.name,
+          suffixMode === 'strip'
+        );
+        const strippedNameCollides =
+          strippedName !== config.name &&
+          namesByLibrary.get(String(config.libraryId))?.has(strippedName) ===
+            true;
+        if (strippedNameCollides) {
+          logger.warn(
+            `Skipping "Collection" suffix strip for "${config.name}" - "${strippedName}" already exists in this library, and Plex rejects duplicate collection names`,
+            {
+              label: 'Hub Sync Service',
+              collectionId: config.id,
+              collectionRatingKey: config.collectionRatingKey,
+              libraryId: config.libraryId,
+            }
+          );
+        }
+        if (strippedName !== config.name && !strippedNameCollides) {
+          try {
+            await plexClient.updateCollectionTitle(
+              config.collectionRatingKey,
+              strippedName,
+              config.libraryId,
+              config.name
+            );
+            this.updatePreExistingConfigField(config.id, {
+              name: strippedName,
+            });
+            effectiveName = strippedName;
+            renamedThisPass = true;
+            // Keep the collision index current so a later config in this
+            // same run can't be renamed onto the name just claimed here.
+            namesByLibrary.get(String(config.libraryId))?.add(strippedName);
+            logger.debug(
+              `Stripped "Collection" suffix from pre-existing collection: "${config.name}" -> "${strippedName}"`,
+              {
+                label: 'Hub Sync Service',
+                collectionId: config.id,
+                collectionRatingKey: config.collectionRatingKey,
+              }
+            );
+          } catch (error) {
+            const message = extractErrorMessage(error);
+            // Plex answers 409 Conflict when it will not accept the new
+            // title - in practice because the name is still reserved by a
+            // collection that was deleted but not yet purged from the
+            // library's trash. Plex's own UI refuses the same rename, so
+            // this is a server-side restriction rather than a bug here:
+            // report it as an actionable warning instead of an error, and
+            // let the sync carry on. It retries on later syncs, which is
+            // what we want - once the trash is emptied the rename simply
+            // starts working with no intervention.
+            if (message.includes('409')) {
+              logger.warn(
+                `Plex refused to rename "${config.name}" to "${strippedName}" (409 Conflict). The name is most likely still held by a deleted-but-not-purged collection - empty the library's trash in Plex and it will apply on the next sync`,
+                {
+                  label: 'Hub Sync Service',
+                  collectionId: config.id,
+                  collectionRatingKey: config.collectionRatingKey,
+                  libraryId: config.libraryId,
+                }
+              );
+            } else {
+              logger.error(
+                `Failed to strip "Collection" suffix for pre-existing collection ${config.name}: ${message}`,
+                {
+                  label: 'Hub Sync Service',
+                  collectionId: config.id,
+                  collectionName: config.name,
+                  collectionRatingKey: config.collectionRatingKey,
+                }
+              );
+            }
+          }
+        }
+
+        if (restoredName) {
+          const restoredNameCollides =
+            namesByLibrary.get(String(config.libraryId))?.has(restoredName) ===
+            true;
+          if (restoredNameCollides) {
+            logger.warn(
+              `Skipping "Collection" suffix restore for "${config.name}" - "${restoredName}" already exists in this library, and Plex rejects duplicate collection names`,
+              {
+                label: 'Hub Sync Service',
+                collectionId: config.id,
+                collectionRatingKey: config.collectionRatingKey,
+                libraryId: config.libraryId,
+              }
+            );
+          } else {
+            try {
+              await plexClient.updateCollectionTitle(
+                config.collectionRatingKey,
+                restoredName,
+                config.libraryId,
+                config.name
+              );
+              this.updatePreExistingConfigField(config.id, {
+                name: restoredName,
+              });
+              effectiveName = restoredName;
+              renamedThisPass = true;
+              namesByLibrary.get(String(config.libraryId))?.add(restoredName);
+              logger.debug(
+                `Restored "Collection" suffix for pre-existing collection: "${config.name}" -> "${restoredName}"`,
+                {
+                  label: 'Hub Sync Service',
+                  collectionId: config.id,
+                  collectionRatingKey: config.collectionRatingKey,
+                }
+              );
+            } catch (error) {
+              const message = extractErrorMessage(error);
+              // Same 409 story as the strip above - Plex still holds the name
+              // for a deleted-but-not-purged collection. Retries next sync.
+              if (message.includes('409')) {
+                logger.warn(
+                  `Plex refused to rename "${config.name}" back to "${restoredName}" (409 Conflict). The name is most likely still held by a deleted-but-not-purged collection - empty the library's trash in Plex and it will apply on the next sync`,
+                  {
+                    label: 'Hub Sync Service',
+                    collectionId: config.id,
+                    collectionRatingKey: config.collectionRatingKey,
+                    libraryId: config.libraryId,
+                  }
+                );
+              } else {
+                logger.error(
+                  `Failed to restore "Collection" suffix for pre-existing collection ${config.name}: ${message}`,
+                  {
+                    label: 'Hub Sync Service',
+                    collectionId: config.id,
+                    collectionName: config.name,
+                    collectionRatingKey: config.collectionRatingKey,
+                  }
+                );
+              }
+            }
+          }
+        }
+
+        // A manual Sort Title override always wins and applies to every
+        // collection, including the A-Z ones the computed logic below skips.
         if (config.sortTitleOverride) {
           try {
+            const overrideSortTitle = buildSortTitleFromOverride(
+              config.sortTitleOverride,
+              effectiveName
+            );
             await plexClient.updateCollectionSortTitle(
               config.collectionRatingKey,
-              `${config.sortTitleOverride}${config.name}`
+              overrideSortTitle,
+              config.titleSort ?? effectiveName
             );
+            // Same reason as the computed branch below: the stored copy is
+            // what the UI reads until discovery runs, so leaving it behind
+            // means the panel keeps reporting a sort title that was just
+            // replaced - "edited in Plex as ..." quoting a value no longer
+            // there.
+            if (config.titleSort !== overrideSortTitle) {
+              this.updatePreExistingConfigField(config.id, {
+                titleSort: overrideSortTitle,
+              });
+            }
           } catch (error) {
             logger.error(
               `Failed to update sortTitle override for pre-existing collection ${
@@ -1698,60 +1950,145 @@ export class HubSyncService {
           continue;
         }
 
-        // Only update sortTitle if everLibraryPromoted is not explicitly false
-        if (config.everLibraryPromoted === false) {
-          // If everLibraryPromoted is explicitly false: DO NOT touch sortTitle at all
+        // Only fully skip when the collection has never been promoted AND
+        // leading-article normalization is disabled - a collection
+        // Agregarr has never promoted/demoted still gets article
+        // normalization applied when that setting is enabled, since it's
+        // a lightweight cosmetic sort fix, not a claim of ownership over
+        // the collection's position the way positional (promoted)
+        // sortTitle is, which stays gated behind promotion history below.
+        const articleHandlingEnabled =
+          !!settings.plex.sortTitleArticleHandling &&
+          settings.plex.sortTitleArticleHandling !== 'off';
+        // Switching to 'off' has to actively restore the natural title on
+        // anything previously normalized - otherwise "off" just stops
+        // touching them, stranding whatever the last enabled mode wrote
+        // (e.g. leaving "Fast and the Furious, The" in place forever).
+        const needsArticleReset = config.sortTitleArticleNormalized === true;
+        // A rename always qualifies, whatever this collection's history.
+        // Plex keeps a locked sort title stable across a rename by
+        // materialising the old title into it, so a collection outside every
+        // clause below is left sorting under the name it no longer has - and
+        // nothing would ever revisit it. Falling through here recomputes the
+        // sort title from the new name, and where Agregarr imposes nothing
+        // that means releasing the field back to Plex.
+        if (
+          !renamedThisPass &&
+          !config.sortTitleResetRequested &&
+          config.everLibraryPromoted === false &&
+          !config.isLibraryPromoted &&
+          !articleHandlingEnabled &&
+          !needsArticleReset
+        ) {
           continue;
         }
+
+        // The suffix is cosmetic - it belongs on the title, not in the sort
+        // key. A collection Agregarr appended it to should still sort where
+        // its real name says: "!029_Survival", not "!029_Survival
+        // Collection". Only strip what we added; a collection genuinely
+        // named "... Collection" and left alone keeps sorting by its own
+        // name.
+        const sortKeyName = stripCollectionSuffix(
+          effectiveName,
+          suffixMode === 'add'
+        );
 
         let sortTitle: string;
         const updateConfig: Partial<PreExistingCollectionConfig> = {};
 
-        if (config.isLibraryPromoted && config.sortOrderLibrary > 0) {
-          // Promoted: Set exclamation marks
-          const sameLibraryPreExisting = preExistingConfigs.filter(
-            (c) =>
-              c.libraryId === config.libraryId &&
-              c.sortOrderLibrary !== undefined &&
-              c.isLibraryPromoted === true
+        if (isCurrentlyPromoted) {
+          // Promoted: positional sortTitle (see buildPromotedSortTitle)
+          sortTitle = buildPromotedSortTitle(
+            sortKeyName,
+            config.sortOrderLibrary
           );
-
-          const collectionConfigs = settings.plex.collectionConfigs || [];
-          const sameLibraryCollections = collectionConfigs.filter(
-            (c) =>
-              c.libraryId === config.libraryId &&
-              c.sortOrderLibrary !== undefined &&
-              c.isLibraryPromoted === true
-          );
-
-          const combinedSortOrders = [
-            ...sameLibraryPreExisting.map((c) => c.sortOrderLibrary),
-            ...sameLibraryCollections.map((c) => c.sortOrderLibrary),
-          ].filter((order): order is number => order !== undefined);
-
-          if (combinedSortOrders.length > 0) {
-            const maxSortOrder = Math.max(...combinedSortOrders);
-            const exclamationCount = maxSortOrder - config.sortOrderLibrary + 2;
-            const exclamationPrefix = '!'.repeat(exclamationCount);
-            sortTitle = `${exclamationPrefix}${config.name}`;
-          } else {
-            sortTitle = `!!${config.name}`;
-          }
+        } else if (
+          // A reset is the user asking for exactly this: take the sort title
+          // back. Without the bypass the ownership check refuses, because the
+          // value in Plex is precisely the hand-set one they want gone.
+          !config.sortTitleResetRequested &&
+          !isAgregarrOwnedSortTitle(
+            config.titleSort,
+            effectiveName,
+            config.sortTitleArticleNormalized,
+            config.everLibraryPromoted
+          )
+        ) {
+          // A sort title the user set in Plex outranks article handling:
+          // normalization is the rule for collections without a deliberate
+          // one, not a licence to replace one that exists. Leave Plex's
+          // value exactly as it is - discovery keeps the stored copy current
+          // (see DiscoveryService), so it is picked up rather than owned.
+          continue;
         } else {
-          // Demoted: Reset to natural title and mark as cleaned
-          sortTitle = config.name;
-          // After reset, set everLibraryPromoted back to false
-          updateConfig.everLibraryPromoted = false;
+          // A-Z: reset/normalize to the natural title (normalized per the
+          // configured leading-article handling - see
+          // normalizeSortTitleArticle). Applies even to collections
+          // Agregarr has never promoted/demoted before, as long as
+          // article handling is actually enabled (checked above).
+          sortTitle = normalizeSortTitleArticle(
+            sortKeyName,
+            settings.plex.sortTitleArticleHandling
+          );
+          // Compared against the sort key, not the title: with a suffix
+          // Agregarr added, every collection would otherwise look
+          // "normalized" purely because the title carries " Collection".
+          const isNormalized = sortTitle !== sortKeyName;
+          if (isNormalized !== (config.sortTitleArticleNormalized === true)) {
+            updateConfig.sortTitleArticleNormalized = isNormalized;
+          }
+          if (config.everLibraryPromoted !== false) {
+            // Was previously promoted at some point - mark cleaned
+            updateConfig.everLibraryPromoted = false;
+          }
         }
 
         try {
+          // Pass what Plex currently has so an unchanged value is skipped
+          // rather than rewritten. Without it every pre-existing collection
+          // was written on every sync - mostly no-ops setting a sort title
+          // identical to the name - and each write also sets
+          // titleSort.locked, taking a collection Plex was managing happily
+          // out of its hands for no reason.
+          //
+          // Falling back to the name is the point rather than a nicety: Plex
+          // omits titleSort entirely when it matches the title, so most
+          // collections have none stored, and the skip is gated on the value
+          // being defined. Absent means "currently sorts by its name", which
+          // is exactly what needs comparing against.
+          // Lock only where Agregarr is imposing a value - see the mirror
+          // of this in BaseCollectionSync and the note on
+          // updateCollectionSortTitle.
           await plexClient.updateCollectionSortTitle(
             config.collectionRatingKey,
-            sortTitle
+            sortTitle,
+            config.titleSort ?? effectiveName,
+            sortTitle !== effectiveName
           );
 
-          // Update config if everLibraryPromoted needs to be reset
-          if (updateConfig.everLibraryPromoted !== undefined) {
+          // Keep the stored copy in step with what was just written.
+          // Discovery refreshes it on its own pass, but until that runs the
+          // UI reads this field - and would show the sort title the
+          // collection no longer has, which reads as the edit being
+          // rejected. Empty where the field was released, matching how an
+          // absent titleSort already means "sorts by its name".
+          const writtenTitleSort = sortTitle !== effectiveName ? sortTitle : '';
+          if (config.titleSort !== writtenTitleSort) {
+            updateConfig.titleSort = writtenTitleSort;
+          }
+
+          // A reset is one-shot: consumed here, or it would keep
+          // overriding the ownership check on every future sync and the
+          // collection could never hold a hand-set Plex value again.
+          if (config.sortTitleResetRequested) {
+            updateConfig.sortTitleResetRequested = false;
+          }
+
+          // Persist whatever changed - everLibraryPromoted being reset,
+          // the article-normalization marker flipping, the reset flag being
+          // consumed, or any combination.
+          if (Object.keys(updateConfig).length > 0) {
             this.updatePreExistingConfigField(config.id, updateConfig);
           }
 

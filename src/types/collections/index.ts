@@ -49,7 +49,7 @@ export interface PlexHubConfig {
   mediaType: 'movie' | 'tv'; // Media type (hubs are always single type)
   sortOrderHome: number; // Position on Plex home screen
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
-  isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;
@@ -105,7 +105,7 @@ export interface PreExistingCollectionConfig {
   titleSort?: string; // Plex sortTitle field for alphabetical ordering
   sortOrderHome: number; // Position on Plex home screen
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
-  isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;
@@ -127,6 +127,9 @@ export interface PreExistingCollectionConfig {
   isUnlinked?: boolean; // True if this collection was deliberately unlinked and should not be grouped with siblings
   everLibraryPromoted?: boolean; // True if this collection has ever been promoted to the promoted section (once true, stays true until sortTitle reset)
   isPromotedToHub?: boolean; // True if collection exists as a promotable hub in Plex (appears in hub management list)
+  collectionSuffixMode?: 'leave' | 'strip' | 'add'; // Per-collection " Collection" suffix handling. 'leave' (default) never renames; 'strip' removes the suffix when present; 'add' appends it when missing. Falls back to the global stripCollectionSuffix when unset - see resolveCollectionSuffixMode
+  sortTitleResetRequested?: boolean; // One-shot: the user cleared the Sort Title field, asking Agregarr to take the sort title back and rewrite its own value. Needed because an empty sortTitleOverride cannot say whether it was just cleared or never set. Consumed and cleared by the next sync
+  sortTitleArticleNormalized?: boolean; // True while this collection's sortTitle is an article-normalized value Agregarr wrote. Lets 'off' restore the natural title on the next sync instead of leaving the previous mode's value stranded
   // Time restriction settings
   timeRestriction?: {
     alwaysActive: boolean; // If true, collection is always active (default)
@@ -231,7 +234,7 @@ export interface CollectionFormConfig {
   readonly libraryNames?: string[]; // Temporary field for form UI when editing linked configs
   readonly sortOrderHome?: number; // Order for Plex home screen (creation time based)
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
-  readonly isLibraryPromoted?: boolean; // true = promoted section (uses exclamation marks), false = A-Z section (defaults to true for Agregarr collections)
+  readonly isLibraryPromoted?: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section (defaults to true for Agregarr collections)
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly collectionRatingKey?: string; // Plex collection rating key for single-collection configs
   readonly collectionRatingKeys?: string[]; // Plex rating keys for multi-collection configs (e.g. seerr/users) — populated during sync
@@ -948,6 +951,9 @@ export interface CollectionConfigFormProps {
   ) => void;
   isEditing?: boolean;
   libraries: Library[];
+  // Which list view this form was opened from — drives Sort Title field
+  // visibility (hidden when omitted, e.g. from the All Collections view)
+  activeTab?: 'home' | 'recommended' | 'library';
   // Additional data needed for link/unlink detection
   allCollectionConfigs?: CollectionFormConfig[];
   allHubConfigs?: PlexHubConfig[];

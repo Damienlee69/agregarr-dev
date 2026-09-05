@@ -52,6 +52,13 @@ const messages = defineMessages({
   autoEmptyTrash: 'Auto Empty Trash',
   autoEmptyTrashTip:
     'Automatically empty Plex library trash after placeholder cleanup to remove ghost entries',
+  sortTitleArticleHandling: 'Collection Sort Format',
+  sortTitleArticleHandlingTip:
+    'Collection naming conflicts may occur with other tools that can control collection sorting schemes, such as Kometa - set the naming schemes identically, or disable one, to avoid unnecessary conflicts.',
+  sortTitleArticleHandlingStrip: 'Strip (e.g. "The Accountant" → "Accountant")',
+  sortTitleArticleHandlingMoveToEnd:
+    'Move to End (e.g. "The Accountant" → "Accountant, The")',
+  sortTitleArticleHandlingOff: 'Off (sort exactly as typed)',
 });
 
 interface Library {
@@ -240,6 +247,7 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
           selectedPreset: undefined,
           webAppUrl: data?.webAppUrl,
           autoEmptyTrash: data?.autoEmptyTrash !== false,
+          sortTitleArticleHandling: data?.sortTitleArticleHandling ?? 'strip',
         }}
         validationSchema={PlexSettingsSchema}
         onSubmit={async (values) => {
@@ -261,6 +269,7 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
               useSsl: values.useSsl,
               webAppUrl: values.webAppUrl,
               autoEmptyTrash: values.autoEmptyTrash,
+              sortTitleArticleHandling: values.sortTitleArticleHandling,
             } as PlexSettings);
 
             syncLibraries();
@@ -488,6 +497,42 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
                       setFieldValue('autoEmptyTrash', !values.autoEmptyTrash);
                     }}
                   />
+                </div>
+              </div>
+              <div className="form-row">
+                <label
+                  htmlFor="sortTitleArticleHandling"
+                  className="text-label"
+                >
+                  {intl.formatMessage(messages.sortTitleArticleHandling)}
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.sortTitleArticleHandlingTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <div className="form-input-field">
+                    <Field
+                      as="select"
+                      id="sortTitleArticleHandling"
+                      name="sortTitleArticleHandling"
+                    >
+                      <option value="strip">
+                        {intl.formatMessage(
+                          messages.sortTitleArticleHandlingStrip
+                        )}
+                      </option>
+                      <option value="moveToEnd">
+                        {intl.formatMessage(
+                          messages.sortTitleArticleHandlingMoveToEnd
+                        )}
+                      </option>
+                      <option value="off">
+                        {intl.formatMessage(
+                          messages.sortTitleArticleHandlingOff
+                        )}
+                      </option>
+                    </Field>
+                  </div>
                 </div>
               </div>
               <div className="actions">

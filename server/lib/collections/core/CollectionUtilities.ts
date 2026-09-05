@@ -77,6 +77,127 @@ export function extractErrorCause(error: unknown): Error {
 }
 
 /**
+ * The manual Sort Title a user typed for this collection, or undefined if the
+ * field is blank / whitespace-only (meaning "let Agregarr position it").
+ */
+export function getSortTitleOverride(config: {
+  sortTitleOverride?: string;
+}): string | undefined {
+  const trimmed = config.sortTitleOverride?.trim();
+  return trimmed || undefined;
+}
+
+// A typed override that is a bare prefix awaiting a name, e.g. "!020_" or
+// "Kometa_", as opposed to a complete sort title like "!020_Apple TV Top 10"
+// or "Crow". The trailing separator is what distinguishes them: every prefix
+// convention this field was built around (Kometa's "!010_", and the "e.g.
+// !020_" the placeholder still suggests) ends in one, and nothing that is
+// already a finished title does.
+const BARE_PREFIX = /_$/;
+
+/**
+ * The sortTitle to write to Plex for a collection with a manual override.
+ *
+ * The field serves two entry styles that have to agree. A bare prefix
+ * ("!020_", "Kometa_") is completed with the collection's name, which is the
+ * original behaviour of this field and what existing configs contain. A value
+ * that is already a finished title ("!020_Apple TV Top 10", or just "Crow")
+ * is written verbatim, because the form pre-fills the full effective sort
+ * title and appending the name again would double it - "Crow" on a collection
+ * named Crow would otherwise be written to Plex as "CrowCrow".
+ *
+ * Both styles parse to the same rank and produce the same final string, so
+ * for positional values the distinction is invisible - it only decides who
+ * supplies the name.
+ *
+ * Multi-collection configs (Essentials, Directors/Actors, Auto Franchise,
+ * Overseerr users) hold one shared value standing in for the whole group, so
+ * each generated collection appends its own name after it and still sorts
+ * alphabetically within the group, directly after the separator - which takes
+ * the same base value with nothing appended (see buildSeparatorSortTitle).
+ * The join is an underscore, matching the separator Kometa uses between a
+ * collection section and its title, and readable in Plex's own sort field:
+ * "!040_Auto Genre Collections_Music" rather than running the two together.
+ * A base that already ends in one is left as-is instead of doubling it.
+ */
+export function buildSortTitleFromOverride(
+  override: string,
+  collectionName: string,
+  isMultiCollection = false
+): string {
+  const isBarePrefix = BARE_PREFIX.test(override.trim());
+
+  if (isMultiCollection) {
+    return isBarePrefix
+      ? `${override}${collectionName}`
+      : `${override}_${collectionName}`;
+  }
+
+  return isBarePrefix ? `${override}${collectionName}` : override;
+}
+
+/**
+ * Whether Plex's current sortTitle for a collection is one Agregarr produced,
+ * and may therefore rewrite - as opposed to one the user typed in Plex, which
+ * must be left alone.
+ *
+ * The A-Z sort title is always recomputed from the collection's name, because
+ * the name is the only place a leading article reliably survives - strip "The"
+ * once and moving it to the end later becomes impossible. Recomputing from the
+ * name is also what would flatten a sort title the user set in Plex, since the
+ * write replaces whatever is there even when article handling itself changes
+ * nothing ("Cameras" on a collection named "...Cameras" has no article to
+ * strip, and was still overwritten with the name).
+ *
+ * Agregarr owns the sort title when there is none, when it is just the
+ * collection's name, when it is a positional rank left over from a demotion
+ * (see buildPromotedSortTitle - that has to be cleaned up or Plex keeps
+ * showing the collection in its promoted section), when Agregarr recorded
+ * that it normalized this one, or when it matches what leading-article
+ * handling would produce for that name under any mode.
+ *
+ * That last case is not redundant with the recorded marker. Plex generates a
+ * sortTitle of its own for a new collection by stripping the leading article
+ * (and leading punctuation), so "The Avengers" arrives already sorting as
+ * "Avengers" with nothing of Agregarr's involved. Without this check that
+ * reads as a human's doing and Agregarr never touches it - meaning
+ * 'moveToEnd' would silently never produce "Avengers, The", and 'off' would
+ * never restore "The Avengers". Checking every mode rather than the
+ * configured one is also what lets Agregarr recognise its own output after
+ * the setting changes.
+ *
+ * everManaged (everLibraryPromoted) also counts as ownership, and covers the
+ * case the other checks cannot see: a value Agregarr wrote through a Sort
+ * Title override that has since been cleared. Nothing records what that
+ * override produced, so "ZZZ_Video Games" looks indistinguishable from a
+ * human's edit - and the collection would stay pinned to it forever, because
+ * clearing the override is precisely the request to stop using it. Agregarr
+ * has demonstrably written this collection's sort title before, so it may
+ * write it again. This is the same signal upstream already uses to decide
+ * whether the sort title is Agregarr's to manage.
+ *
+ * Anything else was typed by a human and is picked up through discovery
+ * rather than owned.
+ */
+export function isAgregarrOwnedSortTitle(
+  titleSort: string | undefined,
+  collectionName: string,
+  articleNormalized?: boolean,
+  everManaged?: boolean
+): boolean {
+  const current = titleSort?.trim();
+  if (!current) return true;
+  if (current === collectionName.trim()) return true;
+  if (/^!\d+_/.test(current)) return true;
+  if (articleNormalized === true) return true;
+  if (everManaged === true) return true;
+
+  return (['strip', 'moveToEnd'] as const).some(
+    (mode) => current === normalizeSortTitleArticle(collectionName, mode)
+  );
+}
+
+/**
  * Create URL-encoded form data from object
  */
 export function createFormData(
@@ -330,6 +451,196 @@ export function getCollectionMediaType(
   config: CollectionConfig
 ): 'movie' | 'tv' {
   return getMediaTypeFromLibrary(config.libraryId);
+}
+
+/**
+ * Width of the zero-padded rank in a promoted collection's sortTitle.
+ * Fixed and generous rather than derived from the current library's size,
+ * so a collection's own sortTitle never has to change just because some
+ * other collection was added, removed, or reordered elsewhere in the
+ * library. 3 digits to match Kometa's own convention (!010_, !020_, ...),
+ * which matters for more than cosmetics: Plex compares sortTitles as
+ * strings, so a wider field does not merely look different, it sorts
+ * differently. '!00015_' compares below '!010_' at the third character
+ * ('0' < '1'), so a 5-digit Agregarr rank would place every Agregarr
+ * collection ahead of every 3-digit Kometa one and make interleaving the
+ * two impossible. Matching Kometa's width is what lets a user drop an
+ * Agregarr collection between !010_ and !020_ at all. 999 promoted
+ * collections per library is well beyond any realistic count.
+ */
+export const PROMOTED_SORT_TITLE_RANK_WIDTH = 3;
+
+/**
+ * Build the sortTitle Plex uses to place a promoted collection at its exact
+ * intended position in a library's Collections/Library tab.
+ *
+ * Positional encoding (the same convention Kometa's own collection sorting
+ * uses): a fixed-width, zero-padded rank number sorts collections in
+ * ascending order exactly the way ascending sortOrderLibrary values already
+ * do, so a lower sortOrderLibrary always sorts earlier. Unlike an
+ * exclamation-mark count - which has to be computed relative to the
+ * highest sortOrderLibrary among every other promoted collection in the
+ * library, and therefore changes for everyone whenever anything is added,
+ * removed, or reordered - a rank number is entirely self-contained: it
+ * only depends on this collection's own position, never on any other
+ * collection's.
+ *
+ * The leading '!' guarantees every promoted collection sorts before any
+ * A-Z (non-promoted) collection, whose title carries no such prefix.
+ */
+export function buildPromotedSortTitle(
+  name: string,
+  sortOrderLibrary: number
+): string {
+  const rank = String(Math.max(0, sortOrderLibrary)).padStart(
+    PROMOTED_SORT_TITLE_RANK_WIDTH,
+    '0'
+  );
+  return `!${rank}_${name}`;
+}
+
+/**
+ * Inverse of buildPromotedSortTitle: recognizes when a Sort Title field
+ * submission is really a typed-in reposition request rather than a literal
+ * override. The Sort Title field is pre-filled with this collection's
+ * current computed value (e.g. "!001_IMDb Popular"); editing the rank
+ * digits means "move this to rank N" - the same intent as dragging it
+ * there.
+ *
+ * The trailing text after the underscore is deliberately NOT required to
+ * match the collection's own name. Requiring an exact match meant editing
+ * both parts at once ("!031_Killers" -> "!033_Thrillers") silently did
+ * nothing, which reads as broken: the rank clearly changed, so the
+ * collection should clearly move. The trailing text is discarded either
+ * way, since a promoted collection's sortTitle is always recomputed
+ * positionally from its real name.
+ */
+export function parseTypedRepositionRank(
+  submittedSortTitle: string
+): number | undefined {
+  const match = /^!(\d+)_/.exec(submittedSortTitle.trim());
+  if (!match) return undefined;
+  const rank = parseInt(match[1], 10);
+  return Number.isFinite(rank) && rank > 0 ? rank : undefined;
+}
+
+/**
+ * Minimal shape a typed-reposition peer needs. Deliberately loose - regular
+ * collection configs, pre-existing collection configs, and default hub
+ * configs are three different TypeScript types, but all three share one
+ * sortOrderLibrary numbering space per library (see reorder.ts, which
+ * already combines all three when doing a drag-and-drop reorder). A
+ * reposition triggered from any one of them has to consider all three as
+ * peers, or it silently collides with ranks it never knew existed.
+ */
+export interface RepositionPeer {
+  id: string;
+  libraryId: string | string[];
+  sortOrderLibrary?: number;
+  isLibraryPromoted?: boolean;
+}
+
+export interface RepositionResult {
+  /** The final rank the moved item lands on (may differ from the requested
+   * rank if it was out of range and got clamped). */
+  targetNewRank: number;
+  /** Peers whose own sortOrderLibrary actually changed and need saving.
+   * Does not include the moved item itself - the caller already knows its
+   * id and applies targetNewRank directly. */
+  peerUpdates: { id: string; sortOrderLibrary: number }[];
+}
+
+/**
+ * Computes the result of moving `targetId` to `requestedRank` within its
+ * library's promoted section, shifting every other promoted peer (of any
+ * config type) to make room - the same operation drag-and-drop performs via
+ * POST /api/v1/reorder, just triggered by typing a rank into the Sort Title
+ * field instead of dragging.
+ *
+ * `allPeers` must include every promoted config in the library EXCEPT the
+ * target itself (collections, pre-existing collections, and hubs all
+ * mixed together) - the caller is responsible for assembling that from
+ * whichever of the three arrays are relevant, and for applying the
+ * returned peerUpdates back to whichever array each peer actually lives in.
+ */
+export function computeReposition(
+  targetId: string,
+  targetLibraryId: string,
+  requestedRank: number,
+  allPeers: RepositionPeer[]
+): RepositionResult {
+  const resolveLibraryId = (libraryId: string | string[]) =>
+    Array.isArray(libraryId) ? libraryId[0] : libraryId;
+
+  const promotedPeers = allPeers
+    .filter(
+      (p) =>
+        p.id !== targetId &&
+        p.isLibraryPromoted === true &&
+        resolveLibraryId(p.libraryId) === targetLibraryId
+    )
+    .sort((a, b) => (a.sortOrderLibrary ?? 0) - (b.sortOrderLibrary ?? 0));
+
+  const insertAt = Math.max(
+    0,
+    Math.min(requestedRank - 1, promotedPeers.length)
+  );
+
+  const withTarget: RepositionPeer[] = [...promotedPeers];
+  withTarget.splice(insertAt, 0, {
+    id: targetId,
+    libraryId: targetLibraryId,
+    isLibraryPromoted: true,
+  });
+
+  const peerUpdates: { id: string; sortOrderLibrary: number }[] = [];
+  let targetNewRank = requestedRank;
+
+  withTarget.forEach((peer, index) => {
+    const newRank = index + 1;
+    if (peer.id === targetId) {
+      targetNewRank = newRank;
+      return;
+    }
+    if (peer.sortOrderLibrary !== newRank) {
+      peerUpdates.push({ id: peer.id, sortOrderLibrary: newRank });
+    }
+  });
+
+  return { targetNewRank, peerUpdates };
+}
+
+/**
+ * Recomputes a contiguous 1..N rank sequence for whatever's currently
+ * promoted, closing any gap left behind. Demoting a collection only ever
+ * clears *that one* collection's own rank - nothing shifts down to fill the
+ * hole, so repeated demotes silently push the "top" rank further and
+ * further from 1. Drag-and-drop and typed reposition never have this
+ * problem because computeReposition always recomputes every peer's rank
+ * from scratch on every move - this exists to give /demote (and anything
+ * else that removes one collection from the promoted set without doing a
+ * full reposition) the same self-healing property.
+ *
+ * `peers` must be every currently-promoted config in the library (already
+ * excluding whatever was just demoted, since it's no longer promoted) -
+ * same "all three config types mixed together" contract as computeReposition,
+ * for the same reason (see its docs).
+ */
+export function compactPromotedRanks(
+  peers: RepositionPeer[]
+): { id: string; sortOrderLibrary: number }[] {
+  const sorted = [...peers]
+    .filter((p) => p.isLibraryPromoted === true)
+    .sort((a, b) => (a.sortOrderLibrary ?? 0) - (b.sortOrderLibrary ?? 0));
+
+  const updates: { id: string; sortOrderLibrary: number }[] = [];
+  sorted.forEach((peer, index) => {
+    const newRank = index + 1;
+    if (peer.sortOrderLibrary !== newRank) {
+      updates.push({ id: peer.id, sortOrderLibrary: newRank });
+    }
+  });
+  return updates;
 }
 
 // Simple utility functions - replaces over-engineered CollectionSyncUtils class
@@ -2507,6 +2818,180 @@ export function isMultiCollectionPattern(config?: {
 }): boolean {
   return (
     (config?.type === 'overseerr' && config?.subtype === 'users') ||
-    (config?.type === 'tmdb' && config?.subtype === 'auto_franchise')
+    (config?.type === 'tmdb' && config?.subtype === 'auto_franchise') ||
+    (config?.type === 'plex' &&
+      [
+        'genre',
+        'decade',
+        'resolution',
+        'contentRating',
+        'directors',
+        'actors',
+      ].includes(config?.subtype ?? ''))
   );
+}
+
+/**
+ * Resolves what to actually store for a multi-collection config's Sort
+ * Title field (Essentials, Directors/Actors, Auto Franchise,
+ * Overseerr-users) - the parent config's Sort Title field is the only
+ * place to control the whole group's ordering, since the individual
+ * generated collections never appear as separate entries in Agregarr's
+ * own UI.
+ *
+ * Stored verbatim, exactly as typed - no prefix-extraction or
+ * suffix-stripping. It's reused literally: it becomes the separator's own
+ * sortTitle as-is (if a separator is used), and every generated
+ * sub-collection gets it plus a space plus that sub-collection's own name
+ * at write time (see buildSeparatorSortTitle / updateCollectionMetadata).
+ *
+ * The one exception is when the submitted text is exactly the bare config
+ * name AND the config is currently unpromoted - that combination is
+ * specifically the untouched default (computeAgregarrSortTitle returns the
+ * bare name only when unpromoted), meaning nothing was really typed, so it
+ * clears the field instead of storing the name as a literal override.
+ * Critically, this does NOT apply when the config is currently promoted:
+ * there, the untouched default is "!rank_Name", so typing the bare name
+ * instead is a deliberate edit (stripping the promotion marker) that has
+ * to be stored and flow through to the mismatch-toast check like any other
+ * non-"!" text would for a regular collection - not silently cleared,
+ * which would swallow the mismatch signal entirely (the toast's first
+ * check bails on an empty sortTitleOverride).
+ */
+/**
+ * The base a multi-collection group builds its sort titles from: the typed
+ * override when there is one, otherwise the parent config's own name.
+ *
+ * The fallback is what holds the group together when nobody has typed
+ * anything. Without it a demoted group scattered - each generated collection
+ * sorted under its own name, and the separator sat alone at the top of the
+ * library - so the grouping a separator exists to express only survived while
+ * an override happened to be set.
+ *
+ * Promoted groups do not need this: the rank prefix they already share does
+ * the same job, and every member sorts together under it.
+ */
+export function resolveMultiCollectionBase(
+  override: string | undefined,
+  parentConfigName: string | undefined
+): string | undefined {
+  const trimmed = override?.trim();
+  if (trimmed) return trimmed;
+  const name = parentConfigName?.trim();
+  return name || undefined;
+}
+
+export function resolveMultiCollectionSortTitle(
+  submittedSortTitle: string,
+  parentConfigName: string,
+  isCurrentlyPromoted: boolean
+): string {
+  const trimmed = submittedSortTitle.trim();
+  if (trimmed === parentConfigName && !isCurrentlyPromoted) {
+    return '';
+  }
+  return trimmed;
+}
+
+export type SortTitleArticleHandling = 'strip' | 'moveToEnd' | 'off';
+
+const LEADING_ARTICLE_PATTERN = /^(The|A|An)\s+(.+)$/i;
+
+// Leading punctuation Plex itself drops when it generates a sort title, so
+// "... Cameras" files under C rather than at the very top.
+//
+// Spelled out as explicit ranges rather than \p{P} with the /u flag: the
+// client bundle's babel/webpack toolchain cannot parse Unicode property
+// escapes and fails the build outright. Listing the characters also keeps
+// this to ASCII punctuation plus a few common Unicode quotes and dashes, so
+// a name opening with an emoji keeps it - there is no evidence Plex strips
+// those, and guessing wrong would fight Plex on every emoji-prefixed
+// collection. Must stay identical to the copy in LibraryCollectionGroup.tsx.
+const LEADING_PUNCTUATION_PATTERN =
+  /^[\s\u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E\u00A1\u00BF\u2010-\u2027]+/;
+
+/**
+ * Normalizes a leading English article ("The"/"A"/"An") for sorting
+ * purposes only - never touches the actual displayed title, just the
+ * computed default sortTitle written for A-Z (non-promoted) collections.
+ * Plex's own native sortTitle defaults are inconsistent about this (see
+ * the Agregarr session notes on individual movie titles), so this exists
+ * to make Agregarr-managed collections sort predictably regardless of
+ * whatever the source metadata happened to produce.
+ */
+export function normalizeSortTitleArticle(
+  title: string,
+  mode: SortTitleArticleHandling = 'strip'
+): string {
+  // 'off' is the restore: the name exactly as it is, punctuation and article
+  // both intact. Every other mode mirrors what Plex does to a sort title of
+  // its own - drop the leading punctuation first, then handle the article -
+  // so Agregarr writes what Plex would have written rather than fighting it.
+  if (mode === 'off') return title;
+
+  const trimmed = title.replace(LEADING_PUNCTUATION_PATTERN, '') || title;
+  const match = LEADING_ARTICLE_PATTERN.exec(trimmed);
+  if (!match) return trimmed;
+  const [, article, rest] = match;
+  return mode === 'moveToEnd' ? `${rest}, ${article}` : rest;
+}
+
+/**
+ * Strips a trailing " Collection" suffix from a pre-existing collection's
+ * actual title (a real Plex rename, not a sortTitle-only tweak) - e.g. TMDb
+ * collection names like "The Accountant Collection" become "The
+ * Accountant", matching how Kometa's franchise template strips the same
+ * suffix (see defaults/movie/franchise.yml's remove_suffix: "Collection").
+ * Returns the title unchanged when disabled or when there's nothing to
+ * strip, so callers can compare the result against the original to decide
+ * whether a rename is actually needed.
+ */
+export const COLLECTION_NAME_SUFFIX = ' Collection';
+
+export function stripCollectionSuffix(title: string, enabled: boolean): string {
+  if (!enabled) return title;
+  if (!title.endsWith(COLLECTION_NAME_SUFFIX)) return title;
+  const stripped = title.slice(0, -COLLECTION_NAME_SUFFIX.length).trimEnd();
+  return stripped || title;
+}
+
+/**
+ * How a collection's " Collection" suffix should be managed. Decided per
+ * collection rather than globally, because the suffix is a TMDb franchise
+ * convention ("The Matrix Collection") and nothing in a pre-existing config
+ * distinguishes a franchise from a network - "Alien" and "Netflix" are
+ * structurally identical, and a library-wide "add" would rename every
+ * network too.
+ *
+ * 'leave' is the default and does nothing, so a collection is only ever
+ * renamed because someone asked for it.
+ */
+export type CollectionSuffixMode = 'leave' | 'strip' | 'add';
+
+/**
+ * Adds the trailing " Collection" suffix when it is missing.
+ *
+ * The inverse of stripCollectionSuffix, and deliberately decided from the
+ * title itself rather than from a recorded original: both directions are
+ * then idempotent, and there is no stored bookkeeping to go stale. That
+ * matters beyond tidiness - collections stripped by Kometa long before
+ * Agregarr ever saw them have no recorded original, so nothing could give
+ * them their suffix back.
+ */
+export function addCollectionSuffix(title: string, enabled: boolean): string {
+  if (!enabled) return title;
+  const trimmed = title.trimEnd();
+  if (!trimmed || trimmed.endsWith(COLLECTION_NAME_SUFFIX)) return title;
+  return `${trimmed}${COLLECTION_NAME_SUFFIX}`;
+}
+
+/**
+ * The suffix mode in force for one collection. Absent means 'leave': the
+ * default has to be inert, or upgrading would rename every TMDb franchise
+ * collection on the first sync with nobody asking.
+ */
+export function resolveCollectionSuffixMode(
+  configMode: CollectionSuffixMode | undefined
+): CollectionSuffixMode {
+  return configMode ?? 'leave';
 }

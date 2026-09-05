@@ -160,3 +160,62 @@ describe('addItemsToCollection read-back verification', () => {
     expect(verified).toBe(0);
   });
 });
+
+/**
+ * Tests for updateCollectionSortTitle's lock decision.
+ * Same approach as above - PlexAPI has deep dependencies, so the param
+ * building and the unchanged-write skip are mirrored here rather than
+ * instantiating the class.
+ */
+describe('updateCollectionSortTitle lock semantics', () => {
+  const buildWrite = (
+    sortTitle: string,
+    currentTitleSort: string | undefined,
+    lock: boolean,
+    skipUnchanged = true
+  ): Record<string, string | number> | 'skipped' => {
+    if (
+      lock &&
+      currentTitleSort !== undefined &&
+      sortTitle === currentTitleSort &&
+      skipUnchanged
+    ) {
+      return 'skipped';
+    }
+    return {
+      'titleSort.value': lock ? sortTitle : '',
+      'titleSort.locked': lock ? 1 : 0,
+    };
+  };
+
+  it('locks the field when Agregarr imposes a value', () => {
+    expect(buildWrite('!028_The Star Wars', 'Crow, The', true)).toEqual({
+      'titleSort.value': '!028_The Star Wars',
+      'titleSort.locked': 1,
+    });
+  });
+
+  it('clears AND unlocks when Agregarr has nothing to impose', () => {
+    // The bug this fixes: writing the natural name with locked:1 left "The
+    // Crow" holding an empty but locked titleSort, which suppresses Plex's
+    // own article stripping and files it under "The" instead of C.
+    expect(buildWrite('The Crow', 'Crow, The', false)).toEqual({
+      'titleSort.value': '',
+      'titleSort.locked': 0,
+    });
+  });
+
+  it('skips an unchanged write only while locking', () => {
+    expect(buildWrite('Crow, The', 'Crow, The', true)).toBe('skipped');
+  });
+
+  it('never skips a release, since the value can already match while the lock does not', () => {
+    // Exactly the stranded state: Plex holds no sort title (so the caller's
+    // fallback makes them equal) but the field is still locked from an
+    // earlier write. Skipping here would leave it locked forever.
+    expect(buildWrite('The Crow', 'The Crow', false)).toEqual({
+      'titleSort.value': '',
+      'titleSort.locked': 0,
+    });
+  });
+});
