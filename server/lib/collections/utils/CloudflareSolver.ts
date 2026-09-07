@@ -33,6 +33,8 @@ export class CloudflareSolver {
     new Map();
   private static readonly HTML_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private static readonly BACKOFF_BASE_MS = 60 * 1000; // 1 minute
+  // Failures further apart than this are not consecutive
+  private static readonly FAILURE_MEMORY_MS = 20 * 60 * 1000;
   private static solveFailures: Map<
     string,
     { count: number; backoffUntil: number }
@@ -141,17 +143,24 @@ export class CloudflareSolver {
       return content;
     } catch (error) {
       const prev = this.solveFailures.get(failureKey);
-      const count = (prev?.count ?? 0) + 1;
+      const stale =
+        prev && Date.now() - prev.backoffUntil > this.FAILURE_MEMORY_MS;
+      const count = stale ? 1 : (prev?.count ?? 0) + 1;
+      // First failure is free: one slow solve must not fail every fetch behind it
       const backoffMs =
-        this.BACKOFF_BASE_MS * Math.pow(2, Math.min(count - 1, 4));
+        count < 2
+          ? 0
+          : this.BACKOFF_BASE_MS * Math.pow(2, Math.min(count - 2, 4));
       this.solveFailures.set(failureKey, {
         count,
         backoffUntil: Date.now() + backoffMs,
       });
       logger.warn(
-        `Cloudflare solve failed for ${domain} via ${instance}, backoff ${Math.round(
-          backoffMs / 1000
-        )}s (${count} consecutive)`,
+        `Cloudflare solve failed for ${domain} via ${instance} (${count} consecutive), ${
+          backoffMs
+            ? `backoff ${Math.round(backoffMs / 1000)}s`
+            : 'retrying on next request'
+        }`,
         { label: 'Cloudflare Solver' }
       );
       throw error;
