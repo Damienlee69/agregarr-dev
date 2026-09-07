@@ -89,21 +89,40 @@ describe('CloudflareSolver failover', () => {
     expect(mockPost.mock.calls[1][0]).toBe('http://solver-b:8191/v1');
   });
 
-  it('skips an instance in backoff and goes straight to the next', async () => {
+  it('retries an instance after a single failure', async () => {
     state.settings = settingsWith([solverOne, solverTwo]);
-    // First call: A fails (enters backoff), B succeeds
+    // First call: A fails once, B succeeds
     mockPost
-      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockRejectedValueOnce(new Error('timeout of 70000ms exceeded'))
       .mockResolvedValueOnce(okResponse('first'));
     await CloudflareSolver.fetchPage('https://d4.example/page1');
 
-    // Second call, same domain: A must be skipped without a request
+    // Second call, same domain: one failure is not a backoff, A gets another go
     mockPost.mockResolvedValueOnce(okResponse('second'));
     const html = await CloudflareSolver.fetchPage('https://d4.example/page2');
 
     expect(html).toContain('second');
     expect(mockPost).toHaveBeenCalledTimes(3);
-    expect(mockPost.mock.calls[2][0]).toBe('http://solver-b:8191/v1');
+    expect(mockPost.mock.calls[2][0]).toBe('http://solver-a:8191/v1');
+  });
+
+  it('skips an instance after two consecutive failures', async () => {
+    state.settings = settingsWith([solverOne, solverTwo]);
+    mockPost
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockResolvedValueOnce(okResponse('first'))
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      .mockResolvedValueOnce(okResponse('second'));
+    await CloudflareSolver.fetchPage('https://d10.example/page1');
+    await CloudflareSolver.fetchPage('https://d10.example/page2');
+
+    // Third call: A is now in backoff and must be skipped without a request
+    mockPost.mockResolvedValueOnce(okResponse('third'));
+    const html = await CloudflareSolver.fetchPage('https://d10.example/page3');
+
+    expect(html).toContain('third');
+    expect(mockPost).toHaveBeenCalledTimes(5);
+    expect(mockPost.mock.calls[4][0]).toBe('http://solver-b:8191/v1');
   });
 
   it('throws naming every solver when all fail', async () => {
@@ -162,11 +181,14 @@ describe('CloudflareSolver failover', () => {
     // Populate the cache, then drive the solver into backoff on another URL
     mockPost
       .mockResolvedValueOnce(okResponse('cached-page'))
+      .mockRejectedValueOnce(new Error('down'))
       .mockRejectedValueOnce(new Error('down'));
     await CloudflareSolver.fetchPage('https://d9.example/cached');
-    await expect(
-      CloudflareSolver.fetchPage('https://d9.example/uncached')
-    ).rejects.toThrow();
+    for (let i = 0; i < 2; i++) {
+      await expect(
+        CloudflareSolver.fetchPage('https://d9.example/uncached')
+      ).rejects.toThrow();
+    }
 
     const results = await CloudflareSolver.fetchPagesBatch([
       'https://d9.example/cached',
@@ -175,5 +197,84 @@ describe('CloudflareSolver failover', () => {
 
     expect(results.get('https://d9.example/cached')).toContain('cached-page');
     expect(results.has('https://d9.example/uncached')).toBe(false);
+    // Backoff skipped the uncached URL: no fourth request was made
+    expect(mockPost).toHaveBeenCalledTimes(3);
+  });
+
+  it('forgets a failure older than the memory window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      state.settings = settingsWith([solverOne]);
+      mockPost
+        .mockRejectedValueOnce(new Error('down'))
+        .mockRejectedValueOnce(new Error('down'))
+        .mockResolvedValueOnce(okResponse('fresh'));
+      await expect(
+        CloudflareSolver.fetchPage('https://d12.example/p1')
+      ).rejects.toThrow();
+      vi.setSystemTime(Date.now() + 6 * 60 * 60 * 1000);
+      await expect(
+        CloudflareSolver.fetchPage('https://d12.example/p2')
+      ).rejects.toThrow();
+
+      // Six hours apart is not consecutive: still no backoff
+      const html = await CloudflareSolver.fetchPage('https://d12.example/p3');
+
+      expect(html).toContain('fresh');
+      expect(mockPost).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps counting after an expired backoff when measured from its end', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      state.settings = settingsWith([solverOne]);
+      // Six failures climb to the 16-minute cap, each retried just past expiry
+      for (const backoffSecs of [0, 60, 120, 240, 480, 960]) {
+        mockPost.mockRejectedValueOnce(new Error('down'));
+        await expect(
+          CloudflareSolver.fetchPage('https://d13.example/p')
+        ).rejects.toThrow();
+        vi.setSystemTime(Date.now() + (backoffSecs + 1) * 1000);
+      }
+      // 19 minutes after the last failure but 1 second past its backoff end
+      vi.setSystemTime(Date.now() + 1100 * 1000);
+      mockPost.mockRejectedValueOnce(new Error('down'));
+      await expect(
+        CloudflareSolver.fetchPage('https://d13.example/p')
+      ).rejects.toThrow();
+
+      // Still consecutive: seventh failure backs off, next call is skipped
+      await expect(
+        CloudflareSolver.fetchPage('https://d13.example/p')
+      ).rejects.toThrow(/backing off/);
+      expect(mockPost).toHaveBeenCalledTimes(7);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resets the failure count on success', async () => {
+    state.settings = settingsWith([solverOne]);
+    mockPost
+      .mockRejectedValueOnce(new Error('down'))
+      .mockResolvedValueOnce(okResponse('recovered'))
+      .mockRejectedValueOnce(new Error('down'))
+      .mockResolvedValueOnce(okResponse('still-trying'));
+    await expect(
+      CloudflareSolver.fetchPage('https://d11.example/p1')
+    ).rejects.toThrow();
+    await CloudflareSolver.fetchPage('https://d11.example/p2');
+    await expect(
+      CloudflareSolver.fetchPage('https://d11.example/p3')
+    ).rejects.toThrow();
+
+    // Fail, succeed, fail is one consecutive failure, not two: no backoff
+    const html = await CloudflareSolver.fetchPage('https://d11.example/p4');
+
+    expect(html).toContain('still-trying');
+    expect(mockPost).toHaveBeenCalledTimes(4);
   });
 });
