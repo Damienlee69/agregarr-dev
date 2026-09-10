@@ -3,6 +3,7 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import {
   capPreviewItemsToMaxItems,
+  combinePreviewMissingItems,
   type LibraryItemsCache,
 } from '@server/lib/collections/core/CollectionUtilities';
 import type {
@@ -600,17 +601,10 @@ async function processMultiSourcePreview(
     return true;
   });
 
-  // Combine missing items (remove duplicates)
-  const allMissingItems = allMissingItemGroups.flat();
-  const seenMissing = new Set<string>();
-  const uniqueMissingItems = allMissingItems.filter((item) => {
-    const key = `${item.tmdbId}-${item.mediaType}`;
-    if (seenMissing.has(key)) {
-      return false;
-    }
-    seenMissing.add(key);
-    return true;
-  });
+  const uniqueMissingItems = combinePreviewMissingItems(
+    allMissingItemGroups,
+    maxItems
+  );
 
   // Apply maxItems limit to combined items
   const { items: limitedItems, missingItems: limitedMissingItems } =
