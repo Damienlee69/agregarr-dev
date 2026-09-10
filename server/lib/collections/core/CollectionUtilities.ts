@@ -1269,13 +1269,23 @@ export function filterItemsByPosition<T extends { originalPosition: number }>(
   return items.filter((item) => item.originalPosition <= maxPosition);
 }
 
-/**
- * Cap matched + missing preview items to a shared maxItems budget.
- * Matched items are sliced to maxItems; missing items get whatever budget
- * remains, so the combined preview total never exceeds maxItems.
- * Mirrors Plex collection contents (matched-first), not the sync request set - a missing item within position budget can be hidden here while sync still requests it.
- */
-export function capPreviewItemsToMaxItems<TItem, TMissing>(
+export function combinePreviewMissingItems<
+  T extends { tmdbId?: number; mediaType: string; originalPosition: number }
+>(groups: T[][], maxItems?: number): T[] {
+  // Position-filter per source before dedupe, as the sync does
+  const seen = new Set<string>();
+  return filterItemsByPosition(groups.flat(), maxItems).filter((item) => {
+    const key = `${item.tmdbId}-${item.mediaType}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function capPreviewItemsToMaxItems<
+  TItem,
+  TMissing extends { originalPosition: number }
+>(
   items: TItem[],
   missingItems: TMissing[],
   maxItems?: number
@@ -1284,13 +1294,11 @@ export function capPreviewItemsToMaxItems<TItem, TMissing>(
     return { items, missingItems };
   }
 
-  const limitedItems = items.slice(0, maxItems);
-  const limitedMissingItems = missingItems.slice(
-    0,
-    Math.max(0, maxItems - limitedItems.length)
-  );
-
-  return { items: limitedItems, missingItems: limitedMissingItems };
+  // Mirror the sync: matched items cap by count, missing items by source position
+  return {
+    items: items.slice(0, maxItems),
+    missingItems: filterItemsByPosition(missingItems, maxItems),
+  };
 }
 
 /**

@@ -280,6 +280,7 @@ sonarrRoutes.delete<{ id: string }>('/:id', (req, res) => {
   }
 
   const removed = settings.sonarr.splice(sonarrIndex, 1);
+  settings.clearArrServerReferences('sonarr', removed[0].id);
   settings.save();
 
   return res.status(200).json(removed[0]);

@@ -281,6 +281,7 @@ radarrRoutes.delete<{ id: string }>('/:id', (req, res, next) => {
   }
 
   const removed = settings.radarr.splice(radarrIndex, 1);
+  settings.clearArrServerReferences('radarr', removed[0].id);
   settings.save();
 
   return res.status(200).json(removed[0]);

@@ -29,6 +29,7 @@ vi.mock('@server/lib/settings', () => ({
 import {
   capPreviewItemsToMaxItems,
   clearConfigRatingKey,
+  combinePreviewMissingItems,
   hasAgregarrLabel,
   isMultiCollectionPattern,
 } from './CollectionUtilities';
@@ -184,31 +185,39 @@ describe('isMultiCollectionPattern', () => {
 });
 
 describe('capPreviewItemsToMaxItems', () => {
-  // fork#95: single-source preview matched items (already sliced to maxItems
-  // by count) plus missing items (already sliced by position) were shown
-  // uncoupled, so a maxItems=10 collection with one missing item inside the
-  // first 10 positions displayed 11 items.
-  const matched = Array.from({ length: 10 }, (_, i) => ({
+  // Preview must show what the sync will do: matched items are capped by
+  // count, missing items by source position, independently.
+  const matched = Array.from({ length: 61 }, (_, i) => ({
     ratingKey: `rk-${i}`,
   }));
-  const missing = [{ originalPosition: 5 }];
+  const missing = [{ originalPosition: 5 }, { originalPosition: 40 }];
 
-  it('caps the combined total at maxItems', () => {
-    const result = capPreviewItemsToMaxItems(matched, missing, 10);
-    expect(
-      result.items.length + result.missingItems.length
-    ).toBeLessThanOrEqual(10);
+  it('caps matched items by count', () => {
+    const result = capPreviewItemsToMaxItems(matched, missing, 30);
+    expect(result.items).toHaveLength(30);
   });
 
-  it('gives missing items only the budget left after matched items', () => {
-    const result = capPreviewItemsToMaxItems(matched, missing, 10);
-    expect(result.items).toHaveLength(10);
-    expect(result.missingItems).toHaveLength(0);
+  it('keeps missing items inside the cap even when matched fills it', () => {
+    const result = capPreviewItemsToMaxItems(matched, missing, 30);
+    expect(result.missingItems).toEqual([{ originalPosition: 5 }]);
   });
 
   it('does not cap when maxItems is unset', () => {
     const result = capPreviewItemsToMaxItems(matched, missing, undefined);
-    expect(result.items).toHaveLength(10);
-    expect(result.missingItems).toHaveLength(1);
+    expect(result.items).toHaveLength(61);
+    expect(result.missingItems).toHaveLength(2);
+  });
+});
+
+describe('combinePreviewMissingItems', () => {
+  it('position-filters each source before dedupe so an in-cap duplicate survives', () => {
+    const a = [{ tmdbId: 1, mediaType: 'movie', originalPosition: 40 }];
+    const b = [
+      { tmdbId: 1, mediaType: 'movie', originalPosition: 5 },
+      { tmdbId: 2, mediaType: 'movie', originalPosition: 31 },
+    ];
+    expect(combinePreviewMissingItems([a, b], 30)).toEqual([
+      { tmdbId: 1, mediaType: 'movie', originalPosition: 5 },
+    ]);
   });
 });
