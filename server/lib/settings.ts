@@ -1275,6 +1275,48 @@ class Settings {
     registerLogSecrets(collectSecretValues(this.data));
   }
 
+  public clearArrServerReferences(kind: 'radarr' | 'sonarr', id: number): void {
+    // selector field -> prefix of the sibling fields that only make sense on that server
+    const selectors: [string, string][] =
+      kind === 'radarr'
+        ? [
+            ['directDownloadRadarrServerId', 'directDownloadRadarr'],
+            ['comingSoonRadarrServerId', 'comingSoonRadarr'],
+            ['radarrInstanceId', 'radarrTag'],
+            ['radarrTagServerId', 'radarrTag'],
+          ]
+        : [
+            ['directDownloadSonarrServerId', 'directDownloadSonarr'],
+            ['comingSoonSonarrServerId', 'comingSoonSonarr'],
+            ['sonarrInstanceId', 'sonarrTag'],
+            ['sonarrTagServerId', 'sonarrTag'],
+          ];
+    const scrub = (obj: Record<string, unknown>) => {
+      for (const [selector, prefix] of selectors) {
+        if (obj[selector] !== id) continue;
+        delete obj[selector];
+        for (const key of Object.keys(obj)) {
+          if (key.startsWith(prefix) && !/Monitor|SearchOnAdd/.test(key)) {
+            delete obj[key];
+          }
+        }
+      }
+    };
+    for (const config of this.data.plex.collectionConfigs ?? []) {
+      scrub(config as unknown as Record<string, unknown>);
+      for (const source of config.sources ?? []) {
+        scrub(source as unknown as Record<string, unknown>);
+      }
+    }
+    const watchlist = this.data.watchlistSync?.[kind];
+    if (watchlist?.serverId === id) {
+      delete watchlist.serverId;
+      delete watchlist.profileId;
+      delete watchlist.rootFolder;
+      delete watchlist.tags;
+    }
+  }
+
   /**
    * Update admin Plex user information for template variables
    */
