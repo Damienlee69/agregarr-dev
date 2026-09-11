@@ -661,7 +661,6 @@
   "components.Collections.Views.failedDemoteCollection": "Failed to demote collection",
   "components.Collections.Views.failedLoadPlexLibraries": "Failed to load Plex libraries. Please check your Plex connection.",
   "components.Collections.Views.failedPromoteCollection": "Failed to promote collection",
-  "components.Collections.Views.failedSaveCollectionConfig": "Failed to save collection configuration",
   "components.Collections.Views.failedSaveHubConfig": "Failed to save hub configuration.",
   "components.Collections.Views.failedSavePreExistingConfig": "Failed to save pre-existing collection configuration.",
   "components.Collections.Views.failedStartSync": "Failed to start collections sync. Please try again.",
