@@ -192,6 +192,8 @@ interface PlexCollection {
   collectionSort?: string;
   Label?: { tag: string; id?: number }[];
   [key: string]: unknown;
+  // Only locked fields are listed by Plex - see readTitleSortLocked.
+  Field?: { name?: string; locked?: boolean | number }[];
 }
 
 interface PlexCollectionMetadata extends PlexCollection {
@@ -210,6 +212,80 @@ interface PlexCollectionResponse {
     size?: number;
     totalSize?: number;
   };
+}
+
+/**
+ * Plex reports a field's lock state on the metadata it already returns, as
+ * `Field: [{ name: 'titleSort', locked: true }]`. An absent entry means the
+ * field is unlocked - Plex only lists the ones that are locked.
+ *
+ * Read back rather than tracked in config on purpose: a stored flag drifts
+ * the moment someone locks the field in Plex directly, or the collection is
+ * deleted and recreated, and nothing here would ever find out.
+ */
+export function readTitleSortLocked(collection: {
+  Field?: { name?: string; locked?: boolean | number }[];
+}): boolean | undefined {
+  const fields = collection?.Field;
+  if (!Array.isArray(fields)) return undefined;
+  const field = fields.find((entry) => entry?.name === 'titleSort');
+  if (!field) return false;
+  return field.locked === true || field.locked === 1;
+}
+
+/**
+ * Whether a sort title write should actually go to Plex, and what it should
+ * say. Pure so the tests can exercise the real decision instead of a
+ * mirrored copy that would keep passing after this changed.
+ *
+ * The release case (`lock: false`) is the reason this exists. Releasing
+ * hands the field back to Plex by clearing it and unlocking it, which is a
+ * one-time transition: once the field is unlocked Plex owns it, has already
+ * regenerated its own value, and repeating the release every sync achieves
+ * nothing but a write per collection per sync. Knowing the field's current
+ * lock state is what makes that a transition rather than a standing
+ * instruction.
+ *
+ * A locking write is skipped only when the value AND the lock already match
+ * what we would impose. An unchanged value still needs writing when the
+ * field is not locked yet, because the lock is half of what is being
+ * imposed - suppressing Plex's own article stripping is the point of it.
+ * Where the lock state is unknown, the value comparison alone decides, which
+ * is the behaviour this had before lock state was tracked at all.
+ */
+export function resolveSortTitleWrite(options: {
+  sortTitle: string;
+  currentTitleSort?: string;
+  currentTitleSortLocked?: boolean;
+  lock: boolean;
+  skipUnchangedWrites: boolean;
+}): { write: boolean; value: string; locked: 0 | 1 } {
+  const {
+    sortTitle,
+    currentTitleSort,
+    currentTitleSortLocked,
+    lock,
+    skipUnchangedWrites,
+  } = options;
+
+  if (!lock) {
+    return {
+      write: currentTitleSortLocked !== false,
+      value: '',
+      locked: 0,
+    };
+  }
+
+  const unchanged =
+    currentTitleSort !== undefined && sortTitle === currentTitleSort;
+  // Unknown lock state counts as locked: Agregarr's own writes always lock,
+  // so assuming otherwise would rewrite every collection on every sync.
+  const alreadyLocked = currentTitleSortLocked !== false;
+
+  if (unchanged && alreadyLocked && skipUnchangedWrites) {
+    return { write: false, value: sortTitle, locked: 1 };
+  }
+  return { write: true, value: sortTitle, locked: 1 };
 }
 
 class PlexAPI {
@@ -854,6 +930,10 @@ class PlexAPI {
               libraryName: library.title,
               labels,
               titleSort: detailedCollection?.titleSort,
+              // The lock state rides along with the sort title: releasing the
+              // field is a one-time transition and needs to know whether it
+              // has already happened.
+              Field: detailedCollection?.Field,
               collectionSort: detailedCollection?.collectionSort,
             };
 
@@ -1943,21 +2023,26 @@ class PlexAPI {
   public async updateCollectionSortTitle(
     collectionRatingKey: string,
     sortTitle: string,
-    currentTitleSort?: string
+    currentTitleSort?: string,
+    lock = true,
+    currentTitleSortLocked?: boolean
   ): Promise<void> {
-    if (
-      currentTitleSort !== undefined &&
-      sortTitle === currentTitleSort &&
-      this.shouldSkipUnchangedWrites()
-    ) {
+    const decision = resolveSortTitleWrite({
+      sortTitle,
+      currentTitleSort,
+      currentTitleSortLocked,
+      lock,
+      skipUnchangedWrites: this.shouldSkipUnchangedWrites(),
+    });
+    if (!decision.write) {
       return;
     }
     try {
       const params = {
         type: 18,
         id: collectionRatingKey,
-        'titleSort.value': sortTitle,
-        'titleSort.locked': 1,
+        'titleSort.value': decision.value,
+        'titleSort.locked': decision.locked,
       };
 
       const queryString = Object.entries(params)

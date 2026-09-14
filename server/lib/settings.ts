@@ -119,6 +119,7 @@ export interface CollectionConfig {
   readonly sortOrderHome?: number; // Order for Plex home screen (1+ for positioned items, 0 for void/unpositioned)
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
   readonly isLibraryPromoted?: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section (defaults to true for Agregarr collections)
+  sortTitleArticleNormalized?: boolean; // True while this collection's sortTitle is an article-normalized value Agregarr wrote. Lets 'off' restore the natural title on the next sync instead of leaving the previous mode's value stranded
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto !-prefix)
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly isLinked?: boolean; // True if collection is actively linked to other collections
@@ -429,6 +430,9 @@ export interface PreExistingCollectionConfig {
   sortOrderHome: number; // Position on Plex home screen (1+ for positioned items, 0 for void)
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
   isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
+  titleSortLocked?: boolean; // Plex's lock state for titleSort, refreshed by discovery; undefined = not yet known
+  sortTitleResetRequested?: boolean; // One-shot: the user cleared the Sort Title field, asking Agregarr to take the sort title back and rewrite its own value. Needed because an empty sortTitleOverride cannot say whether it was just cleared or never set. Consumed and cleared by the next sync
+  sortTitleArticleNormalized?: boolean; // True while this collection's sortTitle is an article-normalized value Agregarr wrote. Lets 'off' restore the natural title on the next sync instead of leaving the previous mode's value stranded
   sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
@@ -499,6 +503,12 @@ export interface PlexSettings {
   hubConfigs?: PlexHubConfig[]; // Plex built-in hub configurations
   preExistingCollectionConfigs?: PreExistingCollectionConfig[]; // Pre-existing Plex collections discovered by hub discovery
   autoEmptyTrash?: boolean; // Auto-empty Plex trash after placeholder cleanup (default: true)
+  // Leading-article handling ("The"/"A"/"An") when computing a collection's
+  // default (non-override) sortTitle for the A-Z section - never affects
+  // promoted collections, which are always positional. 'strip' removes the
+  // article ("The Accountant" sorts as "Accountant"), 'moveToEnd' reorders
+  // it ("Accountant, The"), 'off' leaves titles untouched. Default: 'off'
+  sortTitleArticleHandling?: 'strip' | 'moveToEnd' | 'off';
 }
 
 export interface TraktSettings {
@@ -814,6 +824,7 @@ class Settings {
         collectionConfigs: [],
         hubConfigs: [],
         preExistingCollectionConfigs: [],
+        sortTitleArticleHandling: 'off',
       },
       tautulli: {},
       maintainerr: {},

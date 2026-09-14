@@ -78,6 +78,12 @@ export interface PlexCollection {
   /** Number of children in collection */
   childCount?: number;
   titleSort?: string;
+  /**
+   * Plex lists only the fields that are locked, so an absent titleSort entry
+   * means the field is unlocked and Plex still owns it. Read via
+   * readTitleSortLocked - see the release logic in updateCollectionSortTitle.
+   */
+  Field?: { name?: string; locked?: boolean | number }[];
   collectionSort?: string;
   /** Collection labels */
   labels?: (string | PlexLabel)[];

@@ -41,6 +41,17 @@ preExistingRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
   const { id } = req.params;
 
   try {
+    // The client sends this when the user empties a Sort Title field that had
+    // something in it. An empty sortTitleOverride cannot carry that meaning on
+    // its own - a collection that never had an override submits the very same
+    // empty string - so the intent is translated into a one-shot flag the sync
+    // consumes. Kept out of the stored config as a raw body field.
+    if (req.body.sortTitleReset === true) {
+      req.body.sortTitleResetRequested = true;
+      req.body.sortTitleOverride = '';
+    }
+    delete req.body.sortTitleReset;
+
     // Detect a typed-in reposition: the Sort Title field is pre-filled with
     // this collection's current computed value (e.g. "!001_Name"), so if
     // the user edited only the rank digits and left the name suffix

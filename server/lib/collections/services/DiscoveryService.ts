@@ -1,5 +1,6 @@
 import type PlexAPI from '@server/api/plexapi';
 import type { PlexLibrary } from '@server/api/plexapi';
+import { readTitleSortLocked } from '@server/api/plexapi';
 import type { PlexCollection } from '@server/lib/collections/core/types';
 import {
   categorizeDiscoveredItem,
@@ -1477,6 +1478,26 @@ export class DiscoveryService {
             // Update exclusion flag on every discovery pass so adding/removing the label takes effect
             if (existingPreExisting.excludeFromOrdering !== hasExclusionLabel) {
               existingPreExisting.excludeFromOrdering = hasExclusionLabel;
+              settings.save();
+            }
+
+            // Refresh what Plex actually holds, on every pass rather than
+            // only at first discovery. Two decisions read this and both are
+            // wrong on stale data: ownership (a sort title someone typed in
+            // Plex must not be overwritten - see isAgregarrOwnedSortTitle),
+            // and the one-time release, which needs to know whether the
+            // field is still locked or Plex has already taken it back.
+            const discoveredTitleSort =
+              typeof collection.titleSort === 'string'
+                ? collection.titleSort
+                : undefined;
+            const discoveredTitleSortLocked = readTitleSortLocked(collection);
+            if (
+              existingPreExisting.titleSort !== discoveredTitleSort ||
+              existingPreExisting.titleSortLocked !== discoveredTitleSortLocked
+            ) {
+              existingPreExisting.titleSort = discoveredTitleSort;
+              existingPreExisting.titleSortLocked = discoveredTitleSortLocked;
               settings.save();
             }
           }

@@ -1176,6 +1176,11 @@ const CollectionSettings = ({
         ...(preExistingConfig.sortTitleOverride !== undefined && {
           sortTitleOverride: preExistingConfig.sortTitleOverride,
         }),
+        // Transient instruction rather than stored state: the server turns it
+        // into a one-shot flag the next sync consumes. Cast because it is not
+        // part of the config shape and deliberately never persisted as-is.
+        ...((preExistingConfig as { sortTitleReset?: boolean })
+          .sortTitleReset === true && { sortTitleReset: true }),
         ...(preExistingConfig.customTheme && {
           customTheme: preExistingConfig.customTheme,
         }),

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { readTitleSortLocked, resolveSortTitleWrite } from './plexapi';
+
 /**
  * Tests for getMetadataBatch chunking logic.
  * Since PlexAPI has deep dependencies (plex-api, settings, etc.), we test the
@@ -158,5 +160,132 @@ describe('addItemsToCollection read-back verification', () => {
   it('counts zero when the write claimed success but nothing landed', () => {
     const verified = countVerified(['1', '2'], []);
     expect(verified).toBe(0);
+  });
+});
+
+/**
+ * Sort title write decisions.
+ *
+ * These call the real resolveSortTitleWrite rather than mirroring the
+ * predicate locally - a mirrored copy keeps passing after the implementation
+ * changes, which is exactly the case that needs catching here.
+ */
+describe('resolveSortTitleWrite', () => {
+  const base = {
+    sortTitle: '!003_Crow',
+    currentTitleSort: '!003_Crow',
+    lock: true,
+    skipUnchangedWrites: true,
+  };
+
+  it('skips a locking write when value and lock both already match', () => {
+    const d = resolveSortTitleWrite({ ...base, currentTitleSortLocked: true });
+    expect(d.write).toBe(false);
+  });
+
+  it('writes an unchanged value when the field is not locked yet', () => {
+    // The lock is half of what is being imposed: it suppresses Plex's own
+    // article stripping, so a matching value with no lock still needs writing.
+    const d = resolveSortTitleWrite({ ...base, currentTitleSortLocked: false });
+    expect(d.write).toBe(true);
+    expect(d.locked).toBe(1);
+  });
+
+  it('treats unknown lock state as locked, so it does not rewrite everything', () => {
+    const d = resolveSortTitleWrite({
+      ...base,
+      currentTitleSortLocked: undefined,
+    });
+    expect(d.write).toBe(false);
+  });
+
+  it('writes when the value differs, regardless of lock state', () => {
+    const d = resolveSortTitleWrite({
+      ...base,
+      sortTitle: '!004_Crow',
+      currentTitleSortLocked: true,
+    });
+    expect(d.write).toBe(true);
+    expect(d.value).toBe('!004_Crow');
+  });
+
+  it('writes an unchanged value when the skip is disabled', () => {
+    const d = resolveSortTitleWrite({
+      ...base,
+      currentTitleSortLocked: true,
+      skipUnchangedWrites: false,
+    });
+    expect(d.write).toBe(true);
+  });
+
+  describe('releasing the field back to Plex', () => {
+    it('releases while the field is still locked', () => {
+      const d = resolveSortTitleWrite({
+        sortTitle: 'The Crow',
+        currentTitleSort: 'Crow',
+        currentTitleSortLocked: true,
+        lock: false,
+        skipUnchangedWrites: true,
+      });
+      expect(d.write).toBe(true);
+      expect(d.value).toBe('');
+      expect(d.locked).toBe(0);
+    });
+
+    it('does NOT release again once the field is already unlocked', () => {
+      // The bug this exists for: the old gate was `lock && ...`, so with
+      // lock false it could never skip, and a release re-fired on every sync
+      // for every collection Agregarr imposes nothing on.
+      const d = resolveSortTitleWrite({
+        sortTitle: 'The Crow',
+        currentTitleSort: 'Crow',
+        currentTitleSortLocked: false,
+        lock: false,
+        skipUnchangedWrites: true,
+      });
+      expect(d.write).toBe(false);
+    });
+
+    it('releases when the lock state is unknown, so a stranded field recovers', () => {
+      const d = resolveSortTitleWrite({
+        sortTitle: 'The Crow',
+        currentTitleSort: 'Crow',
+        currentTitleSortLocked: undefined,
+        lock: false,
+        skipUnchangedWrites: true,
+      });
+      expect(d.write).toBe(true);
+    });
+  });
+});
+
+describe('readTitleSortLocked', () => {
+  it('reads a locked titleSort field', () => {
+    expect(
+      readTitleSortLocked({ Field: [{ name: 'titleSort', locked: true }] })
+    ).toBe(true);
+  });
+
+  it('accepts Plex reporting locked as 1 rather than true', () => {
+    expect(
+      readTitleSortLocked({ Field: [{ name: 'titleSort', locked: 1 }] })
+    ).toBe(true);
+  });
+
+  it('reports unlocked when Plex lists other fields but not titleSort', () => {
+    // Plex only lists locked fields, so an absent entry means unlocked.
+    expect(
+      readTitleSortLocked({ Field: [{ name: 'title', locked: true }] })
+    ).toBe(false);
+  });
+
+  it('reports unlocked for an empty field list', () => {
+    expect(readTitleSortLocked({ Field: [] })).toBe(false);
+  });
+
+  it('returns undefined when Plex sent no field list at all', () => {
+    // Not the same as unlocked - nothing was observed, so callers keep their
+    // prior assumption rather than acting on a guess.
+    expect(readTitleSortLocked({})).toBeUndefined();
   });
 });
