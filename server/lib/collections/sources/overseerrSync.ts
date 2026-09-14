@@ -910,10 +910,26 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       totalUpdated += result.updated;
       collectionRatingKey = result.collectionRatingKey;
 
-      // Apply sort title to user collection if needed (not handled by base class since no collectionRatingKey in config)
-      if (result.collectionRatingKey && !config.showUnwatchedOnly) {
+      // Apply sort title to user collection if needed (not handled by base class
+      // since no collectionRatingKey in config).
+      //
+      // createCollection only reports a rating key when it created or changed
+      // the collection, so gating on that alone meant a sort title edit never
+      // reached Plex unless the collection's contents happened to change in the
+      // same sync - the user clears the Sort Title field, Agregarr moves the
+      // collection in its own list, and Plex never hears about it. Falling back
+      // to the collection that already exists under this name keeps the sort
+      // title in step with what the user actually asked for. The unchanged-write
+      // skip in updateCollectionSortTitle means this costs nothing when there is
+      // genuinely nothing to change.
+      const sortTitleRatingKey =
+        result.collectionRatingKey ||
+        allCollections.find((existing) => existing.title === collectionName)
+          ?.ratingKey;
+
+      if (sortTitleRatingKey && !config.showUnwatchedOnly) {
         await this.applyUserCollectionSortTitle(
-          result.collectionRatingKey,
+          sortTitleRatingKey,
           collectionName,
           config,
           plexClient,
