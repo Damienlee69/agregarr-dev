@@ -1,4 +1,5 @@
 import type PlexAPI from '@server/api/plexapi';
+import { readTitleSortLocked } from '@server/api/plexapi';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
   buildPromotedSortTitle,
@@ -930,7 +931,8 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
           result.collectionRatingKey,
           collectionName,
           config,
-          plexClient
+          plexClient,
+          allCollections
         );
       }
     }
@@ -953,13 +955,31 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     collectionRatingKey: string,
     collectionName: string,
     config: CollectionConfig,
-    plexClient: PlexAPI
+    plexClient: PlexAPI,
+    allCollections?: PlexCollection[]
   ): Promise<void> {
+    // CollectionConfig stores no titleSort for user collections, so what Plex
+    // currently holds is read from the collection list instead. Without it the
+    // unchanged-write skip cannot engage, and - worse - a release would have
+    // no way to know it had already happened and would re-fire every sync.
+    // Absent for a collection created moments ago, which self-corrects on the
+    // next sync once it appears in the list.
+    const existing = allCollections?.find(
+      (c) => c.ratingKey === collectionRatingKey
+    );
+    const currentTitleSort = existing?.titleSort;
+    const currentTitleSortLocked = existing
+      ? readTitleSortLocked(existing)
+      : undefined;
     // Sort title override: prefix + collection name
     if (config.sortTitleOverride) {
+      // An override is Agregarr imposing a value, so this locks.
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
-        buildSortTitleFromOverride(config.sortTitleOverride, collectionName)
+        buildSortTitleFromOverride(config.sortTitleOverride, collectionName),
+        currentTitleSort,
+        true,
+        currentTitleSortLocked
       );
       return;
     }
@@ -982,7 +1002,16 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       sortTitle = collectionName;
     }
 
-    await plexClient.updateCollectionSortTitle(collectionRatingKey, sortTitle);
+    // Lock only where Agregarr imposes a value - the same predicate the
+    // other sync paths use. Writing the natural name with the field locked
+    // is what suppressed Plex's own article stripping.
+    await plexClient.updateCollectionSortTitle(
+      collectionRatingKey,
+      sortTitle,
+      currentTitleSort,
+      sortTitle !== collectionName,
+      currentTitleSortLocked
+    );
 
     logger.debug(`Applied sort title to user collection: ${sortTitle}`, {
       label: 'Overseerr User Collection',
@@ -1376,9 +1405,13 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       if (smartCollectionRatingKey) {
         // Sort title override: prefix + collection name
         if (config.sortTitleOverride) {
+          // Was concatenating prefix and name by hand, which double-writes
+          // the name for an override that is already a complete title.
           await plexClient.updateCollectionSortTitle(
             smartCollectionRatingKey,
-            `${config.sortTitleOverride}${config.name}`
+            buildSortTitleFromOverride(config.sortTitleOverride, config.name),
+            undefined,
+            true
           );
         } else if (config.sortOrderLibrary !== undefined) {
           const sortOrderLibrary = config.sortOrderLibrary;
@@ -1399,7 +1432,9 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
 
           await plexClient.updateCollectionSortTitle(
             smartCollectionRatingKey,
-            sortTitle
+            sortTitle,
+            undefined,
+            sortTitle !== collectionName
           );
         }
 
