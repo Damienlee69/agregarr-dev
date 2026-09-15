@@ -44,7 +44,10 @@ import {
   evaluateCondition,
   overlayTemplateRenderer,
 } from './OverlayTemplateRenderer';
-import { deriveReleaseDateContext } from './releaseDateContext';
+import {
+  deriveReleaseDateContext,
+  latestAiredSeasonDate,
+} from './releaseDateContext';
 import {
   RELEASE_DATE_CONTEXT_FIELDS,
   shouldSkipOnReleaseDateFetchFailure,
@@ -932,6 +935,10 @@ class OverlayLibraryService {
                   if (nextEpisode.episode_number === 1) {
                     releaseDateInfo.nextSeasonAirDate = nextEpisode.air_date;
                   }
+
+                  releaseDateInfo.lastSeasonAirDate = latestAiredSeasonDate(
+                    showDetails.seasons
+                  );
                 } else {
                   // TMDB doesn't have next_episode_to_air
                   // Don't cache null - let per-item call try Sonarr fallback

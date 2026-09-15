@@ -279,7 +279,7 @@ export interface OverlayRenderContext {
   daysUntilNextEpisode?: number; // Calculated days until ANY next episode
   nextSeasonAirDate?: string; // Raw date for SEASON PREMIERES only (episode 1)
   daysUntilNextSeason?: number; // Calculated days until next SEASON PREMIERE only
-  daysAgoNextSeason?: number; // Days since next season premiered (only if nextSeasonAirDate is in the past)
+  daysAgoNextSeason?: number; // Days since the latest season premiered
 
   totalSeasons?: number;
   seasonsAvailable?: number;
