@@ -27,6 +27,7 @@ import {
   NO_SEASON_FALLBACK,
 } from './maintainerrCountdown';
 import type { OverlayRenderContext } from './OverlayTemplateRenderer';
+import { latestAiredSeasonDate } from './releaseDateContext';
 
 // Captured defensively: the app replaces the global Intl with the andyearnshaw
 // `intl` SSR polyfill (src/pages/_app.tsx), which does NOT provide DisplayNames.
@@ -1177,6 +1178,8 @@ export interface ReleaseDateInfo {
   isEstimated?: boolean;
   nextEpisodeAirDate?: string;
   nextSeasonAirDate?: string;
+  // Fallback source for daysAgoNextSeason once next_episode_to_air moves on.
+  lastSeasonAirDate?: string;
   seasonNumber?: number;
   episodeNumber?: number;
   tvdbId?: number;
@@ -1402,6 +1405,10 @@ export async function fetchReleaseDateInfo(
       // Fall back to first_air_date when nothing upcoming was found.
       if (!result && showDetails.first_air_date) {
         result = { releaseDate: showDetails.first_air_date };
+      }
+
+      if (result) {
+        result.lastSeasonAirDate = latestAiredSeasonDate(showDetails.seasons);
       }
 
       // A Sonarr failure that left us without an upcoming next episode must skip
