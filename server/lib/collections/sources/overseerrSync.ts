@@ -7,6 +7,7 @@ import {
   extractErrorMessage,
   findPlexItemsByTmdbIds,
   getCollectionMediaType,
+  resolveMultiCollectionBase,
   type LibraryItemsCache,
 } from '@server/lib/collections/core/CollectionUtilities';
 import type {
@@ -972,21 +973,41 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     const currentTitleSortLocked = existing
       ? readTitleSortLocked(existing)
       : undefined;
-    // Sort title override: prefix + collection name
-    if (config.sortTitleOverride) {
-      // An override is Agregarr imposing a value, so this locks.
+    const sortOrderLibrary = config.sortOrderLibrary;
+    const isLibraryPromoted = config.isLibraryPromoted;
+    const isPromoted =
+      isLibraryPromoted !== false && (sortOrderLibrary ?? 0) > 0;
+
+    // One config generates a collection per requesting user, so this is a
+    // multi-collection group and has to be written the same way
+    // BaseCollectionSync writes the others - a shared base with each member's
+    // own name appended. Computing it here as though each collection stood
+    // alone made the two disagree, and whichever ran last won: an individual
+    // sync released the field while a full sync wrote the group form and
+    // locked it, so the same collection flipped between the two.
+    //
+    // The base is the override when there is one, else the parent config's
+    // name for a demoted group so its members stay together instead of
+    // scattering. A promoted group needs no fallback - the shared rank
+    // already groups it.
+    const groupBase = resolveMultiCollectionBase(
+      config.sortTitleOverride,
+      isPromoted ? undefined : config.name
+    );
+
+    if (groupBase) {
+      // A group base is always Agregarr imposing a value, so this locks.
+      // Appending each member's name is what keeps two users' collections
+      // distinct rather than sharing one identical sort title.
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
-        buildSortTitleFromOverride(config.sortTitleOverride, collectionName),
+        buildSortTitleFromOverride(groupBase, collectionName, true),
         currentTitleSort,
         true,
         currentTitleSortLocked
       );
       return;
     }
-
-    const sortOrderLibrary = config.sortOrderLibrary;
-    const isLibraryPromoted = config.isLibraryPromoted;
 
     if (sortOrderLibrary === undefined) {
       return; // No sort order configured
