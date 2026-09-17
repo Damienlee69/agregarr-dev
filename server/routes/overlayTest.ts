@@ -10,7 +10,10 @@ import {
   fetchReleaseDateInfo,
 } from '@server/lib/overlays/OverlayContextBuilder';
 import { overlayLibraryService } from '@server/lib/overlays/OverlayLibraryService';
-import { normalizeOverlayJpegQuality } from '@server/lib/overlays/overlayOutputQuality';
+import {
+  normalizeOverlayJpegQuality,
+  overlayOutputFormat,
+} from '@server/lib/overlays/overlayOutputQuality';
 import { buildSpecificOverlayItem } from '@server/lib/overlays/overlaySyncItems';
 import {
   targetsArtwork,
@@ -569,6 +572,7 @@ overlayTestRouter.post('/', async (req, res) => {
       output: {
         width: posterWidth,
         height: posterHeight,
+        format: overlayOutputFormat(),
         jpegQuality,
         bytes: posterBuffer.length,
       },

@@ -36,7 +36,21 @@ const baseConfig = {
   context: { audioLanguages: ['eng'], mediaType: 'movie' },
 };
 
+// Digest of baseConfig on the last build before Posterizarr (fe0355ed). Re-baking
+// this constant means every user re-renders every poster; do it on purpose.
+const PRE_POSTERIZARR_OVERLAY_HASH =
+  '4f76482efd2bd23953d9a4b2e4734d30277ce32bf948e5135c03d3e0f556bd65';
+
 describe('calculateOverlayInputHash', () => {
+  it('keeps the pre-Posterizarr digest when no render options are supplied', () => {
+    expect(calculateOverlayInputHash(baseConfig)).toBe(
+      PRE_POSTERIZARR_OVERLAY_HASH
+    );
+    expect(
+      calculateOverlayInputHash({ ...baseConfig, renderOptions: undefined })
+    ).toBe(PRE_POSTERIZARR_OVERLAY_HASH);
+  });
+
   it('matches the pre-fix hash when no mapped-icon templates are involved', () => {
     // Captured from the pre-fix implementation for this exact config, before
     // mappedIconMappings existed as an input. Proves the new optional

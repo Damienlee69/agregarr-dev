@@ -18,6 +18,7 @@ import sharp from 'sharp';
 import {
   DEFAULT_OVERLAY_JPEG_QUALITY,
   normalizeOverlayJpegQuality,
+  overlayOutputFormat,
 } from './overlayOutputQuality';
 import { AGREGARR_OVERLAY_MARKER } from './posterOwnershipMetadata';
 import { getMergedMappings } from './UserMappingsService';
@@ -742,6 +743,10 @@ class OverlayTemplateRendererService {
 
     if (overlays.length > 0) {
       composite = composite.composite(overlays);
+    }
+
+    if (overlayOutputFormat() === 'webp') {
+      return await composite.webp({ quality: 92 }).toBuffer();
     }
 
     // Posterizarr writes its marker as a JPEG comment, not EXIF, and Sharp does

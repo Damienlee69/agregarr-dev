@@ -6,7 +6,10 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import sharp from 'sharp';
-import { normalizeOverlayJpegQuality } from './overlayOutputQuality';
+import {
+  normalizeOverlayJpegQuality,
+  overlayOutputFormat,
+} from './overlayOutputQuality';
 import { getRecognizedPosterOwnershipMarker } from './posterOwnershipMetadata';
 
 interface ResetStatus {
@@ -321,9 +324,6 @@ class PosterResetJob {
 
       // Root posters keep Agregarr's historical 2:3 reset dimensions. Child
       // artwork preserves its native geometry (especially 16:9 title cards).
-      const sourceOwnershipMarker = getRecognizedPosterOwnershipMarker(
-        basePosterResult.posterBuffer
-      );
       let posterPipeline = sharp(basePosterResult.posterBuffer);
       if (item.type !== 'season' && item.type !== 'episode') {
         posterPipeline = posterPipeline.resize(1000, 1500, {
@@ -332,29 +332,40 @@ class PosterResetJob {
         });
       }
 
-      // Sharp drops Posterizarr's JPEG comment. Translate a recognized source
-      // marker into early JPEG EXIF, but do not mark an unowned base poster.
-      posterPipeline = sourceOwnershipMarker
-        ? posterPipeline.withExifMerge({
-            IFD0: {
-              ImageDescription: `${sourceOwnershipMarker}; preserved by Agregarr`,
-            },
-          })
-        : posterPipeline.keepExif();
+      const outputFormat = overlayOutputFormat();
+      if (outputFormat === 'jpeg') {
+        const sourceOwnershipMarker = getRecognizedPosterOwnershipMarker(
+          basePosterResult.posterBuffer
+        );
+        // Sharp drops Posterizarr's JPEG comment. Translate a recognized source
+        // marker into early JPEG EXIF, but do not mark an unowned base poster.
+        posterPipeline = sourceOwnershipMarker
+          ? posterPipeline.withExifMerge({
+              IFD0: {
+                ImageDescription: `${sourceOwnershipMarker}; preserved by Agregarr`,
+              },
+            })
+          : posterPipeline.keepExif();
+      }
 
-      const posterBuffer = await posterPipeline
-        .jpeg({
-          quality: normalizeOverlayJpegQuality(
-            getSettings().overlays?.jpegQuality
-          ),
-        })
-        .toBuffer();
+      const posterBuffer =
+        outputFormat === 'jpeg'
+          ? await posterPipeline
+              .jpeg({
+                quality: normalizeOverlayJpegQuality(
+                  getSettings().overlays?.jpegQuality
+                ),
+              })
+              .toBuffer()
+          : await posterPipeline.webp({ quality: 90 }).toBuffer();
 
       // Save to temporary file
       const tempDir = os.tmpdir();
       const tempFilePath = path.join(
         tempDir,
-        `reset-${item.ratingKey}-${Date.now()}.jpg`
+        `reset-${item.ratingKey}-${Date.now()}.${
+          outputFormat === 'jpeg' ? 'jpg' : 'webp'
+        }`
       );
 
       await fs.writeFile(tempFilePath, posterBuffer);

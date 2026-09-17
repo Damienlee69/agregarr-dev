@@ -385,7 +385,9 @@ const TestItemModal: React.FC<TestItemModalProps> = ({ isOpen, onClose }) => {
                 <>
                   <div className="flex max-h-[75vh] items-center justify-center overflow-hidden rounded-lg bg-stone-900">
                     <img
-                      src={`data:image/jpeg;base64,${testResults.poster}`}
+                      src={`data:image/${
+                        testResults.output.format ?? 'jpeg'
+                      };base64,${testResults.poster}`}
                       alt={testResults.item.title}
                       className="h-auto max-h-[75vh] w-auto max-w-full object-contain"
                     />

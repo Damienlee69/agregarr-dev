@@ -46,7 +46,10 @@ import {
   fetchReleaseDateInfo,
   type ReleaseDateInfo,
 } from './OverlayContextBuilder';
-import { normalizeOverlayJpegQuality } from './overlayOutputQuality';
+import {
+  normalizeOverlayJpegQuality,
+  overlayOutputFormat,
+} from './overlayOutputQuality';
 import {
   cloneOverlayTargetProgress,
   createOverlayTargetProgress,
@@ -3442,6 +3445,7 @@ class OverlayLibraryService {
       const jpegQuality = normalizeOverlayJpegQuality(
         getSettings().overlays?.jpegQuality
       );
+      const outputFormat = overlayOutputFormat();
 
       // Nominated-item callers bail out here: no matching template means there is
       // nothing to draw, and everything below (hash, base poster, upload, lock)
@@ -3495,11 +3499,10 @@ class OverlayLibraryService {
         usedFields: usedFields,
         context: context as Record<string, unknown>,
         mappedIconMappings,
-        renderOptions: {
-          format: 'jpeg',
-          jpegQuality,
-          chromaSubsampling: '4:4:4',
-        },
+        renderOptions:
+          outputFormat === 'jpeg'
+            ? { format: 'jpeg', jpegQuality, chromaSubsampling: '4:4:4' }
+            : undefined,
       });
 
       // Debug logging for hash comparison
@@ -3723,7 +3726,9 @@ class OverlayLibraryService {
       const tempDir = os.tmpdir();
       const tempFilePath = path.join(
         tempDir,
-        `overlay-${item.ratingKey}-${Date.now()}.jpg`
+        `overlay-${item.ratingKey}-${Date.now()}.${
+          outputFormat === 'jpeg' ? 'jpg' : 'webp'
+        }`
       );
 
       await fs.writeFile(tempFilePath, currentBuffer);

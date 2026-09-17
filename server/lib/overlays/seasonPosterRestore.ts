@@ -1,5 +1,8 @@
 import type PlexAPI from '@server/api/plexapi';
-import { normalizeOverlayJpegQuality } from '@server/lib/overlays/overlayOutputQuality';
+import {
+  normalizeOverlayJpegQuality,
+  overlayOutputFormat,
+} from '@server/lib/overlays/overlayOutputQuality';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { randomUUID } from 'crypto';
@@ -74,33 +77,44 @@ export async function restoreSeasonBasePoster(
   }
 
   // Normalise to the format/size Plex expects for an uploaded poster.
-  const sourceOwnershipMarker = getRecognizedPosterOwnershipMarker(basePoster);
   let posterPipeline = sharp(basePoster).resize(1000, 1500, {
     fit: 'cover',
     position: 'center',
   });
 
-  // Sharp drops Posterizarr's JPEG comment. Translate a recognized source
-  // marker into early JPEG EXIF, but do not mark an unowned base poster.
-  posterPipeline = sourceOwnershipMarker
-    ? posterPipeline.withExifMerge({
-        IFD0: {
-          ImageDescription: `${sourceOwnershipMarker}; preserved by Agregarr`,
-        },
-      })
-    : posterPipeline.keepExif();
+  const outputFormat = overlayOutputFormat();
+  if (outputFormat === 'jpeg') {
+    const sourceOwnershipMarker =
+      getRecognizedPosterOwnershipMarker(basePoster);
+    // Sharp drops Posterizarr's JPEG comment. Translate a recognized source
+    // marker into early JPEG EXIF, but do not mark an unowned base poster.
+    posterPipeline = sourceOwnershipMarker
+      ? posterPipeline.withExifMerge({
+          IFD0: {
+            ImageDescription: `${sourceOwnershipMarker}; preserved by Agregarr`,
+          },
+        })
+      : posterPipeline.keepExif();
+  }
 
-  const posterBuffer = await posterPipeline
-    .jpeg({
-      quality: normalizeOverlayJpegQuality(getSettings().overlays?.jpegQuality),
-    })
-    .toBuffer();
+  const posterBuffer =
+    outputFormat === 'jpeg'
+      ? await posterPipeline
+          .jpeg({
+            quality: normalizeOverlayJpegQuality(
+              getSettings().overlays?.jpegQuality
+            ),
+          })
+          .toBuffer()
+      : await posterPipeline.webp({ quality: 90 }).toBuffer();
 
   // randomUUID (not Date.now()) so two restores of the same season can never
   // collide on the temp path and unlink each other's in-flight upload.
   const tempFilePath = path.join(
     os.tmpdir(),
-    `season-restore-${ratingKey}-${randomUUID()}.jpg`
+    `season-restore-${ratingKey}-${randomUUID()}.${
+      outputFormat === 'jpeg' ? 'jpg' : 'webp'
+    }`
   );
 
   await fs.writeFile(tempFilePath, posterBuffer);

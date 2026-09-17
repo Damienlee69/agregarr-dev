@@ -56,6 +56,7 @@ export interface OverlayTestResult {
   output: {
     width: number;
     height: number;
+    format?: 'jpeg' | 'webp';
     jpegQuality: number;
     bytes: number;
   };

@@ -9,6 +9,7 @@ import type {
 } from '@server/entity/OverlayTemplate';
 import { OverlayTemplate } from '@server/entity/OverlayTemplate';
 import { extractStreamingProvider } from '@server/lib/overlays/OverlayContextBuilder';
+import { overlayOutputFormat } from '@server/lib/overlays/overlayOutputQuality';
 import { createOverlayPreviewArtwork } from '@server/lib/overlays/overlayPreviewArtwork';
 import {
   getPrimaryOverlayTarget,
@@ -830,7 +831,7 @@ router.get('/:id/preview', async (req, res, next) => {
     );
 
     // Return the rendered image
-    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Type', `image/${overlayOutputFormat()}`);
     res.setHeader('Cache-Control', 'no-cache'); // Don't cache so previews update immediately
     return res.send(renderedBuffer);
   } catch (error) {
@@ -1023,7 +1024,7 @@ router.post('/combined-preview', async (req, res, next) => {
     }
 
     // Return the combined image
-    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Type', `image/${overlayOutputFormat()}`);
     res.setHeader('Cache-Control', 'no-cache'); // Don't cache combined previews
     return res.send(posterBuffer);
   } catch (error) {

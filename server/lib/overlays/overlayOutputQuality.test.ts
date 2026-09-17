@@ -21,3 +21,22 @@ describe('overlay output quality', () => {
     }
   );
 });
+
+describe('overlayOutputFormat', () => {
+  it('is webp unless Posterizarr integration is enabled', async () => {
+    const { getSettings } = await import('@server/lib/settings');
+    const { overlayOutputFormat } = await import('./overlayOutputQuality');
+    const overlays = getSettings().overlays;
+    const previous = overlays.posterizarrIntegrationEnabled;
+    try {
+      overlays.posterizarrIntegrationEnabled = false;
+      expect(overlayOutputFormat()).toBe('webp');
+      overlays.posterizarrIntegrationEnabled = null as unknown as undefined;
+      expect(overlayOutputFormat()).toBe('webp');
+      overlays.posterizarrIntegrationEnabled = true;
+      expect(overlayOutputFormat()).toBe('jpeg');
+    } finally {
+      overlays.posterizarrIntegrationEnabled = previous;
+    }
+  });
+});
