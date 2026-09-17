@@ -100,10 +100,10 @@ their eligible items earlier. Quick sync only picks up items without a metadata
 row, so it does not perform this migration for already-tracked artwork. Later
 full syncs return to normal hash-based unchanged detection.
 
-To postpone uploads through all these paths, **disable all overlay templates for
-the library**. Deselecting full/quick sync targets alone does not stop collection
-sync overlays; disabling the Posterizarr callback setting alone does not stop
-scheduled overlay or collection jobs.
+To postpone the JPEG overlay re-render through all these paths, **disable all
+overlay templates for the library**. Deselecting full/quick sync targets alone
+does not stop collection sync overlays; disabling the Posterizarr callback
+setting alone does not stop scheduled overlay or collection jobs.
 
 Outcome details are retained in memory for the current or last run, capped at
 5,000 items per library. Search and CSV export include only retained details;

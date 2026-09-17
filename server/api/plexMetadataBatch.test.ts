@@ -5,6 +5,42 @@ import {
 } from './plexMetadataBatch';
 
 describe('resilient Plex metadata batching', () => {
+  it.each([401, 403])(
+    'does not retry HTTP %i because a URL contains 500',
+    async (status) => {
+      const query = vi.fn(async () => {
+        throw new Error(
+          `response code: ${status} (/library/metadata/500/children)`
+        );
+      });
+      await fetchPlexMetadataBatches(['500', '501'], query, {
+        minChunkSize: 1,
+        maxRetries: 2,
+        retryDelayMs: 0,
+      });
+      expect(query).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each([408, 429, 503])(
+    'retries a structured HTTP %i even without a status in the message',
+    async (status) => {
+      const query = vi
+        .fn<(keys: string[]) => Promise<{ ratingKey: string }[]>>()
+        .mockRejectedValueOnce(
+          Object.assign(new Error('Plex request failed'), {
+            response: { status },
+          })
+        )
+        .mockResolvedValue([{ ratingKey: '1' }]);
+      const result = await fetchPlexMetadataBatches(['1'], query, {
+        retryDelayMs: 0,
+      });
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(result.size).toBe(1);
+    }
+  );
+
   it('retries and splits resets whose URL contains a 4xx-shaped rating key', async () => {
     const query = vi.fn(async (keys: string[]) => {
       if (keys.length > 1)

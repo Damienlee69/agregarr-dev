@@ -10,6 +10,11 @@ interface PlexMetadataBatchOptions {
 }
 
 function isTransientPlexError(error: unknown): boolean {
+  const status = getExplicitHttpStatus(error);
+  if (status !== undefined) {
+    return status === 408 || status === 429 || (status >= 500 && status < 600);
+  }
+
   const code =
     typeof error === 'object' && error !== null && 'code' in error
       ? String((error as { code?: unknown }).code)
@@ -18,9 +23,7 @@ function isTransientPlexError(error: unknown): boolean {
 
   return (
     ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE'].includes(code) ||
-    /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|socket hang up|\b429\b|\b5\d\d\b/i.test(
-      message
-    )
+    /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|socket hang up/i.test(message)
   );
 }
 
