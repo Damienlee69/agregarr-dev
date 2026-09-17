@@ -1,3 +1,4 @@
+import ColorInput from '@app/components/Common/ColorInput';
 import { IconSelector } from '@app/components/PosterEditor/IconSelector';
 import { fontLoader } from '@app/utils/fontLoader';
 import {
@@ -573,15 +574,13 @@ export const OverlayLayerPanel: React.FC<OverlayLayerPanelProps> = ({
           <label className="mb-1 block text-xs text-stone-300">
             {intl.formatMessage(messages.textColor)}
           </label>
-          <input
-            type="color"
+          <ColorInput
             value={props.color || '#FFFFFF'}
-            onChange={(e) =>
+            onChange={(value) =>
               handleUpdateElement(element.id, {
-                properties: { ...props, color: e.target.value },
+                properties: { ...props, color: value },
               })
             }
-            className="h-8 w-full rounded border border-stone-600"
           />
         </div>
 
@@ -640,15 +639,13 @@ export const OverlayLayerPanel: React.FC<OverlayLayerPanelProps> = ({
           <label className="mb-1 block text-xs text-stone-300">
             {intl.formatMessage(messages.fillColor)}
           </label>
-          <input
-            type="color"
+          <ColorInput
             value={props.fillColor || '#000000'}
-            onChange={(e) =>
+            onChange={(value) =>
               handleUpdateElement(element.id, {
-                properties: { ...props, fillColor: e.target.value },
+                properties: { ...props, fillColor: value },
               })
             }
-            className="h-8 w-full rounded border border-stone-600"
           />
         </div>
 
@@ -786,15 +783,13 @@ export const OverlayLayerPanel: React.FC<OverlayLayerPanelProps> = ({
           <label className="mb-1 block text-xs text-stone-300">
             {intl.formatMessage(messages.borderColor)}
           </label>
-          <input
-            type="color"
+          <ColorInput
             value={props.borderColor || '#FFFFFF'}
-            onChange={(e) =>
+            onChange={(value) =>
               handleUpdateElement(element.id, {
-                properties: { ...props, borderColor: e.target.value },
+                properties: { ...props, borderColor: value },
               })
             }
-            className="h-8 w-full rounded border border-stone-600"
           />
         </div>
 
@@ -1546,15 +1541,13 @@ export const OverlayLayerPanel: React.FC<OverlayLayerPanelProps> = ({
           <label className="mb-1 block text-xs text-stone-300">
             {intl.formatMessage(messages.textColor)}
           </label>
-          <input
-            type="color"
+          <ColorInput
             value={props.color || '#FFFFFF'}
-            onChange={(e) =>
+            onChange={(value) =>
               handleUpdateElement(element.id, {
-                properties: { ...props, color: e.target.value },
+                properties: { ...props, color: value },
               })
             }
-            className="h-8 w-full rounded border border-stone-600"
           />
         </div>
 

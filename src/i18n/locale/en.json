@@ -678,6 +678,8 @@
   "components.Collections.lastSyncFailed": "Last sync failed",
   "components.Collections.nextSync": "Next sync: {time}",
   "components.Collections.noSyncYet": "No sync yet",
+  "components.Common.ColorInput.textInputAriaLabel": "Color value (hex or rgba)",
+  "components.Common.ColorInput.textInputPlaceholder": "#rrggbb or rgba()",
   "components.Common.ExportDebugModal.cancel": "Cancel",
   "components.Common.ExportDebugModal.database": "Database (db.sqlite3)",
   "components.Common.ExportDebugModal.exportButton": "Export",
