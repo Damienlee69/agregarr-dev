@@ -149,10 +149,6 @@ class PosterResetJob {
         itemCount: allItems.length,
       });
 
-      // Get poster source preference (global setting)
-      const settings = getSettings();
-      const posterSource = settings.overlays?.defaultPosterSource || 'tmdb';
-
       // Get library type
       const libraryType: 'movie' | 'show' =
         library.type === 'movie' ? 'movie' : 'show';
@@ -175,8 +171,7 @@ class PosterResetJob {
             item,
             libraryId,
             this.currentLibraryName || library.title,
-            libraryType,
-            posterSource
+            libraryType
           );
           this.current++;
         } catch (error) {
@@ -218,12 +213,11 @@ class PosterResetJob {
     item: PlexLibraryItem,
     libraryId: string,
     libraryName: string,
-    libraryType: 'movie' | 'show',
-    posterSource: 'tmdb' | 'plex' | 'local'
+    libraryType: 'movie' | 'show'
   ): Promise<void> {
     try {
       // Get base poster based on poster source
-      const { plexBasePosterManager } = await import(
+      const { plexBasePosterManager, resolveBasePosterSource } = await import(
         '@server/lib/overlays/PlexBasePosterManager'
       );
 
@@ -234,6 +228,11 @@ class PosterResetJob {
         Media: fullMetadata.Media,
         Guid: fullMetadata.Guid,
       };
+
+      const posterSource = resolveBasePosterSource(
+        itemWithFullMetadata,
+        getSettings()
+      );
 
       // Get metadata tracking for this item
       const metadataService = (

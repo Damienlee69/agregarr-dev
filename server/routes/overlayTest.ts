@@ -345,13 +345,18 @@ overlayTestRouter.post('/', async (req, res) => {
       };
     });
 
-    // Get poster source preference (reuse settings from earlier)
-    const posterSource = settings.overlays?.defaultPosterSource || 'tmdb';
-
     // Fetch base poster
-    const { plexBasePosterManager } = await import(
+    const { plexBasePosterManager, resolveBasePosterSource } = await import(
       '@server/lib/overlays/PlexBasePosterManager'
     );
+
+    const posterSource = resolveBasePosterSource(item, settings);
+
+    // Real metadata, or a preview treats an overlaid poster as the original.
+    const metadataService = (
+      await import('@server/lib/metadata/MetadataTrackingService')
+    ).default;
+    const metadata = await metadataService.getItemMetadata(item.ratingKey);
 
     let basePosterResult: {
       posterBuffer: Buffer;
@@ -369,7 +374,13 @@ overlayTestRouter.post('/', async (req, res) => {
         libraryName,
         config.mediaType,
         posterSource,
-        {},
+        {
+          basePosterSource: metadata?.basePosterSource,
+          originalPlexPosterUrl: metadata?.originalPlexPosterUrl,
+          ourOverlayPosterUrl: metadata?.ourOverlayPosterUrl,
+          basePosterFilename: metadata?.basePosterFilename,
+          localPosterModifiedTime: metadata?.localPosterModifiedTime,
+        },
         tmdbId
       );
     } catch (error) {

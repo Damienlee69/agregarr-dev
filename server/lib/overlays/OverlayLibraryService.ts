@@ -44,6 +44,7 @@ import {
   evaluateCondition,
   overlayTemplateRenderer,
 } from './OverlayTemplateRenderer';
+import { resolveBasePosterSource } from './PlexBasePosterManager';
 import {
   deriveReleaseDateContext,
   latestAiredSeasonDate,
@@ -54,25 +55,6 @@ import {
 } from './releaseDateFetchPolicy';
 import { classifySeasonCleanupAction } from './seasonCleanupPolicy';
 import { restoreSeasonBasePoster } from './seasonPosterRestore';
-
-/**
- * Resolve the base poster source for an item.
- *
- * Seasons always use Plex. Their Plex guid carries a TMDB id in TMDB's *season*
- * namespace, which resolves to an unrelated show on the endpoints the TMDB and
- * local sources call, so those sources are structurally unreachable for a season.
- * Both read sites in `applyOverlaysToItem` go through here so the value written to
- * `basePosterSource` matches the one the `basePosterSourceChanged` gate compares
- * against - otherwise every run would see a changed source and re-upload.
- */
-function resolveBasePosterSource(
-  itemType: PlexLibraryItem['type'],
-  settings: ReturnType<typeof getSettings>
-): 'tmdb' | 'plex' | 'local' {
-  return itemType === 'season'
-    ? 'plex'
-    : settings.overlays?.defaultPosterSource || 'tmdb';
-}
 
 /**
  * Input for overlay application - either a simple rating key or with context overrides
@@ -2437,6 +2419,10 @@ class OverlayLibraryService {
       // default on that path.
       let currentPosterIsOurs = true;
 
+      // Resolved once so the change gate and the fetch below agree.
+      const settings = getSettings();
+      const posterSource = resolveBasePosterSource(item, settings);
+
       // OPTIMIZATION: Check if overlay inputs changed BEFORE downloading poster
       // This prevents expensive poster downloads when nothing has changed
       try {
@@ -2471,8 +2457,6 @@ class OverlayLibraryService {
         });
 
         // Also check if base poster source changed (TMDB vs Plex)
-        const settings = getSettings();
-        const posterSource = resolveBasePosterSource(item.type, settings);
         const basePosterSourceChanged =
           metadata?.basePosterSource !== posterSource;
 
@@ -2531,10 +2515,6 @@ class OverlayLibraryService {
       }
 
       // ONLY download poster if we've determined changes exist
-      // Get poster source preference (global setting)
-      const settings = getSettings();
-      const posterSource = resolveBasePosterSource(item.type, settings);
-
       // Get base poster with change detection
       const { plexBasePosterManager } = await import(
         '@server/lib/overlays/PlexBasePosterManager'
