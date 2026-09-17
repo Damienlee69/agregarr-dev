@@ -413,6 +413,8 @@ export interface OverlayRenderContext {
   viewCount?: number; // Number of times played
   lastPlayed?: Date; // Last playback date
   dateAdded?: Date; // Date added to Plex
+  lastEpisodeAddedDate?: Date; // Newest episode addedAt, needs episode scanning
+  daysSinceLastEpisodeAdded?: number;
 
   // Status fields (for Coming Soon / New Release)
   // PRIMARY RELEASE DATE - Smart calculated field
@@ -1110,6 +1112,7 @@ class OverlayTemplateRendererService {
           'nextSeasonAirDate',
           'lastPlayed',
           'dateAdded',
+          'lastEpisodeAddedDate',
         ].includes(segment.field);
 
         if (

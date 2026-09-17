@@ -188,6 +188,7 @@ export const VariableElement: React.FC<VariableElementComponentProps> = ({
               'releaseDate',
               'lastPlayed',
               'dateAdded',
+              'lastEpisodeAddedDate',
             ].includes(segment.field);
             if (
               isDateField &&

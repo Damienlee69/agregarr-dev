@@ -36,6 +36,7 @@ import {
 import {
   buildRenderContext,
   checkMonitoringStatus,
+  daysSince,
   fetchReleaseDateInfo,
   type ReleaseDateInfo,
 } from './OverlayContextBuilder';
@@ -2298,6 +2299,14 @@ class OverlayLibraryService {
             episodeDvPercent: agg.episodeDvPercent,
             episodeMediaSource: 'aggregated',
           };
+          if (agg.lastEpisodeAddedAt !== undefined) {
+            episodeAggregation.lastEpisodeAddedDate = new Date(
+              agg.lastEpisodeAddedAt * 1000
+            );
+            episodeAggregation.daysSinceLastEpisodeAdded = daysSince(
+              agg.lastEpisodeAddedAt
+            );
+          }
         }
       }
 
@@ -3224,7 +3233,8 @@ class OverlayLibraryService {
   ): Promise<void> {
     const { PlexEpisodeMediaScanner, resolveFetchedEpisodeDetail } =
       await import('./PlexEpisodeMediaScanner');
-    const { EpisodeMediaAggregator } = await import('./EpisodeMediaAggregator');
+    const { EpisodeMediaAggregator, mergedAddedAt, needsAddedAtResave } =
+      await import('./EpisodeMediaAggregator');
     const { EpisodeMediaCacheService } = await import(
       './EpisodeMediaCacheService'
     );
@@ -3267,6 +3277,20 @@ class OverlayLibraryService {
     // treat all entries as stale so stream detail gets fetched
     const needsDetailUpgrade = needsStreamDetail && !cachedHasStreamDetail;
 
+    // Previous value comes from the cached row, so an omitted fresh addedAt keeps it.
+    const freshAddedAtByKey = new Map(
+      freshLightweight.map((ep) => [ep.ratingKey, ep.addedAt])
+    );
+    const withFreshAddedAt = (eps: EpisodeMediaInfo[]): EpisodeMediaInfo[] =>
+      eps.map((ep) => ({
+        ...ep,
+        addedAt: mergedAddedAt(
+          ep.ratingKey,
+          cachedByKey.get(ep.ratingKey)?.addedAt ?? ep.addedAt,
+          freshAddedAtByKey
+        ),
+      }));
+
     let episodes: EpisodeMediaInfo[];
 
     if (
@@ -3275,12 +3299,30 @@ class OverlayLibraryService {
       cachedEpisodes.length >= freshLightweight.length
     ) {
       // All episodes are cached and fresh — filter to current episodes only
-      episodes = cachedEpisodes.filter((c) => currentKeys.has(c.ratingKey));
+      episodes = withFreshAddedAt(
+        cachedEpisodes.filter((c) => currentKeys.has(c.ratingKey))
+      );
       logger.info('Using cached episode media data', {
         label: 'EpisodeScanner',
         libraryId,
         cachedCount: episodes.length,
       });
+
+      // One-off resave: this branch never saves, so a changed or removed
+      // addedAt (media otherwise unchanged) would never reach the cache.
+      // Compare against the MERGED values in `episodes`, not the raw fresh
+      // scan - an omission-preserved value must not look like a change.
+      const mergedAddedAtByKey = new Map(
+        episodes.map((e) => [e.ratingKey, e.addedAt])
+      );
+      if (needsAddedAtResave(cachedEpisodes, mergedAddedAtByKey, currentKeys)) {
+        await cacheService.saveEpisodes(serverId, libraryId, episodes);
+        logger.info('Resaved episode addedAt into cache', {
+          label: 'EpisodeScanner',
+          libraryId,
+          count: episodes.length,
+        });
+      }
     } else if (
       needsStreamDetail &&
       (staleKeys.size > 0 || needsDetailUpgrade)
@@ -3295,21 +3337,26 @@ class OverlayLibraryService {
       // fetched stream detail (or lack of it) for stale / detail-upgrade
       // entries. resolveFetchedEpisodeDetail owns the per-row hasStreamDetail
       // decision so an empty or missing stream can't masquerade as detailed.
-      episodes = freshLightweight.map((ep) => {
-        if (
-          !needsDetailUpgrade &&
-          !staleKeys.has(ep.ratingKey) &&
-          cachedByKey.has(ep.ratingKey)
-        ) {
-          return cachedByKey.get(ep.ratingKey)!;
-        }
-        return resolveFetchedEpisodeDetail(ep, batchMetadata.get(ep.ratingKey));
-      });
+      episodes = withFreshAddedAt(
+        freshLightweight.map((ep) => {
+          if (
+            !needsDetailUpgrade &&
+            !staleKeys.has(ep.ratingKey) &&
+            cachedByKey.has(ep.ratingKey)
+          ) {
+            return cachedByKey.get(ep.ratingKey)!;
+          }
+          return resolveFetchedEpisodeDetail(
+            ep,
+            batchMetadata.get(ep.ratingKey)
+          );
+        })
+      );
 
       await cacheService.saveEpisodes(serverId, libraryId, episodes);
     } else {
       // No stream detail needed — use lightweight data
-      episodes = freshLightweight;
+      episodes = withFreshAddedAt(freshLightweight);
       if (staleKeys.size > 0) {
         await cacheService.saveEpisodes(serverId, libraryId, episodes);
       }

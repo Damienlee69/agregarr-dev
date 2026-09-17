@@ -284,6 +284,11 @@ export function extractStreamingProvider(
   return undefined;
 }
 
+export function daysSince(unixSeconds: number | undefined): number | undefined {
+  if (unixSeconds === undefined) return undefined;
+  return Math.floor((Date.now() - unixSeconds * 1000) / (1000 * 60 * 60 * 24));
+}
+
 export async function buildRenderContext(
   item: PlexLibraryItem,
   mediaType: 'movie' | 'show',
@@ -1078,19 +1083,11 @@ export async function buildRenderContext(
   }
   if (item.lastViewedAt) {
     context.lastPlayed = new Date(item.lastViewedAt * 1000);
-    // Calculate days since last played
-    const daysSinceLastPlayed = Math.floor(
-      (Date.now() - item.lastViewedAt * 1000) / (1000 * 60 * 60 * 24)
-    );
-    context.daysSinceLastPlayed = daysSinceLastPlayed;
+    context.daysSinceLastPlayed = daysSince(item.lastViewedAt);
   }
   if (item.addedAt) {
     context.dateAdded = new Date(item.addedAt * 1000);
-    // Calculate days since added
-    const daysSinceAdded = Math.floor(
-      (Date.now() - item.addedAt * 1000) / (1000 * 60 * 60 * 24)
-    );
-    context.daysSinceAdded = daysSinceAdded;
+    context.daysSinceAdded = daysSince(item.addedAt);
   }
 
   // TV-specific

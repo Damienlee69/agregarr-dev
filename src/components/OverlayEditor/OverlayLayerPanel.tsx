@@ -1357,6 +1357,7 @@ export const OverlayLayerPanel: React.FC<OverlayLayerPanelProps> = ({
                         'nextSeasonAirDate',
                         'lastPlayed',
                         'dateAdded',
+                        'lastEpisodeAddedDate',
                       ].includes(segment.field) && (
                         <div className="mt-2">
                           <label className="mb-1 block text-xs text-stone-400">

@@ -94,6 +94,7 @@ const NUMERIC_FIELDS = [
   'imdbTop250Rank',
   'daysSinceAdded',
   'daysSinceLastPlayed',
+  'daysSinceLastEpisodeAdded',
 ];
 
 // List of boolean fields

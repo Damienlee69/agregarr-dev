@@ -264,6 +264,8 @@ export interface OverlayRenderContext {
   dateAdded?: Date; // Date added to Plex
   daysSinceAdded?: number; // Days since item was added to Plex
   daysSinceLastPlayed?: number; // Days since item was last played
+  lastEpisodeAddedDate?: Date; // Show: date of most recently added episode
+  daysSinceLastEpisodeAdded?: number; // Show: days since most recently added episode
 
   // Status fields (for Coming Soon / New Release)
   // PRIMARY RELEASE DATE - Smart calculated field
@@ -580,6 +582,16 @@ export const AVAILABLE_VARIABLES = {
       label: 'Media Source',
       example: 'aggregated',
     },
+    {
+      field: 'lastEpisodeAddedDate',
+      label: 'Last Episode Added Date',
+      example: '2024-01-01',
+    },
+    {
+      field: 'daysSinceLastEpisodeAdded',
+      label: 'Days Since Last Episode Added',
+      example: '3',
+    },
   ],
   'show-raw': [
     {
@@ -820,6 +832,16 @@ export const CONDITION_FIELD_CATEGORIES = {
       example: 'aggregated',
     },
     {
+      field: 'lastEpisodeAddedDate',
+      label: 'Last Episode Added Date',
+      example: '2024-01-01',
+    },
+    {
+      field: 'daysSinceLastEpisodeAdded',
+      label: 'Days Since Last Episode Added',
+      example: '3',
+    },
+    {
       field: 'showResolution',
       label: 'Show Resolution (Raw)',
       example: '1080',
@@ -1021,6 +1043,13 @@ export const SAMPLE_PREVIEW_CONTEXTS: {
     viewCount: 12,
     daysSinceAdded: 120,
     daysSinceLastPlayed: 7,
+    // Getter, not a literal: SAMPLE_PREVIEW_CONTEXTS is a module-level
+    // constant, so a plain `new Date(...)` here would freeze at page load
+    // and drift against daysSinceLastEpisodeAdded: 3 over time.
+    get lastEpisodeAddedDate() {
+      return new Date(Date.now() - 3 * 86400000);
+    },
+    daysSinceLastEpisodeAdded: 3,
     releaseDate: '2008-01-20', // Series premiere (NOT next episode)
     nextEpisodeAirDate: '2025-01-22', // Next episode (any episode, including mid-season)
     daysUntilNextEpisode: 7, // Days until next episode

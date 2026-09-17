@@ -161,6 +161,10 @@ export function createSampleOverlayContext(
 
   if (mediaType === 'show') {
     Object.assign(context, EPISODE_AGGREGATION_FIELDS);
+    // Computed per call (not in the static object above) so the preview's
+    // "3 days ago" stays true to "now" rather than drifting with server uptime.
+    context.lastEpisodeAddedDate = new Date(Date.now() - 3 * 86400000);
+    context.daysSinceLastEpisodeAdded = 3;
     context.totalSeasons = 5;
     context.seasonsAvailable = 3;
     context.seasonsLeavingCount = 2;
