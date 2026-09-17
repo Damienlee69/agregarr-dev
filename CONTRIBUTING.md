@@ -31,7 +31,7 @@ Generated code tends to arrive with long comments, defensive branches nothing re
 
 ## Process
 
-- Branch from `develop`, rebase onto it before opening the PR, and keep the branch rebased. Squash fixups. One commit per logical change is ideal.
+- Branch from `develop` and rebase onto it before opening the PR. Once review starts, push fixup commits on top and leave the history alone. A force-push throws away the diff since the last review, so the whole PR gets read again from scratch. I'll ask for the squash at merge time.
 - Reference issues with `Ref #N`, not `Fixes #N`. Issues close when the reporter confirms the fix, not when the code lands.
 - Expect "merge with changes" rather than a plain approval. I run two independent reviews on every PR, then post the findings as questions with file and line references. Answer in the thread or with a commit, whichever suits.
 - Blockers come first in my review. Anything under "smaller" can ride along or land in a follow-up. Your call.
