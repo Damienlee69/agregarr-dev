@@ -53,6 +53,14 @@ import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 const messages = defineMessages({
+  promotionMismatch:
+    'The Sort Title for {name} {relation} the promoted section sort title scheme (starts with "!"), so it will display in the {targetSection} section in Plex on the next sync even though it is still marked as {currentSection} here. Would you like to also {action} it in Agregarr to {targetSection}, or keep it in {currentSection}?',
+  promotionMismatchNoLongerMatches: 'no longer matches',
+  promotionMismatchNowMatches: 'now matches',
+  promotionMismatchConfirm: 'Yes, {action} it',
+  promotionMismatchKeep: 'Keep in {currentSection}',
+  promotionMismatchFailed: 'Failed to update promotion status',
+  sortTitleOverrideCleared: 'Failed to clear the Sort Title override',
   collectionConfigSaved: 'Collection configuration saved successfully!',
   collectionConfigError: 'Failed to save collection configuration.',
   collectionConfigDeleted: 'Collection configuration deleted successfully!',
@@ -443,13 +451,17 @@ const CollectionSettings = ({
     addToast(
       <div>
         <p className="mb-2">
-          &quot;{updatedConfig.name}&quot;&apos;s Sort Title{' '}
-          {isPromoted ? 'no longer matches' : 'now matches'} the promoted
-          section&apos;s sort title scheme (starts with &quot;!&quot;), so it
-          will display in the {targetSection} section in Plex on the next sync
-          even though it&apos;s still marked as {currentSection} here. Would you
-          like to also {action} it in Agregarr to {targetSection}, or keep it in{' '}
-          {currentSection}?
+          {intl.formatMessage(messages.promotionMismatch, {
+            name: updatedConfig.name,
+            relation: intl.formatMessage(
+              isPromoted
+                ? messages.promotionMismatchNoLongerMatches
+                : messages.promotionMismatchNowMatches
+            ),
+            targetSection,
+            currentSection,
+            action,
+          })}
         </p>
         <div className="flex gap-2">
           <Button
@@ -464,7 +476,7 @@ const CollectionSettings = ({
                 revalidate();
                 revalidateAll();
               } catch {
-                addToast('Failed to update promotion status', {
+                addToast(intl.formatMessage(messages.promotionMismatchFailed), {
                   autoDismiss: true,
                   appearance: 'error',
                 });
@@ -472,7 +484,7 @@ const CollectionSettings = ({
               if (liveToastId) removeToast(liveToastId);
             }}
           >
-            Yes, {action} it
+            {intl.formatMessage(messages.promotionMismatchConfirm, { action })}
           </Button>
           <Button
             buttonType="default"
@@ -493,15 +505,20 @@ const CollectionSettings = ({
                 revalidate();
                 revalidateAll();
               } catch {
-                addToast('Failed to clear the Sort Title override', {
-                  autoDismiss: true,
-                  appearance: 'error',
-                });
+                addToast(
+                  intl.formatMessage(messages.sortTitleOverrideCleared),
+                  {
+                    autoDismiss: true,
+                    appearance: 'error',
+                  }
+                );
               }
               if (liveToastId) removeToast(liveToastId);
             }}
           >
-            Keep in {currentSection}
+            {intl.formatMessage(messages.promotionMismatchKeep, {
+              currentSection,
+            })}
           </Button>
         </div>
       </div>,

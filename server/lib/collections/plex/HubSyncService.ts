@@ -1656,15 +1656,8 @@ export class HubSyncService {
    * Sync pre-existing collection sortTitles based on isLibraryPromoted status
    * Only updates sortTitle when collections are in promoted state
    */
-  /**
-   * @param onlyConfigId restricts the pass to a single collection, for the
-   * individual sync route. The collision index below is still built from
-   * every config either way - a rename has to check the whole library for
-   * the name it is moving to, not just the one collection being synced.
-   */
   public async syncPreExistingCollectionSortTitles(
-    plexClient: PlexAPI,
-    onlyConfigId?: string
+    plexClient: PlexAPI
   ): Promise<void> {
     if (this.cancelled) return;
 
@@ -1675,7 +1668,6 @@ export class HubSyncService {
 
       for (const config of preExistingConfigs) {
         if (this.cancelled) return;
-        if (onlyConfigId && config.id !== onlyConfigId) continue;
 
         // Skip configs without rating keys
         if (!config.collectionRatingKey) {

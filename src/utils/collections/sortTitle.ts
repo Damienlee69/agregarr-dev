@@ -38,3 +38,18 @@ export function agregarrOwnsSortTitle(
   if (/^!\d+_/.test(current)) return true;
   return everManaged === true;
 }
+
+/**
+ * Mirrors buildPromotedSortTitle in CollectionUtilities.ts, clamp included -
+ * padStart does not truncate, so an unclamped 1000 renders "!1000_" and
+ * string-compares before "!999_".
+ */
+export function buildPromotedSortTitle(
+  name: string,
+  sortOrderLibrary: number
+): string {
+  const maxRank = Math.pow(10, PROMOTED_SORT_TITLE_RANK_WIDTH) - 1;
+  const clamped = Math.min(Math.max(0, sortOrderLibrary), maxRank);
+  const rank = String(clamped).padStart(PROMOTED_SORT_TITLE_RANK_WIDTH, '0');
+  return `!${rank}_${name}`;
+}

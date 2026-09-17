@@ -190,6 +190,10 @@ async function handleManualReordering(
   res: Response
 ) {
   const settings = getSettings();
+  // Reported back so the client can say the override was cleared rather
+  // than leaving the user to notice the field emptied on its own.
+  let clearedSortTitleOverrides = 0;
+
   let totalUpdated = 0;
   let finalCollectionConfigs: CollectionConfig[] | undefined;
   let finalHubConfigs: PlexHubConfig[] | undefined;
@@ -241,6 +245,7 @@ async function handleManualReordering(
       (originalConfig as { sortTitleOverride?: string }).sortTitleOverride
     ) {
       (updatedConfig as { sortTitleOverride?: string }).sortTitleOverride = '';
+      clearedSortTitleOverrides += 1;
     }
 
     // Set everLibraryPromoted: true when a collection is assigned to the promoted library section
@@ -377,6 +382,7 @@ async function handleManualReordering(
     collectionsUpdated: collectionsApplied,
     hubsUpdated: hubsApplied,
     preExistingUpdated: preExistingApplied,
+    clearedSortTitleOverrides,
   });
 }
 

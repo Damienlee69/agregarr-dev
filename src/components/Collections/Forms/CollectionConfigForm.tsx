@@ -56,7 +56,7 @@ import {
 } from '@app/utils/collections/collectionUtils';
 import {
   agregarrOwnsSortTitle,
-  PROMOTED_SORT_TITLE_RANK_WIDTH,
+  buildPromotedSortTitle,
 } from '@app/utils/collections/sortTitle';
 
 const messages = defineMessages({
@@ -337,22 +337,8 @@ function isMultiCollectionSortTitleField(
 }
 
 /**
- * The sort title Agregarr would assign this collection for its CURRENT
- * position, independent of any manual override. Mirrors the server's
- * positional encoding (buildPromotedSortTitle): a promoted collection's
- * title is a fixed-width, zero-padded rank number built purely from its own
- * sortOrderLibrary — no other collection's position is needed, unlike the
- * old exclamation-count scheme this replaced. A-Z collections keep their
- * natural name. Used to pre-fill the Sort Title field so the user sees the
- * real value, and to tell an unchanged value apart from a real override on
- * save.
- */
-/**
  * The sort title someone set in Plex, when it differs from what Agregarr
- * would write. Surfaced as a note under the field rather than inside it -
- * knowing Plex disagrees is useful, but it is not this setting's value.
- * Reads the stored copy, which discovery refreshes, so seeing it costs
- * nothing extra.
+ * would write. Shown as a note under the field, not as its value.
  */
 function plexSetSortTitle(target: SortTitleConfigLike): string | undefined {
   const stored = target.titleSort?.trim();
@@ -371,15 +357,17 @@ function plexSetSortTitle(target: SortTitleConfigLike): string | undefined {
   const rank = target.sortOrderLibrary;
   const wouldWrite =
     target.isLibraryPromoted === true && rank !== undefined && rank > 0
-      ? `!${String(Math.max(0, rank)).padStart(
-          PROMOTED_SORT_TITLE_RANK_WIDTH,
-          '0'
-        )}_${sortKey}`
+      ? buildPromotedSortTitle(sortKey, rank)
       : sortKey;
 
   return stored === wouldWrite ? undefined : stored;
 }
 
+/**
+ * The sort title Agregarr would assign this collection for its current
+ * position, ignoring any override. Pre-fills the field and tells an
+ * untouched default apart from a real override on save.
+ */
 function computeAgregarrSortTitle(target: SortTitleConfigLike): string {
   const name = target.name || '';
   const sortOrderLibrary = target.sortOrderLibrary;
@@ -407,11 +395,7 @@ function computeAgregarrSortTitle(target: SortTitleConfigLike): string {
     return sortKey;
   }
 
-  const rank = String(Math.max(0, sortOrderLibrary)).padStart(
-    PROMOTED_SORT_TITLE_RANK_WIDTH,
-    '0'
-  );
-  return `!${rank}_${sortKey}`;
+  return buildPromotedSortTitle(sortKey, sortOrderLibrary);
 }
 
 const CollectionFormConfigForm = ({

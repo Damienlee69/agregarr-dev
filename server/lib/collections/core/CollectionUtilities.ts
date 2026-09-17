@@ -2786,44 +2786,10 @@ export function isMultiCollectionPattern(config?: {
 }
 
 /**
- * Resolves what to actually store for a multi-collection config's Sort
- * Title field (Essentials, Directors/Actors, Auto Franchise,
- * Overseerr-users) - the parent config's Sort Title field is the only
- * place to control the whole group's ordering, since the individual
- * generated collections never appear as separate entries in Agregarr's
- * own UI.
- *
- * Stored verbatim, exactly as typed - no prefix-extraction or
- * suffix-stripping. It's reused literally: it becomes the separator's own
- * sortTitle as-is (if a separator is used), and every generated
- * sub-collection gets it plus a space plus that sub-collection's own name
- * at write time (see buildSeparatorSortTitle / updateCollectionMetadata).
- *
- * The one exception is when the submitted text is exactly the bare config
- * name AND the config is currently unpromoted - that combination is
- * specifically the untouched default (computeAgregarrSortTitle returns the
- * bare name only when unpromoted), meaning nothing was really typed, so it
- * clears the field instead of storing the name as a literal override.
- * Critically, this does NOT apply when the config is currently promoted:
- * there, the untouched default is "!rank_Name", so typing the bare name
- * instead is a deliberate edit (stripping the promotion marker) that has
- * to be stored and flow through to the mismatch-toast check like any other
- * non-"!" text would for a regular collection - not silently cleared,
- * which would swallow the mismatch signal entirely (the toast's first
- * check bails on an empty sortTitleOverride).
- */
-/**
  * The base a multi-collection group builds its sort titles from: the typed
- * override when there is one, otherwise the parent config's own name.
- *
- * The fallback is what holds the group together when nobody has typed
- * anything. Without it a demoted group scattered - each generated collection
- * sorted under its own name, and the separator sat alone at the top of the
- * library - so the grouping a separator exists to express only survived while
- * an override happened to be set.
- *
- * Promoted groups do not need this: the rank prefix they already share does
- * the same job, and every member sorts together under it.
+ * override, else the parent config's name. The fallback is what keeps a
+ * demoted group together - promoted groups need no fallback, the shared rank
+ * already does it.
  */
 export function resolveMultiCollectionBase(
   override: string | undefined,
@@ -2835,6 +2801,14 @@ export function resolveMultiCollectionBase(
   return name || undefined;
 }
 
+/**
+ * What to store for a multi-collection config's Sort Title field. Stored
+ * verbatim, except when the submitted text is exactly the bare config name
+ * on an unpromoted config - that is the untouched default, so it clears the
+ * field rather than storing the name as an override. A promoted config's
+ * default is "!rank_Name", so the bare name there is a deliberate edit and
+ * is kept.
+ */
 export function resolveMultiCollectionSortTitle(
   submittedSortTitle: string,
   parentConfigName: string,
