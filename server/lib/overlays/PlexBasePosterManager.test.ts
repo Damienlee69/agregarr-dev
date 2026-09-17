@@ -57,6 +57,11 @@ describe('resolveBasePosterSource (fork#110)', () => {
     expect(resolveBasePosterSource(season, settingsWith('tmdb'))).toBe('plex');
   });
 
+  it('always uses Plex for an episode, regardless of the setting', () => {
+    const episode = item({ type: 'episode', Guid: [{ id: 'tmdb://123' }] });
+    expect(resolveBasePosterSource(episode, settingsWith('tmdb'))).toBe('plex');
+  });
+
   it('falls back to Plex when the setting is tmdb but the item has no tmdb:// guid', () => {
     const noGuid = item({
       Guid: [{ id: 'imdb://tt12736950' }, { id: 'tvdb://376900' }],

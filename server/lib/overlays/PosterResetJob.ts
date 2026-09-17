@@ -6,6 +6,8 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import sharp from 'sharp';
+import { normalizeOverlayJpegQuality } from './overlayOutputQuality';
+import { getRecognizedPosterOwnershipMarker } from './posterOwnershipMetadata';
 
 interface ResetStatus {
   running: boolean;
@@ -139,6 +141,47 @@ class PosterResetJob {
         }
 
         offset += pageSize;
+      }
+
+      // Child items are not returned by the root library listing. Include only
+      // season/episode rows that Agregarr has actually overlaid, so Reset
+      // Posters also restores artwork created by Posterizarr follow-ups.
+      const metadataService = (
+        await import('@server/lib/metadata/MetadataTrackingService')
+      ).default;
+      const childRows = await metadataService.getOverlaidChildMetadata(
+        libraryId
+      );
+      const existingKeys = new Set(allItems.map((item) => item.ratingKey));
+      for (const row of childRows) {
+        if (existingKeys.has(row.plexItemRatingKey)) continue;
+        try {
+          const child = await plexApi.getMetadata(row.plexItemRatingKey);
+          if (child.type !== 'season' && child.type !== 'episode') continue;
+          allItems.push({
+            ratingKey: child.ratingKey,
+            parentRatingKey: child.parentRatingKey,
+            grandparentRatingKey: child.grandparentRatingKey,
+            title: child.title,
+            guid: child.guid || '',
+            Guid: child.Guid,
+            Media: child.Media,
+            Label: child.Label,
+            type: child.type,
+            index: child.index,
+            parentIndex: child.parentIndex,
+            userRating: child.userRating,
+            addedAt: child.addedAt || 0,
+            updatedAt: child.updatedAt || 0,
+          });
+          existingKeys.add(child.ratingKey);
+        } catch (error) {
+          logger.warn('Tracked child artwork no longer exists in Plex', {
+            label: 'PosterReset',
+            ratingKey: row.plexItemRatingKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
       this.total = allItems.length;
@@ -276,20 +319,42 @@ class PosterResetJob {
           tmdbId
         );
 
-      // Ensure poster is in WebP format and properly sized
-      const posterBuffer = await sharp(basePosterResult.posterBuffer)
-        .resize(1000, 1500, {
+      // Root posters keep Agregarr's historical 2:3 reset dimensions. Child
+      // artwork preserves its native geometry (especially 16:9 title cards).
+      const sourceOwnershipMarker = getRecognizedPosterOwnershipMarker(
+        basePosterResult.posterBuffer
+      );
+      let posterPipeline = sharp(basePosterResult.posterBuffer);
+      if (item.type !== 'season' && item.type !== 'episode') {
+        posterPipeline = posterPipeline.resize(1000, 1500, {
           fit: 'cover',
           position: 'center',
+        });
+      }
+
+      // Sharp drops Posterizarr's JPEG comment. Translate a recognized source
+      // marker into early JPEG EXIF, but do not mark an unowned base poster.
+      posterPipeline = sourceOwnershipMarker
+        ? posterPipeline.withExifMerge({
+            IFD0: {
+              ImageDescription: `${sourceOwnershipMarker}; preserved by Agregarr`,
+            },
+          })
+        : posterPipeline.keepExif();
+
+      const posterBuffer = await posterPipeline
+        .jpeg({
+          quality: normalizeOverlayJpegQuality(
+            getSettings().overlays?.jpegQuality
+          ),
         })
-        .webp({ quality: 90 })
         .toBuffer();
 
       // Save to temporary file
       const tempDir = os.tmpdir();
       const tempFilePath = path.join(
         tempDir,
-        `reset-${item.ratingKey}-${Date.now()}.webp`
+        `reset-${item.ratingKey}-${Date.now()}.jpg`
       );
 
       await fs.writeFile(tempFilePath, posterBuffer);
@@ -298,23 +363,16 @@ class PosterResetJob {
         // Upload base poster back to Plex
         await plexApi.uploadPosterFromFile(item.ratingKey, tempFilePath);
 
-        // Update metadata tracking
-        const newPosterUrl = await plexApi.getCurrentPosterUrl(item.ratingKey);
-
-        if (newPosterUrl) {
-          // Clear overlay hash since we're resetting to base poster
-          await metadataService.recordOverlayApplicationWithBasePoster(
-            item.ratingKey,
-            libraryId,
-            '', // Empty hash since no overlays applied
-            newPosterUrl,
-            {
-              basePosterSource: posterSource,
-              originalPlexPosterUrl: basePosterResult.sourceUrl,
-              basePosterFilename: basePosterResult.filename,
-            }
-          );
-        }
+        await metadataService.recordBasePosterReset(
+          item.ratingKey,
+          libraryId,
+          {
+            basePosterSource: posterSource,
+            originalPlexPosterUrl: basePosterResult.sourceUrl,
+            basePosterFilename: basePosterResult.filename,
+          },
+          item.type
+        );
 
         // Remove "Overlay" label since we're resetting to base poster
         try {
@@ -327,7 +385,7 @@ class PosterResetJob {
           label: 'PosterReset',
           itemTitle: item.title,
           ratingKey: item.ratingKey,
-          posterSource,
+          posterSource: posterSource,
         });
       } finally {
         // Clean up temp file

@@ -28,6 +28,7 @@ import {
 } from './maintainerrCountdown';
 import type { OverlayRenderContext } from './OverlayTemplateRenderer';
 import { latestAiredSeasonDate } from './releaseDateContext';
+import { toTmdbRatingContext, usesTmdbRatingFields } from './tmdbRatingPolicy';
 
 // Captured defensively: the app replaces the global Intl with the andyearnshaw
 // `intl` SSR polyfill (src/pages/_app.tsx), which does NOT provide DisplayNames.
@@ -347,6 +348,13 @@ export async function buildRenderContext(
         mediaType === 'movie'
           ? await tmdbClient.getMovie({ movieId: tmdbId })
           : await tmdbClient.getTvShow({ tvId: tmdbId });
+
+      if (usesTmdbRatingFields(requiredContextFields)) {
+        Object.assign(
+          context,
+          toTmdbRatingContext(tmdbData.vote_average, tmdbData.vote_count)
+        );
+      }
 
       // Only use TMDB external_ids as fallback if no IMDb ID from Plex GUID
       if (!imdbId && tmdbData.external_ids?.imdb_id) {
