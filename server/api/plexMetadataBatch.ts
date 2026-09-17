@@ -38,7 +38,7 @@ function getExplicitHttpStatus(error: unknown): number | undefined {
   if (Number.isInteger(status)) return status;
 
   const message = error instanceof Error ? error.message : String(error);
-  const messageStatus = message.match(/\b(4\d\d)\b/);
+  const messageStatus = message.match(/response code:\s*(\d+)/i);
   return messageStatus ? Number(messageStatus[1]) : undefined;
 }
 

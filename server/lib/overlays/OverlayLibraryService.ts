@@ -2439,11 +2439,29 @@ class OverlayLibraryService {
     },
     libraryId: string
   ): Promise<void> {
-    const items: OverlayItemInput[] = [
-      { ratingKey: input.ratingKey, target: 'main' },
-    ];
+    const config = await getRepository(OverlayLibraryConfig).findOne({
+      where: { libraryId },
+    });
+    if (!config?.enabledOverlays.some((overlay) => overlay.enabled)) return;
 
-    if (input.mediaType === 'show' && input.seasonNumber !== undefined) {
+    // Item callbacks share the quick-sync opt-in, not the full-library scope.
+    const targets = normalizeOverlaySyncTargets(
+      config.quickSyncTargets,
+      config.mediaType
+    );
+    if (targets.length === 0) return;
+
+    const items: OverlayItemInput[] = targets.includes('main')
+      ? [{ ratingKey: input.ratingKey, target: 'main' }]
+      : [];
+    const syncSeasons = targets.includes('season');
+    const syncEpisodes = targets.includes('episode');
+
+    if (
+      config.mediaType === 'show' &&
+      input.seasonNumber !== undefined &&
+      (syncSeasons || (syncEpisodes && input.episodeNumber !== undefined))
+    ) {
       const { getAdminUser } = await import(
         '@server/lib/collections/core/CollectionUtilities'
       );
@@ -2464,14 +2482,16 @@ class OverlayLibraryService {
           seasonNumber: input.seasonNumber,
         });
       } else {
-        items.push({
-          ratingKey: season.ratingKey,
-          target: 'season',
-          contextFallbackRatingKey: input.ratingKey,
-          contextOverrides: { seasonNumber: input.seasonNumber },
-        });
+        if (syncSeasons) {
+          items.push({
+            ratingKey: season.ratingKey,
+            target: 'season',
+            contextFallbackRatingKey: input.ratingKey,
+            contextOverrides: { seasonNumber: input.seasonNumber },
+          });
+        }
 
-        if (input.episodeNumber !== undefined) {
+        if (syncEpisodes && input.episodeNumber !== undefined) {
           const episodes = await plexApi.getChildrenMetadata(season.ratingKey);
           const episode = episodes.find(
             (candidate) =>
@@ -2501,7 +2521,9 @@ class OverlayLibraryService {
       }
     }
 
-    await this.applyOverlaysToCollectionItems(items, libraryId);
+    if (items.length > 0) {
+      await this.applyOverlaysToCollectionItems(items, libraryId);
+    }
   }
 
   /**

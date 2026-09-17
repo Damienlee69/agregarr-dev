@@ -1317,7 +1317,7 @@
   "components.Posters.syncOverlays": "Sync",
   "components.Posters.syncOverlaysConfirm": "Confirm?",
   "components.Posters.syncScope": "Sync scope",
-  "components.Posters.syncScopeDescription": "Choose which artwork each overlay job processes for this library. A selected target also needs an enabled overlay template for that artwork.",
+  "components.Posters.syncScopeDescription": "Choose which artwork each overlay job processes for this library. Posterizarr callbacks use the Quick sync targets. A selected target also needs an enabled overlay template for that artwork.",
   "components.Posters.templateResults": "Template Results",
   "components.Posters.templates": "Collection Templates",
   "components.Posters.templatesDescription": "Design reusable poster templates for your collections",

@@ -5,6 +5,35 @@ import {
 } from './plexMetadataBatch';
 
 describe('resilient Plex metadata batching', () => {
+  it('retries and splits resets whose URL contains a 4xx-shaped rating key', async () => {
+    const query = vi.fn(async (keys: string[]) => {
+      if (keys.length > 1)
+        throw new Error('ECONNRESET /library/metadata/478/children');
+      return keys.map((ratingKey) => ({ ratingKey }));
+    });
+    const result = await fetchPlexMetadataBatches(['478', '479'], query, {
+      chunkSize: 2,
+      minChunkSize: 1,
+      maxRetries: 1,
+      retryDelayMs: 0,
+    });
+    expect(query.mock.calls.map(([keys]) => keys.length)).toEqual([2, 2, 1, 1]);
+    expect(result.size).toBe(2);
+  });
+
+  it('does not split a message-only Plex authorization response', async () => {
+    const query = vi.fn(async () => {
+      throw new Error(
+        'Plex Server didnt respond with a valid 2xx status code, response code: 401'
+      );
+    });
+    await fetchPlexMetadataBatches(['1', '2'], query, {
+      minChunkSize: 1,
+      retryDelayMs: 0,
+    });
+    expect(query).toHaveBeenCalledOnce();
+  });
+
   it('uses bounded 50-item requests and deduplicates keys', async () => {
     const keys = [
       ...Array.from({ length: 125 }, (_, index) => String(index + 1)),

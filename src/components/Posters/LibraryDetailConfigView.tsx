@@ -32,6 +32,7 @@ import type {
   OverlayTemplateType,
 } from '@server/entity/OverlayTemplate';
 import {
+  ALL_OVERLAY_ARTWORK_TARGETS,
   getDefaultOverlaySyncTargets,
   getOverlayTargets,
   isOverlayCompatibleWithLibrary,
@@ -153,7 +154,7 @@ const messages = defineMessages({
   detectedFromPlex: 'Detected from Plex',
   syncScope: 'Sync scope',
   syncScopeDescription:
-    'Choose which artwork each overlay job processes for this library. A selected target also needs an enabled overlay template for that artwork.',
+    'Choose which artwork each overlay job processes for this library. Posterizarr callbacks use the Quick sync targets. A selected target also needs an enabled overlay template for that artwork.',
   missingFullSyncTemplates:
     'Full sync will skip {targets} because no enabled template targets that artwork.',
   fullSync: 'Full sync',
@@ -374,7 +375,10 @@ const LibraryDetailConfigView: React.FC<LibraryDetailConfigViewProps> = ({
   // libraryType comes from the live Plex libraries response. Keep it as the
   // source of truth instead of allowing an older saved config to drift.
   const detectedLibraryType = libraryType;
-  const availableSyncTargets = getDefaultOverlaySyncTargets();
+  const availableSyncTargets = normalizeOverlaySyncTargets(
+    ALL_OVERLAY_ARTWORK_TARGETS,
+    detectedLibraryType
+  );
   const [saving, setSaving] = useState(false);
   const [enabledOverlays, setEnabledOverlays] = useState<EnabledOverlay[]>([]);
   const [fullSyncTargets, setFullSyncTargets] = useState<

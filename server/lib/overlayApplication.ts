@@ -73,8 +73,8 @@ class OverlayApplication {
     // Posterizarr enqueue performs the inverse check, so only one side can win
     // before either path reaches its first await.
     if (posterizarrTriggerJob.busy) {
-      logger.info(
-        'Posterizarr item triggers are running or queued, skipping Overlay Application',
+      logger.warn(
+        'Posterizarr item triggers are running or queued, skipping this Overlay Application; retry manually or wait for the next scheduled run',
         { label: 'Overlay Application' }
       );
       return;

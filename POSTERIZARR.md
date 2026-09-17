@@ -43,7 +43,10 @@ Existing templates default to **Main poster**. Episode templates use a 16:9
 preview and should normally use a 1920 x 1080 canvas.
 
 The library configuration also controls which targets are included in full and
-quick overlay syncs. Movie libraries only expose main posters. Show libraries
+quick overlay syncs. **Posterizarr callbacks use the Quick sync targets** and
+still require a matching enabled template. An empty Quick sync selection disables
+callback overlays for that library, but does not disable collection membership
+updates. Movie libraries only expose main posters. Show libraries
 can process main, season, and episode artwork. Upgraded libraries keep their
 main-poster scope until you select season/episode targets and enable compatible
 templates; choices saved by earlier integration builds are preserved.
@@ -59,8 +62,9 @@ For each accepted callback, Agregarr:
 1. resolves the Plex library from the root rating key;
 2. adds the movie or show to matching collections and removes replaced
    placeholders;
-3. resolves the requested Plex season and episode, when supplied; and
-4. applies templates whose artwork targets match the resolved items.
+3. resolves the requested Plex season and episode only as needed by the library's
+   Quick sync targets; and
+4. applies templates whose artwork targets match the selected, resolved items.
 
 Callbacks are queued and processed serially, with mutual exclusion against full
 collection and overlay syncs. Duplicate callbacks for the same root/season/episode coordinates
@@ -69,6 +73,9 @@ Callbacks arriving during a full collection or overlay sync, or after the queue
 fills, receive a retryable response instead of accumulating unbounded work. A
 full sync also declines to start while Posterizarr work is queued or running. A
 Posterizarr job sends its callback only after a Plex artwork upload succeeds.
+Skipped full syncs log a warning and are not automatically deferred: they must
+be started manually or wait for the next scheduled run. Sustained callback
+traffic can therefore postpone a full sync across multiple scheduled runs.
 
 ## Poster selection and metadata compatibility
 
@@ -85,12 +92,18 @@ unmanaged poster. Reset and restore operations preserve recognized Posterizarr
 ownership metadata when re-encoding artwork.
 
 The JPEG output is deliberate: the ownership marker must be stored where
-Posterizarr can read it reliably. The first overlay run after upgrading from an
-older WebP-producing build re-renders and re-uploads artwork owned by Agregarr
-because the output format and render hash changed. Later runs return to normal
-hash-based unchanged detection. To postpone these uploads, disable the library's
-overlays or deselect its full/quick sync targets before the next run. Disabling
-the Posterizarr callback setting alone does not disable scheduled overlay jobs.
+Posterizarr can read it reliably. The first full overlay sync after upgrading
+from an older WebP-producing build re-renders and re-uploads eligible artwork
+owned by Agregarr because the output format and render hash changed. Collection
+syncs with **Apply overlays during sync** enabled, or item callbacks, can refresh
+their eligible items earlier. Quick sync only picks up items without a metadata
+row, so it does not perform this migration for already-tracked artwork. Later
+full syncs return to normal hash-based unchanged detection.
+
+To postpone uploads through all these paths, **disable all overlay templates for
+the library**. Deselecting full/quick sync targets alone does not stop collection
+sync overlays; disabling the Posterizarr callback setting alone does not stop
+scheduled overlay or collection jobs.
 
 Outcome details are retained in memory for the current or last run, capped at
 5,000 items per library. Search and CSV export include only retained details;
