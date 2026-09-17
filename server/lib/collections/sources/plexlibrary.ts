@@ -158,6 +158,13 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
     // '!' in front - which parked it at the top of the entire library rather
     // than ahead of its group, under a name its members shared nothing with.
     // A demoted group had no cohesion at all as a result.
+    // Same gate as the members use (see BaseCollectionSync): a group that has
+    // never been promoted keeps what it wrote before, so an existing install
+    // is not re-sorted for a grouping the user never asked for.
+    if (matchingConfig?.everLibraryPromoted !== true) {
+      return `!${baseTitle}`;
+    }
+
     return (
       resolveMultiCollectionBase(undefined, matchingConfig?.name) ?? baseTitle
     );
@@ -589,6 +596,10 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
       };
 
       await this.updateCollectionMetadata(plexClient, separatorRatingKey, {
+        // The separator's sort title is written explicitly below - it is the
+        // group base verbatim, which the group logic cannot produce. Letting
+        // both run wrote two different values per sync and neither could skip.
+        skipSortTitle: true,
         collectionName: separatorTitle,
         mediaType,
         visibilityConfig,
@@ -633,9 +644,12 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
         // immediately ahead of them. It also re-reads from settings rather
         // than trusting this possibly-stale config snapshot.
         const sortTitle = this.buildSeparatorSortTitle(config, separatorTitle);
+        // Pass what Plex already holds so an unchanged separator is skipped
+        // rather than rewritten on every sync.
         await plexClient.updateCollectionSortTitle(
           separatorRatingKey,
-          sortTitle
+          sortTitle,
+          existingCollection?.titleSort
         );
       } catch (sortError) {
         logger.debug('Failed to set separator sort title', {

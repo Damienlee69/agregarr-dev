@@ -14,6 +14,7 @@ import type { BaseCollectionSync } from '@server/lib/collections/core/BaseCollec
 import {
   applyCollectionExclusions,
   buildPromotedSortTitle,
+  buildSortTitleFromOverride,
   createCollectionLabel,
   createSyncError,
   getCollectionSyncCounter,
@@ -2964,7 +2965,7 @@ export class MultiSourceOrchestrator {
       try {
         await plexClient.updateCollectionSortTitle(
           collectionRatingKey,
-          `${config.sortTitleOverride}${collectionName}`,
+          buildSortTitleFromOverride(config.sortTitleOverride, collectionName),
           currentTitleSort
         );
       } catch (error) {

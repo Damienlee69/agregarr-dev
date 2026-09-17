@@ -477,7 +477,27 @@ const CollectionSettings = ({
           <Button
             buttonType="default"
             buttonSize="sm"
-            onClick={() => {
+            onClick={async () => {
+              // Declining has to clear the override, not just dismiss the
+              // toast. The typed text is stored verbatim so this prompt can
+              // happen at all, and a bare "!007_" prefix is written through
+              // to Plex as "!007_Name" - so leaving it in place would put the
+              // collection in the promoted section anyway and make the prompt
+              // look like it decided nothing. Clearing returns it to its
+              // automatic position, which is what "Keep in A-Z" means.
+              try {
+                await axios.put(
+                  `/api/v1/${endpointBase}/${updatedConfig.id}/settings`,
+                  { sortTitleOverride: '' }
+                );
+                revalidate();
+                revalidateAll();
+              } catch {
+                addToast('Failed to clear the Sort Title override', {
+                  autoDismiss: true,
+                  appearance: 'error',
+                });
+              }
               if (liveToastId) removeToast(liveToastId);
             }}
           >
