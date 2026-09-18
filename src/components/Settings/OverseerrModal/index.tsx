@@ -72,6 +72,13 @@ const messages = defineMessages({
   singleUser: 'Single user (Agregarr)',
   perService: 'Per service (TraktAgregarr, TMDbAgregarr)',
   granular: 'Granular (TraktTrendingAgregarr, TMDbPopularAgregarr)',
+  keepPlaceholderIgnorePatterns: 'Keep placeholder ignore patterns in Seerr',
+  keepPlaceholderIgnorePatternsTip:
+    "Adds the two regexes Agregarr's placeholders match to Seerr's Ignored Path Patterns and re-adds them if they go missing. Needs a Seerr build with that setting (rubeanie/seerr:ignore-media-regex).",
+  placeholderPatternsUnsupported:
+    "Seerr build doesn't support Ignored Path Patterns",
+  placeholderPatternsPresent: 'Both patterns present',
+  placeholderPatternsMissing: '{count} of 2 patterns missing',
 });
 
 interface TestResponse {
@@ -111,6 +118,13 @@ interface TestResponse {
   >;
 }
 
+interface PlaceholderPatternsStatus {
+  configured: boolean;
+  supported: boolean;
+  missing: string[];
+  patterns: string[];
+}
+
 interface OptionType {
   value: number;
   label: string;
@@ -141,6 +155,13 @@ const OverseerrModal = ({
   const { data: dataServiceUser } = useSWR<ServiceUserSettings>(
     '/api/v1/settings/serviceuser'
   );
+
+  const { data: placeholderPatterns, mutate: mutatePlaceholderPatterns } =
+    useSWR<PlaceholderPatternsStatus>(
+      overseerr?.hostname && overseerr?.apiKey
+        ? '/api/v1/overseerr/placeholder-patterns'
+        : null
+    );
 
   const OverseerrSettingsSchema = Yup.object().shape({
     hostname: Yup.string()
@@ -307,6 +328,8 @@ const OverseerrModal = ({
           sonarrProfileId: overseerr?.sonarrProfileId,
           sonarrRootFolder: overseerr?.sonarrRootFolder,
           sonarrTags: overseerr?.sonarrTags || [],
+          keepPlaceholderIgnorePatterns:
+            overseerr?.keepPlaceholderIgnorePatterns ?? false,
           userCreationMode: dataServiceUser?.userCreationMode || 'per-service',
         }}
         validationSchema={OverseerrSettingsSchema}
@@ -343,6 +366,8 @@ const OverseerrModal = ({
                   : undefined,
               sonarrRootFolder: values.sonarrRootFolder,
               sonarrTags: values.sonarrTags,
+              keepPlaceholderIgnorePatterns:
+                values.keepPlaceholderIgnorePatterns,
             };
 
             const serviceUserSubmission = {
@@ -354,6 +379,21 @@ const OverseerrModal = ({
               '/api/v1/settings/serviceuser',
               serviceUserSubmission
             );
+
+            if (
+              values.keepPlaceholderIgnorePatterns &&
+              values.hostname &&
+              values.apiKey
+            ) {
+              try {
+                await axios.post('/api/v1/overseerr/placeholder-patterns');
+              } catch (e) {
+                // Refreshed below regardless; nothing else to show here
+              } finally {
+                mutatePlaceholderPatterns();
+              }
+            }
+
             onSave();
           } catch (e) {
             // Error handling
@@ -1002,6 +1042,53 @@ const OverseerrModal = ({
                         </option>
                       </Field>
                     </div>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <label
+                    htmlFor="keepPlaceholderIgnorePatterns"
+                    className="checkbox-label"
+                  >
+                    <span className="mr-2">
+                      {intl.formatMessage(
+                        messages.keepPlaceholderIgnorePatterns
+                      )}
+                    </span>
+                    <span className="label-tip">
+                      {intl.formatMessage(
+                        messages.keepPlaceholderIgnorePatternsTip
+                      )}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <Field
+                      type="checkbox"
+                      id="keepPlaceholderIgnorePatterns"
+                      name="keepPlaceholderIgnorePatterns"
+                      onChange={() => {
+                        setFieldValue(
+                          'keepPlaceholderIgnorePatterns',
+                          !values.keepPlaceholderIgnorePatterns
+                        );
+                      }}
+                    />
+                    {placeholderPatterns && (
+                      <span className="text-sm text-stone-400">
+                        {!placeholderPatterns.supported
+                          ? intl.formatMessage(
+                              messages.placeholderPatternsUnsupported
+                            )
+                          : placeholderPatterns.missing.length === 0
+                          ? intl.formatMessage(
+                              messages.placeholderPatternsPresent
+                            )
+                          : intl.formatMessage(
+                              messages.placeholderPatternsMissing,
+                              { count: placeholderPatterns.missing.length }
+                            )}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

@@ -6,7 +6,7 @@ Active fork of [Agregarr](https://github.com/agregarr/agregarr) with performance
 
 > [!TIP]
 >
-> **Latest release: [v2.9.1](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.1).** Run more than one Cloudflare solver (FlareSolverr, Byparr, or both) with automatic failover, and a health check that flags a missing solver instead of letting Networks collections fail silently. Full [release notes](https://github.com/bitr8/agregarr-dev/releases).
+> **Latest release: [v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0).** Parallel overlay processing, conditional elements with colour scaling, an audio codec badge, a new sync dashboard and an opt-in Posterizarr integration from Marcus Isdahl, and around 30 fixes. Six weeks of develop in one go.
 
 ## Docker
 
@@ -15,7 +15,7 @@ Available on Docker Hub as [`bitr8/agregarr`](https://hub.docker.com/r/bitr8/agr
 | Tag             | What it tracks                                             |
 | --------------- | ---------------------------------------------------------- |
 | `:latest`       | Stable releases. Recommended for most users.               |
-| `:2.9.1` (etc.) | Pinned to a specific release.                              |
+| `:2.10.0` (etc.) | Pinned to a specific release.                              |
 | `:develop`      | Bleeding edge. Builds on every push to develop, may break. |
 
 **Multi-arch** release tags ship amd64 and arm64 (Apple Silicon, RPi 4+). The `:develop` tag builds amd64 only.
@@ -86,21 +86,22 @@ Detail for each feature is in the [release notes](https://github.com/bitr8/agreg
 - **Per-user targeting**: restrict a collection to a single Plex user via label filtering. ([v2.8.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.8.0), cherry-pick from upstream [#555](https://github.com/agregarr/agregarr/pull/555))
 - **Label collections**: build a collection from a Plex label. (Contributed by [Damienlee69](https://github.com/Damienlee69), [v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
 - **Export/import**: back up collection configs as JSON and restore them on the same or a different instance. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
-- **Dynamic title prefix**: prepend your own text to rotating random/cycle collection titles. (Contributed by [gh0st-runner](https://github.com/gh0st-runner), `:develop`)
-- **Ordering exclusion label**: collections carrying a label you list under **Settings > General > Exclude from Ordering (Plex Label)** are left out of hub ordering, visibility enforcement, and sort title management. Built for running Shortlist or Kometa alongside Agregarr. (`:develop`)
-- **Episode-level filtered hubs**: a `recently_added_episodes` subtype that filters by episode rather than show, so a "New Episodes Today" row only shows what actually dropped today. (`:develop`)
-- **Sort title override**: per-collection sort title prefix that pins a collection's place in Plex's alphabetical order without touching hub ordering. (`:develop`)
-- **IMDb Bottom 100** as a collection source, same shape as the Top 250. (`:develop`)
+- **Dynamic title prefix**: prepend your own text to rotating random/cycle collection titles. (Contributed by [gh0st-runner](https://github.com/gh0st-runner), [v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
+- **Ordering exclusion label**: collections carrying a label you list under **Settings > General > Exclude from Ordering (Plex Label)** are left out of hub ordering, visibility enforcement, and sort title management. Built for running Shortlist or Kometa alongside Agregarr. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
+- **Episode-level filtered hubs**: a `recently_added_episodes` subtype that filters by episode rather than show, so a "New Episodes Today" row only shows what actually dropped today. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
+- **Sort title override**: per-collection sort title prefix that pins a collection's place in Plex's alphabetical order without touching hub ordering. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
+- **IMDb Bottom 100** as a collection source, same shape as the Top 250. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
 - **Last Episode Added sort** for smart collections. ([v2.8.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.8.0))
 
 ### Overlays
 
+- **Posterizarr integration** (off by default): writes an ownership marker Posterizarr can read into the overlay output, accepts authenticated callbacks after Sonarr or Radarr imports, and lets show libraries pick main, season and episode artwork per sync. Contributed by [Marcus Isdahl](https://github.com/marcusisdahl). See the [Posterizarr integration guide](POSTERIZARR.md). ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
 - **Dashboard sync progress cards**: live progress, stats, ETA, start/stop for both collection and overlay syncs. ![Collection Sync Dashboard](public/images/collection-sync-dashboard.png)
-- **Maintainerr season deletion countdown**: reads Maintainerr's collection data and draws the countdown on season posters using your templates. ([v2.7.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.7.0)) A per-library option also puts the countdown on the show poster once every season is scheduled to leave. (Contributed by [Rubeanie](https://github.com/Rubeanie), `:develop`) ![Season deletion countdown](public/images/maintainerr-season-countdown.png)
-- **Parallel overlay processing**: **Settings > General > Parallel Items** runs 1 to 10 items at once (default 1, so nothing changes until you raise it). The stop button now cancels per-library jobs mid-run instead of waiting for the batch. (`:develop`)
-- **Conditional elements and colour scaling**: template elements can render only when a context condition holds (resolution, media type, whether a release date exists), and `colorScale` on tile elements interpolates between two colours over a numeric range, previewed live in the editor. (`:develop`)
+- **Maintainerr season deletion countdown**: reads Maintainerr's collection data and draws the countdown on season posters using your templates. ([v2.7.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.7.0)) A per-library option also puts the countdown on the show poster once every season is scheduled to leave. (Contributed by [Rubeanie](https://github.com/Rubeanie), [v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0)) ![Season deletion countdown](public/images/maintainerr-season-countdown.png)
+- **Parallel overlay processing**: **Settings > General > Parallel Items** runs 1 to 10 items at once (default 1, so nothing changes until you raise it). The stop button now cancels per-library jobs mid-run instead of waiting for the batch. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
+- **Conditional elements and colour scaling**: template elements can render only when a context condition holds (resolution, media type, whether a release date exists), and `colorScale` on tile elements interpolates between two colours over a numeric range, previewed live in the editor. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
 - **Episode media scanning**: aggregates actual episode files for resolution/HDR/DV badges instead of trusting show-level metadata. Per-library toggle. ([v2.5.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.5.0))
-- **Audio codec badges**: opt-in "Audio Codec" preset reads the audio streams Plex scanned and badges each movie with its best track: TrueHD Atmos, DD+ Atmos, DTS-HD MA, DTS:X, down through DD/DTS/AAC. Nothing depends on how files are named. DTS:X comes from the track title, so it only shows where the rip is tagged. Movies only for now. (`:develop`)
+- **Audio codec badges**: opt-in "Audio Codec" preset reads the audio streams Plex scanned and badges each movie with its best track: TrueHD Atmos, DD+ Atmos, DTS-HD MA, DTS:X, down through DD/DTS/AAC. Nothing depends on how files are named. DTS:X comes from the track title, so it only shows where the rip is tagged. Movies only for now. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
 - **Next-episode countdowns** sourced from Sonarr (no gap when episodes air). ([v2.7.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.7.0))
 - **Estimated release date flag**: templates can distinguish fabricated dates from published ones. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
 - **Canvas size** configurable in the overlay editor (was locked to 1000x1500). ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
@@ -113,6 +114,19 @@ Upstream makes individual API calls per item, per rating source, per cache miss.
 ### Placeholders
 
 Retroactive filter application, self-healing for stuck DB records, direct Plex deletion for stale items, TV episode cleanup, Sonarr folder naming, `.plexmatch` for movies, download status awareness, post-sync hub verification, and TV label cleanup. Detail in the release notes for [v2.3.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.3.0) through [v2.7.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.7.0).
+
+### Running Seerr with placeholders
+
+Seerr reads Plex for availability. A trailer placeholder looks like the real film, so Seerr marks requests for it as available.
+
+[Rubeanie](https://github.com/Rubeanie) maintains a Seerr build that skips files matching a regex. Use image `rubeanie/seerr:ignore-media-regex`. See upstream PR [seerr-team/seerr#2606](https://github.com/seerr-team/seerr/pull/2606).
+
+Under **Settings > General > Ignored Path Patterns**, add:
+
+- Movies: `\{edition-(Trailer|Placeholder|Coming Soon)\}\.mp4$` (the last two are what older Agregarr builds wrote)
+- TV: `Season 00/S00E00\.Trailer\.mp4$`
+
+Or let Agregarr do it. On `develop`, the Seerr settings modal has a **Keep placeholder ignore patterns in Seerr** checkbox. Tick it and Agregarr adds those two patterns to Seerr through its API, straight away and again at the start of every collections sync if they go missing. Anything you already added by hand stays; ours go on the end. The Health panel warns when the patterns are missing, and, once the box is ticked, when the connected Seerr build has no such setting.
 
 ### Health checks
 

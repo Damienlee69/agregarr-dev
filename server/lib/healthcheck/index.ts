@@ -8,6 +8,7 @@ import { OverlayLibraryConfig } from '@server/entity/OverlayLibraryConfig';
 import { OverlayTemplate } from '@server/entity/OverlayTemplate';
 import { getAdminUser } from '@server/lib/collections/core/CollectionUtilities';
 import { LetterboxdHttpClient } from '@server/lib/collections/utils/LetterboxdHttpClient';
+import { probeSeerrIgnorePatterns } from '@server/lib/placeholders/seerrIgnorePatterns';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { appDataPath } from '@server/utils/appDataVolume';
@@ -316,6 +317,63 @@ export const letterboxdChallengeCheck: HealthCheck = {
         ? `Letterboxd was blocked by Cloudflare ${label}. Enable "Use Cloudflare Solver for Letterboxd" in Settings > Sources to use your configured solvers.`
         : `Letterboxd was blocked by Cloudflare ${label}. Enable "Use Cloudflare Solver for Letterboxd" in Settings > Sources. Install FlareSolverr, Byparr, or Trawl, or leave unconfigured for built-in browser automation.`,
     };
+  },
+};
+
+export const seerrPlaceholderPatternsCheck: HealthCheck = {
+  id: 'seerr-placeholder-patterns',
+  name: 'Seerr Placeholder Patterns',
+
+  run: async () => {
+    const { overseerr, plex } = getSettings();
+    if (!overseerr?.hostname || !overseerr?.apiKey)
+      return { status: 'skipped' };
+
+    const hasPlaceholders = (plex.collectionConfigs ?? []).some(
+      (c) => c.createPlaceholdersForMissing
+    );
+    if (!hasPlaceholders) return { status: 'skipped' };
+
+    // Seerr's own axios timeout is 30s, longer than the registry's 8s check
+    // window, so a slow instance must resolve to null here rather than let
+    // the registry's own timeout turn this courtesy check into an error.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let result: Awaited<ReturnType<typeof probeSeerrIgnorePatterns>>;
+    try {
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 8_000);
+      });
+      result = await Promise.race([
+        probeSeerrIgnorePatterns(overseerr).catch(() => null),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!result) return { status: 'skipped' };
+
+    if (!result.supported) {
+      if (!overseerr.keepPlaceholderIgnorePatterns)
+        return { status: 'skipped' };
+      return {
+        status: 'warning',
+        message:
+          "Agregarr uses Seerr's Ignored Path Patterns setting to keep placeholder files out of availability. This Seerr build doesn't have that setting yet. It's in seerr-team/seerr#2606, and rubeanie/seerr:ignore-media-regex ships it.",
+      };
+    }
+
+    if (result.missing.length > 0) {
+      return {
+        status: 'warning',
+        message: overseerr.keepPlaceholderIgnorePatterns
+          ? `Seerr rejected one or more of Agregarr's placeholder patterns: ${result.missing.join(
+              ', '
+            )}. Check Seerr's log for the reason.`
+          : "Seerr supports Ignored Path Patterns but the two Agregarr placeholder patterns aren't set. Tick 'Keep placeholder ignore patterns in Seerr' in the Seerr settings, or add them by hand.",
+      };
+    }
+
+    return { status: 'ok' };
   },
 };
 
@@ -688,6 +746,7 @@ const checks: HealthCheck[] = [
   flareSolverrRequiredCheck,
   letterboxdChallengeCheck,
   connectionMaintainerrCheck,
+  seerrPlaceholderPatternsCheck,
   orphanedCollectionKeysCheck,
   plexLibrariesCheck,
   overlayTemplateRefsCheck,

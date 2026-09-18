@@ -145,12 +145,13 @@ describe('getHealthStatus aggregation', () => {
     expect(ids).toContain('flaresolverr-required');
     expect(ids).toContain('letterboxd-cloudflare');
     expect(ids).toContain('connection:maintainerr');
+    expect(ids).toContain('seerr-placeholder-patterns');
     expect(ids).toContain('orphaned-collection-keys');
     expect(ids).toContain('plex-libraries');
     expect(ids).toContain('overlay-template-refs');
     expect(ids).toContain('appdata-writable');
     expect(ids).toContain('timezone-configuration');
     expect(ids).toContain('job-freshness');
-    expect(ids).toHaveLength(15);
+    expect(ids).toHaveLength(16);
   });
 });

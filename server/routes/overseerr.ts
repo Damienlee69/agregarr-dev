@@ -1,6 +1,10 @@
 import OverseerrAPI from '@server/api/overseerr';
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
+import {
+  ensureSeerrIgnorePatterns,
+  probeSeerrIgnorePatterns,
+} from '@server/lib/placeholders/seerrIgnorePatterns';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { Router } from 'express';
@@ -257,6 +261,87 @@ router.post('/test', async (req, res, next) => {
     return next({
       status,
       message: `${message} (${connectionUrl})`,
+    });
+  }
+});
+
+/**
+ * Probe Seerr for Ignored Path Patterns support, no write.
+ */
+router.get('/placeholder-patterns', async (req, res, next) => {
+  try {
+    const overseerr = getSettings().overseerr;
+    const configured = !!(overseerr?.hostname && overseerr?.apiKey);
+
+    if (!configured) {
+      return res.status(200).json({
+        configured: false,
+        supported: false,
+        missing: [],
+        patterns: [],
+      });
+    }
+
+    const result = await probeSeerrIgnorePatterns(overseerr);
+    if (!result) {
+      return next({ status: 502, message: 'Unable to reach Seerr' });
+    }
+
+    return res.status(200).json({ configured: true, ...result });
+  } catch (e) {
+    logger.error('Failed to probe Seerr placeholder ignore patterns', {
+      label: 'API',
+      error: e instanceof Error ? e.message : String(e),
+    });
+
+    return next({
+      status: 500,
+      message: `Failed to probe placeholder ignore patterns: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    });
+  }
+});
+
+/**
+ * Add Agregarr's placeholder patterns to Seerr's Ignored Path Patterns.
+ */
+router.post('/placeholder-patterns', async (req, res, next) => {
+  try {
+    const overseerr = getSettings().overseerr;
+    if (!overseerr?.hostname || !overseerr?.apiKey) {
+      return next({ status: 400, message: 'Overseerr is not configured' });
+    }
+
+    if (!overseerr.keepPlaceholderIgnorePatterns) {
+      return next({
+        status: 400,
+        message: "'Keep placeholder ignore patterns in Seerr' is not enabled",
+      });
+    }
+
+    const result = await ensureSeerrIgnorePatterns(overseerr);
+    if (!result) {
+      return next({ status: 502, message: 'Unable to reach Seerr' });
+    }
+
+    return res.status(200).json({
+      configured: true,
+      supported: result.supported,
+      missing: result.supported ? result.missing : [],
+      patterns: result.supported ? result.present : [],
+    });
+  } catch (e) {
+    logger.error('Failed to add Seerr placeholder ignore patterns', {
+      label: 'API',
+      error: e instanceof Error ? e.message : String(e),
+    });
+
+    return next({
+      status: 500,
+      message: `Failed to add placeholder ignore patterns: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
     });
   }
 });

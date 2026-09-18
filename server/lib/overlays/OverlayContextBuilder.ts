@@ -28,6 +28,7 @@ import {
 } from './maintainerrCountdown';
 import type { OverlayRenderContext } from './OverlayTemplateRenderer';
 import { latestAiredSeasonDate } from './releaseDateContext';
+import { toTmdbRatingContext, usesTmdbRatingFields } from './tmdbRatingPolicy';
 
 // Captured defensively: the app replaces the global Intl with the andyearnshaw
 // `intl` SSR polyfill (src/pages/_app.tsx), which does NOT provide DisplayNames.
@@ -284,6 +285,11 @@ export function extractStreamingProvider(
   return undefined;
 }
 
+export function daysSince(unixSeconds: number | undefined): number | undefined {
+  if (unixSeconds === undefined) return undefined;
+  return Math.floor((Date.now() - unixSeconds * 1000) / (1000 * 60 * 60 * 24));
+}
+
 export async function buildRenderContext(
   item: PlexLibraryItem,
   mediaType: 'movie' | 'show',
@@ -342,6 +348,13 @@ export async function buildRenderContext(
         mediaType === 'movie'
           ? await tmdbClient.getMovie({ movieId: tmdbId })
           : await tmdbClient.getTvShow({ tvId: tmdbId });
+
+      if (usesTmdbRatingFields(requiredContextFields)) {
+        Object.assign(
+          context,
+          toTmdbRatingContext(tmdbData.vote_average, tmdbData.vote_count)
+        );
+      }
 
       // Only use TMDB external_ids as fallback if no IMDb ID from Plex GUID
       if (!imdbId && tmdbData.external_ids?.imdb_id) {
@@ -1078,19 +1091,11 @@ export async function buildRenderContext(
   }
   if (item.lastViewedAt) {
     context.lastPlayed = new Date(item.lastViewedAt * 1000);
-    // Calculate days since last played
-    const daysSinceLastPlayed = Math.floor(
-      (Date.now() - item.lastViewedAt * 1000) / (1000 * 60 * 60 * 24)
-    );
-    context.daysSinceLastPlayed = daysSinceLastPlayed;
+    context.daysSinceLastPlayed = daysSince(item.lastViewedAt);
   }
   if (item.addedAt) {
     context.dateAdded = new Date(item.addedAt * 1000);
-    // Calculate days since added
-    const daysSinceAdded = Math.floor(
-      (Date.now() - item.addedAt * 1000) / (1000 * 60 * 60 * 24)
-    );
-    context.daysSinceAdded = daysSinceAdded;
+    context.daysSinceAdded = daysSince(item.addedAt);
   }
 
   // TV-specific
