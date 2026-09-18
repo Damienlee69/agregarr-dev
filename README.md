@@ -115,6 +115,17 @@ Upstream makes individual API calls per item, per rating source, per cache miss.
 
 Retroactive filter application, self-healing for stuck DB records, direct Plex deletion for stale items, TV episode cleanup, Sonarr folder naming, `.plexmatch` for movies, download status awareness, post-sync hub verification, and TV label cleanup. Detail in the release notes for [v2.3.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.3.0) through [v2.7.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.7.0).
 
+### Running Seerr with placeholders
+
+Seerr reads Plex for availability. A trailer placeholder looks like the real film, so Seerr marks requests for it as available.
+
+[Rubeanie](https://github.com/Rubeanie) maintains a Seerr build that skips files matching a regex. Use image `rubeanie/seerr:ignore-media-regex`. See upstream PR [seerr-team/seerr#2606](https://github.com/seerr-team/seerr/pull/2606).
+
+Under **Settings > General > Ignored Path Patterns**, add:
+
+- Movies: `\{edition-(Trailer|Placeholder|Coming Soon)\}\.mp4$` (the last two are what older Agregarr builds wrote)
+- TV: `Season 00/S00E00\.Trailer\.mp4$`
+
 ### Health checks
 
 Fifteen diagnostic checks run on a schedule and surface results in **Settings > About**. Transient failures get a grace window, checks can be muted individually, and job runs are persisted with per-job detail. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
