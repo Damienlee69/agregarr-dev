@@ -54,9 +54,9 @@ import useSWR from 'swr';
 
 const messages = defineMessages({
   promotionMismatchPromote:
-    'The Sort Title for {name} starts with "!", so Plex will show it in the Promoted section on the next sync even though it is still marked as A-Z here. Promote it, or keep it in A-Z? Keeping it discards the typed Sort Title.',
+    'The Sort Title for {name} starts with "!", so Plex will show it in the Promoted section on the next sync even though it is marked as A-Z here. Promote it, or keep it in A-Z? Keeping it discards the typed Sort Title.',
   promotionMismatchDemote:
-    'The Sort Title for {name} no longer starts with "!", so Plex will show it in the A-Z section on the next sync even though it is still marked as Promoted here. Demote it, or keep it Promoted? Keeping it discards the typed Sort Title.',
+    'The Sort Title for {name} does not start with "!", so Plex will show it in the A-Z section on the next sync even though it is marked as Promoted here. Demote it, or keep it Promoted? Keeping it discards the typed Sort Title.',
   promotionMismatchKeepPromote: 'Keep in A-Z',
   promotionMismatchKeepDemote: 'Keep Promoted',
   promotionMismatchConfirm: 'Yes, {action} it',
