@@ -1671,6 +1671,16 @@ const CollectionSettings = ({
             updatedConfigs = [...localCollectionConfigs, ...createdConfigs];
             setLocalCollectionConfigs(updatedConfigs);
 
+            // A Sort Title typed at creation can disagree with the section
+            // the collection is created into just as easily as one typed
+            // later, and the mismatch is silent either way - the collection
+            // sits in one section here and sorts into the other in Plex.
+            // Only the edit path asked about it, so creating with a non-"!"
+            // Sort Title on a promoted collection said nothing at all.
+            for (const created of createdConfigs) {
+              checkForPromotionMismatch(created);
+            }
+
             const configCount = createdConfigs.length;
             const successMessage =
               configCount === 1
