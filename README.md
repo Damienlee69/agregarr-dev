@@ -126,6 +126,8 @@ Under **Settings > General > Ignored Path Patterns**, add:
 - Movies: `\{edition-(Trailer|Placeholder|Coming Soon)\}\.mp4$` (the last two are what older Agregarr builds wrote)
 - TV: `Season 00/S00E00\.Trailer\.mp4$`
 
+Or let Agregarr do it. On `develop`, the Seerr settings modal has a **Keep placeholder ignore patterns in Seerr** checkbox. Tick it and Agregarr adds those two patterns to Seerr through its API, straight away and again at the start of every collections sync if they go missing. Anything you already added by hand stays; ours go on the end. The Health panel warns when the patterns are missing, and, once the box is ticked, when the connected Seerr build has no such setting.
+
 ### Health checks
 
 Fifteen diagnostic checks run on a schedule and surface results in **Settings > About**. Transient failures get a grace window, checks can be muted individually, and job runs are persisted with per-job detail. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
