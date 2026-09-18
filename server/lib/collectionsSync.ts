@@ -1,6 +1,7 @@
 import PlexAPI from '@server/api/plexapi';
 import collectionSyncProgress from '@server/lib/collections/CollectionSyncProgress';
 import { extractErrorMessage } from '@server/lib/collections/core/CollectionUtilities';
+import { ensureSeerrIgnorePatterns } from '@server/lib/placeholders/seerrIgnorePatterns';
 import posterizarrTriggerJob from '@server/lib/posterizarrTrigger';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -17,6 +18,8 @@ class CollectionsSync {
   public pending = false;
   private cancelled = false;
   private cleanupService = new CollectionCleanupService();
+  private warnedSeerrPatternsUnsupported = false;
+  private warnedSeerrPatternsRejected = false;
 
   // Progress tracking
   private currentStage = '';
@@ -150,6 +153,54 @@ class CollectionsSync {
             label: 'Collections Sync',
             error: error instanceof Error ? error.message : String(error),
           });
+        }
+
+        if (settings.overseerr.keepPlaceholderIgnorePatterns) {
+          try {
+            const result = await ensureSeerrIgnorePatterns(settings.overseerr);
+            if (!result) {
+              logger.warn(
+                'Could not reach Seerr to check placeholder ignore patterns',
+                { label: 'Placeholders' }
+              );
+            } else if (!result.supported) {
+              if (!this.warnedSeerrPatternsUnsupported) {
+                this.warnedSeerrPatternsUnsupported = true;
+                logger.warn(
+                  "Seerr build doesn't support Ignored Path Patterns; placeholders will show as available",
+                  { label: 'Placeholders' }
+                );
+              }
+            } else {
+              if (result.added.length) {
+                logger.info('Added placeholder ignore patterns to Seerr', {
+                  label: 'Placeholders',
+                  added: result.added,
+                });
+              } else {
+                logger.debug(
+                  'Placeholder ignore patterns already present in Seerr',
+                  {
+                    label: 'Placeholders',
+                  }
+                );
+              }
+              if (result.missing.length && !this.warnedSeerrPatternsRejected) {
+                this.warnedSeerrPatternsRejected = true;
+                logger.warn(
+                  `Seerr rejected placeholder ignore pattern(s): ${result.missing.join(
+                    ', '
+                  )}`,
+                  { label: 'Placeholders' }
+                );
+              }
+            }
+          } catch (error) {
+            logger.warn('Failed to sync placeholder ignore patterns to Seerr', {
+              label: 'Placeholders',
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       }
     } catch (error) {

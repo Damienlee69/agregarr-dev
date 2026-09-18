@@ -600,16 +600,55 @@ class OverseerrAPI {
   async getMainSettings(): Promise<{
     applicationUrl?: string;
     applicationTitle?: string;
+    ignoredPathPatterns?: string[];
   } | null> {
     try {
       const response = await this.axios.get('/settings/main');
+      const data: unknown = response.data;
+      if (typeof data !== 'object' || data === null) {
+        throw new Error('Unexpected response from Overseerr /settings/main');
+      }
+      const body = data as Record<string, unknown>;
+      const rawPatterns = body.ignoredPathPatterns;
+      // Reject the whole array on an unrecognised shape rather than filtering
+      // it: a filtered list gets written back by ensure() and would silently
+      // delete non-string entries from the user's Seerr config.
       return {
-        applicationUrl: response.data.applicationUrl,
-        applicationTitle: response.data.applicationTitle,
+        applicationUrl: body.applicationUrl as string | undefined,
+        applicationTitle: body.applicationTitle as string | undefined,
+        ignoredPathPatterns:
+          Array.isArray(rawPatterns) &&
+          rawPatterns.every((p) => typeof p === 'string')
+            ? (rawPatterns as string[])
+            : undefined,
       };
     } catch (error) {
       logger.error(
         `Failed to get main settings from Overseerr: ${error.message}`,
+        {
+          label: 'OverseerrAPI',
+        }
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Replace Seerr's Ignored Path Patterns (fork-only setting). Overwrites the
+   * whole array; caller must merge with existing entries first.
+   */
+  async setIgnoredPathPatterns(patterns: string[]): Promise<string[] | null> {
+    try {
+      const response = await this.axios.post('/settings/main', {
+        ignoredPathPatterns: patterns,
+      });
+      const echoed: unknown = response.data?.ignoredPathPatterns;
+      return Array.isArray(echoed) && echoed.every((p) => typeof p === 'string')
+        ? (echoed as string[])
+        : null;
+    } catch (error) {
+      logger.error(
+        `Failed to set Ignored Path Patterns on Overseerr: ${error.message}`,
         {
           label: 'OverseerrAPI',
         }
