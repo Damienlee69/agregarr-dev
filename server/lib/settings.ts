@@ -554,6 +554,7 @@ export interface OverseerrSettings {
   sonarrProfileId?: number;
   sonarrRootFolder?: string;
   sonarrTags?: number[];
+  keepPlaceholderIgnorePatterns?: boolean; // Keep Agregarr's placeholder regexes in Seerr's Ignored Path Patterns
 }
 
 export interface ServiceUserSettings {

@@ -4437,6 +4437,34 @@ components:
           nullable: true
           example: [1, 2]
           description: 'Default Sonarr tags for TV requests'
+        keepPlaceholderIgnorePatterns:
+          type: boolean
+          nullable: true
+          example: false
+          description: "Keep Agregarr's placeholder regexes in Seerr's Ignored Path Patterns (requires rubeanie/seerr:ignore-media-regex)"
+    SeerrPlaceholderPatternsStatus:
+      type: object
+      properties:
+        configured:
+          type: boolean
+          example: true
+          description: 'Whether Seerr hostname and API key are set'
+        supported:
+          type: boolean
+          example: true
+          description: 'Whether the connected Seerr build exposes ignoredPathPatterns'
+        missing:
+          type: array
+          items:
+            type: string
+          example: []
+          description: "Agregarr placeholder patterns not present in Seerr's list"
+        patterns:
+          type: array
+          items:
+            type: string
+          example: []
+          description: "Seerr's full ignoredPathPatterns list"
     ServiceUserSettings:
       type: object
       properties:
@@ -10748,6 +10776,37 @@ paths:
           description: 'Overseerr API not found at specified URL'
         '500':
           description: 'Connection test failed - Server error or network issue'
+  /overseerr/placeholder-patterns:
+    get:
+      summary: Check Seerr placeholder ignore pattern support
+      description: Probes the configured Seerr instance for Ignored Path Patterns support (rubeanie/seerr:ignore-media-regex). Read-only.
+      tags:
+        - other
+      responses:
+        '200':
+          description: 'Probe result'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeerrPlaceholderPatternsStatus'
+        '502':
+          description: 'Unable to reach Seerr'
+    post:
+      summary: Add placeholder ignore patterns to Seerr
+      description: Adds Agregarr's two placeholder regexes to Seerr's Ignored Path Patterns if missing.
+      tags:
+        - other
+      responses:
+        '200':
+          description: 'Patterns ensured'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeerrPlaceholderPatternsStatus'
+        '400':
+          description: 'Overseerr is not configured'
+        '502':
+          description: 'Unable to reach Seerr'
   /settings/serviceuser:
     get:
       summary: Get service user settings
