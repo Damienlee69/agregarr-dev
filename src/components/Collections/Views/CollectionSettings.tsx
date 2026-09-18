@@ -53,12 +53,13 @@ import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 const messages = defineMessages({
-  promotionMismatch:
-    'The Sort Title for {name} {relation} the promoted section sort title scheme (starts with "!"), so it will display in the {targetSection} section in Plex on the next sync even though it is still marked as {currentSection} here. Would you like to also {action} it in Agregarr to {targetSection}, or keep it in {currentSection}?',
-  promotionMismatchNoLongerMatches: 'no longer matches',
-  promotionMismatchNowMatches: 'now matches',
+  promotionMismatchPromote:
+    'The Sort Title for {name} now matches the promoted section scheme (starts with "!"), so Plex will show it in the Promoted section on the next sync even though it is still marked as A-Z here. Promote it, or clear the Sort Title to keep it in A-Z?',
+  promotionMismatchDemote:
+    'The Sort Title for {name} no longer matches the promoted section scheme (starts with "!"), so Plex will show it in the A-Z section on the next sync even though it is still marked as Promoted here. Demote it, or clear the Sort Title to keep it Promoted?',
+  promotionMismatchKeepPromote: 'Clear Sort Title, keep in A-Z',
+  promotionMismatchKeepDemote: 'Clear Sort Title, keep Promoted',
   promotionMismatchConfirm: 'Yes, {action} it',
-  promotionMismatchKeep: 'Keep in {currentSection}',
   promotionMismatchFailed: 'Failed to update promotion status',
   sortTitleOverrideCleared: 'Failed to clear the Sort Title override',
   collectionConfigSaved: 'Collection configuration saved successfully!',
@@ -426,8 +427,6 @@ const CollectionSettings = ({
     let liveToastId: string | undefined;
 
     const action = isPromoted ? 'demote' : 'promote';
-    const targetSection = isPromoted ? 'A-Z' : 'Promoted';
-    const currentSection = isPromoted ? 'Promoted' : 'A-Z';
 
     // When the typed text is a full "!005_ExactName" rank, replay that
     // rank through the promote call so confirming lands the collection
@@ -451,17 +450,12 @@ const CollectionSettings = ({
     addToast(
       <div>
         <p className="mb-2">
-          {intl.formatMessage(messages.promotionMismatch, {
-            name: updatedConfig.name,
-            relation: intl.formatMessage(
-              isPromoted
-                ? messages.promotionMismatchNoLongerMatches
-                : messages.promotionMismatchNowMatches
-            ),
-            targetSection,
-            currentSection,
-            action,
-          })}
+          {intl.formatMessage(
+            isPromoted
+              ? messages.promotionMismatchDemote
+              : messages.promotionMismatchPromote,
+            { name: updatedConfig.name }
+          )}
         </p>
         <div className="flex gap-2">
           <Button
@@ -498,9 +492,12 @@ const CollectionSettings = ({
               // look like it decided nothing. Clearing returns it to its
               // automatic position, which is what "Keep in A-Z" means.
               try {
+                // The settings routes validate against the full config
+                // schema, so a partial body is rejected - send what came
+                // back from the save with the override cleared.
                 await axios.put(
                   `/api/v1/${endpointBase}/${updatedConfig.id}/settings`,
-                  { sortTitleOverride: '' }
+                  { ...updatedConfig, sortTitleOverride: '' }
                 );
                 revalidate();
                 revalidateAll();
@@ -516,9 +513,11 @@ const CollectionSettings = ({
               if (liveToastId) removeToast(liveToastId);
             }}
           >
-            {intl.formatMessage(messages.promotionMismatchKeep, {
-              currentSection,
-            })}
+            {intl.formatMessage(
+              isPromoted
+                ? messages.promotionMismatchKeepDemote
+                : messages.promotionMismatchKeepPromote
+            )}
           </Button>
         </div>
       </div>,
