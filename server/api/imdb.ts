@@ -1,5 +1,5 @@
-import { ImdbAxiosClient } from '@server/lib/collections/utils/ImdbAxiosClient';
 import logger from '@server/logger';
+import axios from 'axios';
 
 /**
  * IMDb List Item interface
@@ -40,7 +40,6 @@ export enum ImdbTopList {
   POPULAR_MOVIES = 'popularmovies',
   POPULAR_TV = 'populartv',
   MOST_POPULAR_MOVIES = 'mostpopularmovies',
-  MOST_POPULAR_TV = 'mostpopulartv',
 }
 
 /**
@@ -51,11 +50,246 @@ export interface ImdbTop250Result {
   rank?: number; // 1-250 if in top 250
 }
 
+const IMDB_GRAPHQL_URL = 'https://caching.graphql.imdb.com/';
+const IMDB_GRAPHQL_HEADERS = {
+  'Content-Type': 'application/json',
+  'x-imdb-client-name': 'imdb-web-next',
+  'User-Agent': 'Mozilla/5.0',
+};
+
+interface ImdbChartConfig {
+  expectedType: 'movie' | 'tv';
+  graphqlChartType: string;
+}
+
+/**
+ * Chart path -> chartTitles config. Single source of truth for both the Top
+ * 250 ranking cache (getTopList) and the IMDb collection source's predefined
+ * lists. Box office uses a different GraphQL query (see fetchImdbChart) and
+ * has no entry here.
+ */
+const IMDB_CHART_CONFIG: Record<string, ImdbChartConfig> = {
+  '/chart/top/': {
+    expectedType: 'movie',
+    graphqlChartType: 'TOP_RATED_MOVIES',
+  },
+  '/chart/top-english-movies/': {
+    expectedType: 'movie',
+    graphqlChartType: 'TOP_RATED_ENGLISH_MOVIES',
+  },
+  '/chart/toptv/': {
+    expectedType: 'tv',
+    graphqlChartType: 'TOP_RATED_TV_SHOWS',
+  },
+  '/chart/bottom/': {
+    expectedType: 'movie',
+    graphqlChartType: 'LOWEST_RATED_MOVIES',
+  },
+  '/chart/moviemeter/': {
+    expectedType: 'movie',
+    graphqlChartType: 'MOST_POPULAR_MOVIES',
+  },
+  '/chart/tvmeter/': {
+    expectedType: 'tv',
+    graphqlChartType: 'MOST_POPULAR_TV_SHOWS',
+  },
+};
+
+interface ImdbGraphQLEnvelope<T> {
+  data?: T;
+  errors?: { message: string }[];
+}
+
+/**
+ * POST a query to the IMDb GraphQL endpoint and return its `data` payload.
+ * Throws on a GraphQL errors[] response and on a 200/4xx with no usable
+ * `data` (never returns an empty/partial result silently) - shared by every
+ * chart adapter below.
+ */
+async function postImdbGraphQL<T>(
+  query: string,
+  chartName: string
+): Promise<T> {
+  const response = await axios.post<ImdbGraphQLEnvelope<T>>(
+    IMDB_GRAPHQL_URL,
+    { query },
+    {
+      timeout: 15000,
+      headers: IMDB_GRAPHQL_HEADERS,
+      // Surface a GraphQL validation error's message instead of a generic
+      // Axios "Request failed with status code 400".
+      validateStatus: (status) => status < 500,
+    }
+  );
+
+  if (response.data?.errors?.length) {
+    throw new Error(
+      `IMDb GraphQL error fetching ${chartName}: ${response.data.errors
+        .map((e) => e.message)
+        .join('; ')}`
+    );
+  }
+
+  if (!response.data?.data) {
+    throw new Error(
+      `IMDb GraphQL returned no data for ${chartName} (status ${response.status})`
+    );
+  }
+
+  return response.data.data;
+}
+
+interface ChartTitlesData {
+  chartTitles?: {
+    total?: number;
+    edges?: {
+      currentRank?: number;
+      node?: {
+        id?: string;
+        titleText?: { text?: string };
+        releaseYear?: { year?: number } | null;
+      };
+    }[];
+  };
+}
+
+async function fetchChartTitlesViaGraphQL(
+  chartType: string,
+  expectedType: 'movie' | 'tv',
+  limit: number
+): Promise<ImdbListItem[]> {
+  const requestedFirst = Math.min(limit, 250);
+  const query = `query { chartTitles(chart: {chartType: ${chartType}}, first: ${requestedFirst}) { total edges { currentRank node { id titleText { text } releaseYear { year } } } } }`;
+
+  const data = await postImdbGraphQL<ChartTitlesData>(query, chartType);
+  const edges = data.chartTitles?.edges;
+  const total = data.chartTitles?.total;
+
+  if (!edges || edges.length === 0) {
+    throw new Error(`IMDb chart ${chartType} returned no items`);
+  }
+
+  if (typeof total !== 'number') {
+    throw new Error(`IMDb chart ${chartType} response is missing total`);
+  }
+
+  const expectedCount = Math.min(requestedFirst, total);
+  if (edges.length !== expectedCount) {
+    throw new Error(
+      `IMDb chart ${chartType} returned a truncated tail: got ${edges.length} items, expected ${expectedCount} (total=${total})`
+    );
+  }
+
+  const items: ImdbListItem[] = [];
+  for (let index = 0; index < edges.length; index++) {
+    const edge = edges[index];
+    const { id, titleText, releaseYear } = edge.node ?? {};
+    if (!id || !titleText?.text) {
+      throw new Error(
+        `IMDb chart ${chartType} returned an incomplete row at rank ${
+          edge.currentRank ?? 'unknown'
+        }`
+      );
+    }
+    if (edge.currentRank !== index + 1) {
+      throw new Error(
+        `IMDb chart ${chartType} returned an out-of-order or gapped rank: expected ${
+          index + 1
+        }, got ${edge.currentRank ?? 'unknown'}`
+      );
+    }
+    items.push({
+      imdbId: id,
+      title: titleText.text,
+      year: releaseYear?.year ?? undefined,
+      type: expectedType,
+    });
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
+interface BoxOfficeData {
+  boxOfficeWeekendChart?: {
+    entries?: {
+      title?: {
+        id?: string;
+        titleText?: { text?: string };
+        releaseYear?: { year?: number } | null;
+      };
+    }[];
+  };
+}
+
+// The weekend box office chart is inherently a top-10 list; IMDb ignores any
+// higher `limit` and always returns (at most) 10 entries.
+const BOX_OFFICE_CHART_SIZE = 10;
+
+async function fetchBoxOfficeChart(limit: number): Promise<ImdbListItem[]> {
+  const query = `query { boxOfficeWeekendChart(limit: ${Math.min(
+    limit,
+    BOX_OFFICE_CHART_SIZE
+  )}) { entries { title { id titleText { text } releaseYear { year } } } } }`;
+
+  const data = await postImdbGraphQL<BoxOfficeData>(
+    query,
+    'boxOfficeWeekendChart'
+  );
+  const entries = data.boxOfficeWeekendChart?.entries;
+
+  if (!entries || entries.length === 0) {
+    throw new Error('IMDb box office chart returned no items');
+  }
+
+  const items: ImdbListItem[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const { id, titleText, releaseYear } = entries[i].title ?? {};
+    if (!id || !titleText?.text) {
+      throw new Error(
+        `IMDb box office chart returned an incomplete row at position ${i + 1}`
+      );
+    }
+    items.push({
+      imdbId: id,
+      title: titleText.text,
+      year: releaseYear?.year ?? undefined,
+      type: 'movie',
+    });
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
+/**
+ * Fetch an IMDb chart's items by path (e.g. '/chart/top/') via GraphQL.
+ *
+ * Single shared entry point for both the Top 250 ranking cache and the IMDb
+ * collection source's predefined lists.
+ */
+export async function fetchImdbChart(
+  chartPath: string,
+  limit: number
+): Promise<ImdbListItem[]> {
+  if (chartPath === '/chart/boxoffice/') {
+    return fetchBoxOfficeChart(limit);
+  }
+
+  const config = IMDB_CHART_CONFIG[chartPath];
+  if (!config) {
+    throw new Error(
+      `No GraphQL chart mapping for IMDb chart path: ${chartPath}`
+    );
+  }
+
+  return fetchChartTitlesViaGraphQL(
+    config.graphqlChartType,
+    config.expectedType,
+    limit
+  );
+}
+
 /**
  * IMDb API client for fetching lists and popular content
- *
- * Uses the shared ImdbAxiosClient which handles AWS WAF challenges
- * and maintains cookies for reliable access to IMDb.
  */
 class ImdbAPI {
   // Cache for Top 250 lists (refreshed periodically)
@@ -73,52 +307,8 @@ class ImdbAPI {
     limit = 50
   ): Promise<ImdbListItem[]> {
     try {
-      let url: string;
-      let expectedType: 'movie' | 'tv';
-
-      switch (listType) {
-        case ImdbTopList.TOP_250_MOVIES:
-          url = 'https://www.imdb.com/chart/top/';
-          expectedType = 'movie';
-          break;
-        case ImdbTopList.TOP_250_ENGLISH_MOVIES:
-          url = 'https://www.imdb.com/chart/top-english-movies/';
-          expectedType = 'movie';
-          break;
-        case ImdbTopList.TOP_250_TV:
-          url = 'https://www.imdb.com/chart/toptv/';
-          expectedType = 'tv';
-          break;
-        case ImdbTopList.BOTTOM_100:
-          url = 'https://www.imdb.com/chart/bottom/';
-          expectedType = 'movie';
-          break;
-        case ImdbTopList.POPULAR_MOVIES:
-          url = 'https://www.imdb.com/chart/moviemeter/';
-          expectedType = 'movie';
-          break;
-        case ImdbTopList.POPULAR_TV:
-          url = 'https://www.imdb.com/chart/tvmeter/';
-          expectedType = 'tv';
-          break;
-        case ImdbTopList.MOST_POPULAR_MOVIES:
-          url = 'https://www.imdb.com/chart/boxoffice/';
-          expectedType = 'movie';
-          break;
-        case ImdbTopList.MOST_POPULAR_TV:
-          url = 'https://www.imdb.com/chart/tvpopular/';
-          expectedType = 'tv';
-          break;
-        default:
-          throw new Error(`Unknown IMDb top list type: ${listType}`);
-      }
-
-      // Use the shared ImdbAxiosClient with WAF handling
-      const axios = await ImdbAxiosClient.getInstance();
-      const response = await axios.get(url, { timeout: 30000 });
-      const html = response.data as string;
-
-      return this.parseTopListHtml(html, expectedType, limit);
+      const chartPath = ImdbAPI.getChartPath(listType);
+      return await fetchImdbChart(chartPath, limit);
     } catch (error) {
       logger.error(`Failed to fetch IMDb top list ${listType}:`, {
         label: 'IMDb API',
@@ -134,90 +324,24 @@ class ImdbAPI {
     }
   }
 
-  /**
-   * Parse HTML for top lists (Top 250, Popular, etc.)
-   * Uses JSON-LD structured data which IMDb provides for all chart pages.
-   */
-  private parseTopListHtml(
-    html: string,
-    expectedType: 'movie' | 'tv',
-    limit: number
-  ): ImdbListItem[] {
-    const items = this.parseJsonLd(html, expectedType, limit);
-
-    if (items.length > 0) {
-      logger.debug('Parsed IMDb list from JSON-LD', {
-        label: 'IMDb API',
-        itemCount: items.length,
-        expectedType,
-      });
-    } else {
-      logger.warn('No items found in IMDb JSON-LD data', {
-        label: 'IMDb API',
-        expectedType,
-      });
-    }
-
-    return items;
-  }
-
-  /**
-   * Parse JSON-LD structured data from IMDb page
-   * IMDb includes ItemList schema with all items - much more reliable than HTML scraping
-   */
-  private parseJsonLd(
-    html: string,
-    expectedType: 'movie' | 'tv',
-    limit: number
-  ): ImdbListItem[] {
-    try {
-      // Look for ItemList JSON-LD script
-      const jsonLdMatch = html.match(
-        /<script type="application\/ld\+json">(\{"@type":"ItemList"[^<]+)<\/script>/
-      );
-
-      if (!jsonLdMatch) {
-        return [];
-      }
-
-      const data = JSON.parse(jsonLdMatch[1]) as {
-        itemListElement?: {
-          item?: {
-            url?: string;
-            name?: string;
-          };
-        }[];
-      };
-
-      const itemListElement = data.itemListElement || [];
-      const items: ImdbListItem[] = [];
-
-      for (let i = 0; i < Math.min(itemListElement.length, limit); i++) {
-        const listItem = itemListElement[i];
-        const movie = listItem.item;
-
-        if (!movie?.url || !movie?.name) continue;
-
-        // Extract IMDb ID from URL (e.g., https://www.imdb.com/title/tt0111161/)
-        const urlMatch = movie.url.match(/\/title\/(tt\d+)/);
-        if (!urlMatch) continue;
-
-        const imdbId = urlMatch[1];
-
-        items.push({
-          imdbId,
-          title: movie.name,
-          type: expectedType,
-        });
-      }
-
-      return items;
-    } catch (error) {
-      logger.debug('Failed to parse JSON-LD from IMDb page', {
-        label: 'IMDb API',
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return [];
+  private static getChartPath(listType: ImdbTopList): string {
+    switch (listType) {
+      case ImdbTopList.TOP_250_MOVIES:
+        return '/chart/top/';
+      case ImdbTopList.TOP_250_ENGLISH_MOVIES:
+        return '/chart/top-english-movies/';
+      case ImdbTopList.TOP_250_TV:
+        return '/chart/toptv/';
+      case ImdbTopList.BOTTOM_100:
+        return '/chart/bottom/';
+      case ImdbTopList.POPULAR_MOVIES:
+        return '/chart/moviemeter/';
+      case ImdbTopList.POPULAR_TV:
+        return '/chart/tvmeter/';
+      case ImdbTopList.MOST_POPULAR_MOVIES:
+        return '/chart/boxoffice/';
+      default:
+        throw new Error(`Unknown IMDb top list type: ${listType}`);
     }
   }
 
@@ -245,8 +369,6 @@ class ImdbAPI {
         return 'Popular TV Shows';
       case ImdbTopList.MOST_POPULAR_MOVIES:
         return 'Most Popular Movies';
-      case ImdbTopList.MOST_POPULAR_TV:
-        return 'Most Popular TV Shows';
       default:
         return 'IMDb List';
     }
@@ -271,6 +393,9 @@ class ImdbAPI {
         type === 'movie' ? this.top250MoviesCache : this.top250TvCache;
       cache.clear();
 
+      // index + 1 == currentRank here: fetchChartTitlesViaGraphQL rejects any
+      // response with missing rows, out-of-order/gapped ranks, or a truncated
+      // tail (edges.length vs total), so positions never have gaps.
       items.forEach((item, index) => {
         cache.set(item.imdbId, index + 1); // Rank is 1-based
       });
@@ -286,7 +411,8 @@ class ImdbAPI {
         label: 'IMDb API',
         error: error instanceof Error ? error.message : String(error),
       });
-      // Back off on failure to avoid retrying per item (~30s WAF timeout each)
+      // Back off on failure so checkTop250 doesn't refetch on every per-item
+      // lookup during an outage; the still-warm cache keeps serving reads.
       this.top250LastRefresh[type === 'movie' ? 'movies' : 'tv'] =
         Date.now() - this.TOP250_CACHE_TTL + this.TOP250_FAILURE_BACKOFF;
     }

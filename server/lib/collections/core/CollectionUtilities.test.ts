@@ -30,6 +30,7 @@ import {
   capPreviewItemsToMaxItems,
   clearConfigRatingKey,
   combinePreviewMissingItems,
+  extractErrorMessage,
   hasAgregarrLabel,
   isMultiCollectionPattern,
 } from './CollectionUtilities';
@@ -219,5 +220,28 @@ describe('combinePreviewMissingItems', () => {
     expect(combinePreviewMissingItems([a, b], 30)).toEqual([
       { tmdbId: 1, mediaType: 'movie', originalPosition: 5 },
     ]);
+  });
+});
+
+describe('extractErrorMessage', () => {
+  it('returns only the message of a sync error wrapping an axios error', () => {
+    const axiosLike = Object.assign(
+      new Error('Request failed with status code 403'),
+      {
+        request: { socket: { writelen: 0 } },
+        config: { data: Buffer.from('x') },
+      }
+    );
+    const syncError = {
+      type: 'api_error',
+      message:
+        'Failed to fetch IMDb list data: Request failed with status code 403',
+      details: { subtype: 'bottom_100' },
+      originalError: axiosLike,
+    };
+
+    expect(extractErrorMessage(syncError)).toBe(
+      'Failed to fetch IMDb list data: Request failed with status code 403'
+    );
   });
 });

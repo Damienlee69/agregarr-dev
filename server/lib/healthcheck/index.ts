@@ -680,7 +680,7 @@ const timezoneConfigurationCheck: HealthCheck = {
   },
 };
 
-const jobFreshnessCheck: HealthCheck = {
+export const jobFreshnessCheck: HealthCheck = {
   id: 'job-freshness',
   name: 'Job Health',
 
@@ -706,8 +706,26 @@ const jobFreshnessCheck: HealthCheck = {
 
     for (const job of criticalJobs) {
       const runs = getJobRuns(job.id as Parameters<typeof getJobRuns>[0]);
-      if (!runs.length) continue;
-      const last = runs[0];
+      const inProgress = runs.find((r) => r.outcome === 'running');
+
+      if (inProgress) {
+        const runningHours =
+          (Date.now() - new Date(inProgress.startedAt).getTime()) /
+          (1000 * 60 * 60);
+        if (runningHours > job.maxAgeHours) {
+          issues.push(
+            `${job.label}: still running after ${Math.round(runningHours)}h`
+          );
+          continue;
+        }
+      }
+
+      // Skip 'skipped' runs (contention) when hunting for the last real outcome.
+      const last = runs.find(
+        (r) => r.outcome === 'success' || r.outcome === 'error'
+      );
+      if (!last) continue;
+
       if (last.outcome === 'error') {
         const err = last.error ? `: ${last.error.slice(0, 40)}` : '';
         issues.push(`${job.label}: last run failed${err}`);
