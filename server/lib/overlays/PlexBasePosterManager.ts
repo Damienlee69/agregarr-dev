@@ -184,6 +184,7 @@ class PlexBasePosterManager {
         }
       }
     } catch (error) {
+      // Rethrow: a lookup error isn't confirmed absence, so it must not fall back to Plex.
       logger.warn('Failed to fetch TMDB poster URL', {
         label: 'PlexBasePosterManager',
         tmdbId,
@@ -191,8 +192,7 @@ class PlexBasePosterManager {
         language,
         error: error instanceof Error ? error.message : String(error),
       });
-      // Return null to cache the failure (negative caching)
-      return null;
+      throw error;
     }
 
     return posterUrl;
@@ -1123,10 +1123,11 @@ class PlexBasePosterManager {
         metadata.originalPlexPosterUrl
       );
 
+      // The marker alone is definitive; the weaker WebP inference still needs ourOverlayPosterUrl to corroborate it.
       if (
         !isTrackedOriginal &&
-        metadata.ourOverlayPosterUrl &&
-        (hasAgregarrOverlayMarker(posterBuffer) || isWebpBuffer(posterBuffer))
+        (hasAgregarrOverlayMarker(posterBuffer) ||
+          (metadata.ourOverlayPosterUrl && isWebpBuffer(posterBuffer)))
       ) {
         logger.warn(
           'Unrecognised generated poster on an overlaid item - refusing to adopt it as the base',
@@ -1137,9 +1138,7 @@ class PlexBasePosterManager {
           }
         );
 
-        // Written atomically with ourOverlayPosterUrl, so it should always be
-        // present here. Fail loudly rather than fall through to adopting the
-        // overlay if that invariant ever breaks.
+        // Missing here means the tracking write failed - fail loudly instead of adopting the overlay as base.
         const trackedOriginal = metadata.originalPlexPosterUrl;
         if (!trackedOriginal) {
           throw new Error(
@@ -1208,7 +1207,22 @@ class PlexBasePosterManager {
       const resolvedTmdbId = this.resolveTmdbId(tmdbId, item);
 
       if (!resolvedTmdbId) {
-        throw new Error('No TMDB ID found for item');
+        // Defensive: resolveBasePosterSource should already have routed this to 'plex'.
+        logger.warn('No TMDB ID found, falling back to Plex poster', {
+          label: 'PlexBasePosterManager',
+          itemTitle: item.title,
+          ratingKey: item.ratingKey,
+        });
+        return this.getBasePosterForOverlay(
+          plexApi,
+          item,
+          libraryId,
+          libraryName,
+          configuredLibraryType,
+          'plex',
+          metadata,
+          tmdbId
+        );
       }
 
       // Log TMDB fetch details for debugging wrong poster issues
@@ -1234,7 +1248,24 @@ class PlexBasePosterManager {
       );
 
       if (!posterUrl) {
-        throw new Error('No TMDB poster available');
+        // Confirmed absence (TMDB responded, just has no poster) - a lookup error throws above instead.
+        logger.warn('No TMDB poster available, falling back to Plex poster', {
+          label: 'PlexBasePosterManager',
+          itemTitle: item.title,
+          ratingKey: item.ratingKey,
+          tmdbId: resolvedTmdbId,
+          mediaType,
+        });
+        return this.getBasePosterForOverlay(
+          plexApi,
+          item,
+          libraryId,
+          libraryName,
+          configuredLibraryType,
+          'plex',
+          metadata,
+          tmdbId
+        );
       }
 
       // Check if TMDB URL changed (for deduplication)
