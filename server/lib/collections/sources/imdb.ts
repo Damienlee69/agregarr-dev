@@ -1,4 +1,4 @@
-import type { ImdbListItem } from '@server/api/imdb';
+import { fetchImdbChart, type ImdbListItem } from '@server/api/imdb';
 import type PlexAPI from '@server/api/plexapi';
 import TmdbAPI from '@server/api/themoviedb';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
@@ -277,32 +277,14 @@ export class ImdbCollectionSync extends BaseCollectionSync<'imdb'> {
           }
         );
       } else {
-        // Predefined IMDb lists - use the same simple axios approach
+        // Predefined IMDb charts (Top 250, Bottom 100, etc.) via GraphQL
         const mediaType = getCollectionMediaType(config);
-
-        // Using simple axios for predefined IMDb list
-
         const predefinedUrl = this.getPredefinedListUrl(
           config.subtype || '',
           mediaType
         );
-        const axios = await ImdbAxiosClient.getInstance();
 
-        // Fetching predefined IMDb list
-
-        const response = await axios.get(
-          `https://www.imdb.com${predefinedUrl}`,
-          {
-            timeout: 10000,
-          }
-        );
-
-        // Predefined list response received
-
-        // Parse using the same HTML parsing method
-        imdbData = this.parseImdbListHtml(response.data, 9999);
-
-        // Predefined list parsed
+        imdbData = await fetchImdbChart(predefinedUrl, 9999);
       }
 
       // Convert ImdbListItem to ImdbSourceData and resolve TMDB IDs
@@ -558,209 +540,6 @@ export class ImdbCollectionSync extends BaseCollectionSync<'imdb'> {
       });
       return null;
     }
-  }
-
-  /**
-   * Parse IMDb list HTML to extract movie/TV items
-   * Supports both custom lists (HTML parsing) and predefined lists (JSON-LD)
-   */
-  public parseImdbListHtml(html: string, maxItems: number): ImdbListItem[] {
-    const items: ImdbListItem[] = [];
-
-    try {
-      // First, try to parse JSON-LD structured data (used by predefined lists like Top 250)
-      const jsonLdMatch = html.match(
-        /<script type="application\/ld\+json">(.*?)<\/script>/s
-      );
-      if (jsonLdMatch) {
-        try {
-          const jsonData = JSON.parse(jsonLdMatch[1]);
-          if (jsonData['@type'] === 'ItemList' && jsonData.itemListElement) {
-            // Found JSON-LD structured data, parsing
-
-            for (
-              let i = 0;
-              i < Math.min(jsonData.itemListElement.length, maxItems);
-              i++
-            ) {
-              const item = jsonData.itemListElement[i];
-              const movieData = item.item;
-
-              if (movieData && movieData.url) {
-                const imdbIdMatch = movieData.url.match(/\/title\/(tt\d+)/);
-                if (imdbIdMatch) {
-                  // Determine type based on @type or genre
-                  let type: 'movie' | 'tv' = 'movie';
-                  const finalTitle = movieData.name || movieData.alternateName;
-                  let year: number | undefined;
-                  let isEpisode = false;
-                  let episodeInfo:
-                    | {
-                        episodeTitle?: string;
-                        season?: number;
-                        episode?: number;
-                      }
-                    | undefined;
-
-                  if (movieData['@type'] === 'TVEpisode') {
-                    type = 'tv';
-                    isEpisode = true;
-
-                    // Store episode info
-                    episodeInfo = {
-                      episodeTitle: movieData.name || movieData.alternateName,
-                    };
-
-                    // Try to extract season/episode numbers if available
-                    if (movieData.episodeNumber) {
-                      episodeInfo.episode = parseInt(movieData.episodeNumber);
-                    }
-                    if (movieData.seasonNumber) {
-                      episodeInfo.season = parseInt(movieData.seasonNumber);
-                    }
-                  } else if (
-                    movieData['@type'] === 'TVSeries' ||
-                    (movieData.genre &&
-                      movieData.genre.toLowerCase().includes('tv'))
-                  ) {
-                    type = 'tv';
-                  }
-
-                  // Extract year from duration or other metadata if available (for non-episodes)
-                  if (!isEpisode && movieData.datePublished) {
-                    year = parseInt(movieData.datePublished.substring(0, 4));
-                  }
-
-                  items.push({
-                    imdbId: imdbIdMatch[1],
-                    title: finalTitle,
-                    year,
-                    type,
-                    isEpisode,
-                    episodeInfo,
-                  });
-                }
-              }
-            }
-
-            // Parsed items from JSON-LD data
-
-            return items;
-          }
-        } catch (jsonError) {
-          logger.debug(
-            'Failed to parse JSON-LD, falling back to HTML parsing',
-            {
-              label: 'IMDb Collections Debug',
-              error:
-                jsonError instanceof Error
-                  ? jsonError.message
-                  : 'Unknown error',
-            }
-          );
-        }
-      }
-
-      // Fallback to HTML parsing for custom lists
-      logger.debug('Using HTML parsing approach', {
-        label: 'IMDb Collections Debug',
-      });
-
-      let listItemMatches = html.match(
-        /<li[^>]*class="[^"]*ipc-metadata-list-summary-item[^"]*"[^>]*>.*?<\/li>/gs
-      );
-
-      // If the first pattern doesn't work, try alternative patterns
-      if (!listItemMatches) {
-        listItemMatches =
-          html.match(
-            /<div[^>]*class="[^"]*titleColumn[^"]*"[^>]*>.*?<\/div>/gs
-          ) ||
-          html.match(
-            /<div[^>]*class="[^"]*list[^"]*item[^"]*"[^>]*>.*?<\/div>/gs
-          );
-      }
-
-      // If no matches found, return empty array
-      if (!listItemMatches) {
-        logger.warn('No list items found in IMDb HTML', {
-          label: 'IMDb Collections Debug',
-          htmlLength: html.length,
-        });
-        return items;
-      }
-
-      // Process each item found
-      for (let i = 0; i < Math.min(listItemMatches.length, maxItems); i++) {
-        const item = listItemMatches[i];
-
-        // Extract IMDb ID
-        const imdbIdMatch = item.match(/\/title\/(tt\d+)/);
-        if (!imdbIdMatch) continue;
-
-        const imdbId = imdbIdMatch[1];
-
-        // Extract title
-        let title = '';
-        const titleMatch =
-          item.match(
-            /<h3[^>]*class="[^"]*ipc-title__text[^"]*"[^>]*>.*?(\d+\.\s*)?([^<]+)<\/h3>/s
-          ) ||
-          item.match(
-            /<a[^>]*class="[^"]*titleColumn[^"]*"[^>]*>([^<]+)<\/a>/s
-          ) ||
-          item.match(/alt="([^"]+)"/);
-
-        if (titleMatch) {
-          title = (titleMatch[2] || titleMatch[1]).trim();
-        }
-
-        // Extract year
-        let year: number | undefined;
-        const yearMatch = item.match(/\((\d{4})\)/);
-        if (yearMatch) {
-          year = parseInt(yearMatch[1]);
-        }
-
-        // Determine type (movie vs TV show)
-        let type: 'movie' | 'tv' = 'movie'; // Default to movie
-        const lowerItem = item.toLowerCase();
-
-        // Check for TV show indicators
-        if (
-          lowerItem.includes('titletype-tvseries') ||
-          lowerItem.includes('tv series') ||
-          lowerItem.includes('tv-series') ||
-          lowerItem.includes('tvseries') ||
-          lowerItem.includes('episodes') ||
-          lowerItem.includes('seasons')
-        ) {
-          type = 'tv';
-        }
-
-        if (title && imdbId) {
-          items.push({
-            imdbId,
-            title,
-            year,
-            type,
-          });
-        }
-      }
-
-      logger.debug(`Parsed ${items.length} items from IMDb HTML`, {
-        label: 'IMDb Collections Debug',
-        itemCount: items.length,
-        htmlLength: html.length,
-      });
-    } catch (error) {
-      logger.error(`Failed to parse IMDb HTML: ${error}`, {
-        label: 'IMDb Collections Debug',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-
-    return items;
   }
 
   public async mapSourceDataToItems(

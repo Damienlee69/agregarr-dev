@@ -4,6 +4,7 @@ import { User } from '@server/entity/User';
 import {
   capPreviewItemsToMaxItems,
   combinePreviewMissingItems,
+  extractErrorMessage,
   type LibraryItemsCache,
 } from '@server/lib/collections/core/CollectionUtilities';
 import type {
@@ -142,10 +143,7 @@ collectionsPreviewRoutes.post('/', isAuthenticated(), async (req, res) => {
     processPreviewAsync(sessionId, req.body).catch((error) => {
       logger.error('Preview processing failed', {
         label: 'Collections Preview API',
-        error:
-          error instanceof Error
-            ? error.message
-            : JSON.stringify(error) || String(error),
+        error: extractErrorMessage(error),
         stack: error instanceof Error ? error.stack : undefined,
         errorType: typeof error,
         errorConstructor: error?.constructor?.name,
@@ -154,10 +152,7 @@ collectionsPreviewRoutes.post('/', isAuthenticated(), async (req, res) => {
       updatePreviewStatus(sessionId, {
         running: false,
         completed: true,
-        error:
-          error instanceof Error
-            ? error.message
-            : JSON.stringify(error) || 'Unknown error',
+        error: extractErrorMessage(error),
       });
     });
   } catch (error) {

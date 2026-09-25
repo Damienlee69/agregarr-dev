@@ -14,6 +14,19 @@ vi.mock('@server/lib/settings', () => ({
   getTmdbLanguage: async () => 'en',
 }));
 
+// For exercising fetchTmdbPosterUrl's own catch block directly (fork#110
+// rework) - needs the TMDB client itself to reject, not just its wrapper.
+const { mockGetMovieImages, mockGetTvShowImages } = vi.hoisted(() => ({
+  mockGetMovieImages: vi.fn(),
+  mockGetTvShowImages: vi.fn(),
+}));
+vi.mock('@server/api/themoviedb', () => ({
+  default: vi.fn().mockImplementation(function TheMovieDbMock(this: any) {
+    this.getMovieImages = mockGetMovieImages;
+    this.getTvShowImages = mockGetTvShowImages;
+  }),
+}));
+
 import {
   plexBasePosterManager,
   resolveBasePosterSource,
@@ -241,5 +254,179 @@ describe('getBasePosterForOverlay driven by resolveBasePosterSource (fork#110)',
 
     expect(result.posterBuffer.toString()).toBe(recoveredBytes.toString());
     expect(result.sourceUrl).toBe(trackedOriginal);
+  });
+
+  it('falls back to Plex when TMDB has the item but no poster (fork#110)', async () => {
+    const testItem = item({ Guid: [{ id: 'tmdb://456' }] });
+    const posterSource = resolveBasePosterSource(
+      testItem,
+      settingsWith('tmdb')
+    );
+    // The resolver can't know TMDB has no poster until we actually ask it -
+    // that's why the fallback lives inside getBasePosterForOverlay, not here.
+    expect(posterSource).toBe('tmdb');
+
+    const plexUrl = 'https://plex.local/library/metadata/123/thumb/5';
+    const plexApi = plexApiStub(plexUrl);
+
+    const getTmdbPosterUrl = vi
+      .spyOn(plexBasePosterManager as any, 'getTmdbPosterUrl')
+      .mockResolvedValue(undefined);
+
+    vi.spyOn(plexBasePosterManager, 'getStoredBasePoster').mockResolvedValue(
+      Buffer.from('plex-fallback-poster')
+    );
+
+    const result = await plexBasePosterManager.getBasePosterForOverlay(
+      plexApi,
+      testItem,
+      'lib-1',
+      'Shows',
+      'show',
+      posterSource,
+      {}
+    );
+
+    expect(getTmdbPosterUrl).toHaveBeenCalledWith(456, 'show', 'en');
+    expect(result.sourceUrl).toBe(plexUrl);
+    expect(result.posterBuffer.toString()).toBe('plex-fallback-poster');
+  });
+
+  it('falls back to Plex when posterSource is tmdb but no TMDB id resolves', async () => {
+    const testItem = item({ Guid: undefined });
+    const plexUrl = 'https://plex.local/library/metadata/123/thumb/7';
+    const plexApi = plexApiStub(plexUrl);
+
+    vi.spyOn(plexBasePosterManager, 'getStoredBasePoster').mockResolvedValue(
+      Buffer.from('plex-fallback-poster')
+    );
+
+    const result = await plexBasePosterManager.getBasePosterForOverlay(
+      plexApi,
+      testItem,
+      'lib-1',
+      'Shows',
+      'show',
+      'tmdb',
+      {}
+    );
+
+    expect(result.sourceUrl).toBe(plexUrl);
+  });
+
+  it('does not fall back to Plex when the TMDB lookup errors', async () => {
+    const testItem = item({ Guid: [{ id: 'tmdb://789' }] });
+    const posterSource = resolveBasePosterSource(
+      testItem,
+      settingsWith('tmdb')
+    );
+    expect(posterSource).toBe('tmdb');
+
+    const plexApi = plexApiStub('https://plex.local/should-not-be-used');
+    const getCurrentPosterUrl = plexApi.getCurrentPosterUrl as ReturnType<
+      typeof vi.fn
+    >;
+
+    // Real getTmdbPosterUrl/fetchTmdbPosterUrl chain, only the TMDB client
+    // itself is mocked - this is the layer that actually changed. testItem
+    // defaults to type 'show', so the TV branch is what fires.
+    mockGetTvShowImages.mockRejectedValueOnce(
+      new Error('TMDB request timed out')
+    );
+
+    await expect(
+      plexBasePosterManager.getBasePosterForOverlay(
+        plexApi,
+        testItem,
+        'lib-1',
+        'Shows',
+        'show',
+        posterSource,
+        {}
+      )
+    ).rejects.toThrow('TMDB request timed out');
+
+    // No silent fallback: the Plex branch was never entered.
+    expect(getCurrentPosterUrl).not.toHaveBeenCalled();
+  });
+
+  it('fetchTmdbPosterUrl rethrows lookup errors instead of caching them as no poster', async () => {
+    mockGetMovieImages.mockRejectedValueOnce(new Error('401 Unauthorized'));
+
+    await expect(
+      (plexBasePosterManager as any).fetchTmdbPosterUrl(999, 'movie', 'en')
+    ).rejects.toThrow('401 Unauthorized');
+  });
+
+  it('refuses to adopt a marked overlay as the base when tracking is missing', async () => {
+    const testItem = item({ Guid: [{ id: 'tmdb://123' }] });
+    const overlayUrl = 'https://plex.local/library/metadata/123/thumb/9';
+    const plexApi = plexApiStub(overlayUrl);
+
+    vi.spyOn(plexBasePosterManager, 'getStoredBasePoster').mockResolvedValue(
+      null
+    );
+    const storeBasePoster = vi
+      .spyOn(plexBasePosterManager, 'storeBasePoster')
+      .mockResolvedValue('should-not-be-stored.jpg');
+    vi.spyOn(axios, 'get').mockResolvedValue({
+      data: Buffer.from('fake jpeg bytes overlay applied by Agregarr trailer'),
+    });
+
+    // No tracking at all - simulates the upload succeeding while the metadata
+    // write that would have recorded ourOverlayPosterUrl failed.
+    await expect(
+      plexBasePosterManager.getBasePosterForOverlay(
+        plexApi,
+        testItem,
+        'lib-1',
+        'Shows',
+        'show',
+        'plex',
+        {}
+      )
+    ).rejects.toThrow(
+      'it appears to be our own overlay and no original poster is tracked'
+    );
+
+    expect(storeBasePoster).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on cache loss when a fallback item is recorded as tmdb', async () => {
+    // This is the failure-mode this rework accepts on purpose: the caller
+    // records posterSource ('tmdb'), not what getBasePosterForOverlay actually
+    // used. So when the cache is lost and Plex still shows our overlay,
+    // recoverOriginalPlexPoster's `metadata.basePosterSource !== 'plex'` guard
+    // (PlexBasePosterManager.ts ~438) refuses recovery - it fails closed with
+    // a loud error rather than risk compositing the overlay onto itself.
+    const testItem = item({ Guid: [{ id: 'tmdb://456' }] });
+
+    const ourOverlayUrl = 'https://plex.local/library/metadata/123/thumb/999';
+    const plexApi = plexApiStub(ourOverlayUrl);
+
+    vi.spyOn(plexBasePosterManager, 'getStoredBasePoster').mockResolvedValue(
+      null
+    );
+    const axiosGet = vi.spyOn(axios, 'get');
+
+    await expect(
+      plexBasePosterManager.getBasePosterForOverlay(
+        plexApi,
+        testItem,
+        'lib-1',
+        'Shows',
+        'show',
+        'plex', // as if getBasePosterForOverlay had fallen back to plex before
+        {
+          basePosterSource: 'tmdb', // ...but the caller recorded the requested source
+          originalPlexPosterUrl:
+            'http://plex/library/metadata/123/file?url=upload%3A%2F%2Fposters%2Fabc',
+          ourOverlayPosterUrl: ourOverlayUrl,
+        }
+      )
+    ).rejects.toThrow('Cannot use overlaid poster as base');
+
+    // Fails closed before ever attempting the recovery download.
+    expect(axiosGet).not.toHaveBeenCalled();
   });
 });
