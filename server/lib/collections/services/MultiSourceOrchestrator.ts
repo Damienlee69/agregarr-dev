@@ -1920,7 +1920,8 @@ export class MultiSourceOrchestrator {
             );
             await plexClient.updateCollectionContents(
               collectionRatingKey,
-              plexItems
+              plexItems,
+              collectionName
             );
             created = 1;
           } else {
@@ -1943,7 +1944,8 @@ export class MultiSourceOrchestrator {
             );
             const updateResult = await plexClient.updateCollectionContents(
               collectionRatingKey,
-              plexItems
+              plexItems,
+              collectionName
             );
 
             // updateCollectionContents catches 404s internally and returns
@@ -2081,7 +2083,8 @@ export class MultiSourceOrchestrator {
         try {
           await plexClient.arrangeCollectionItemsInOrder(
             collectionRatingKey,
-            plexItems
+            plexItems,
+            collectionName
           );
         } catch (error) {
           logger.warn(

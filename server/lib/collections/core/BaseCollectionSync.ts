@@ -1582,7 +1582,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             // Smart update: add new items, remove old ones
             const updateResult = await plexClient.updateCollectionContents(
               collectionRatingKey,
-              plexItems
+              plexItems,
+              collectionName
             );
 
             // Label items that fell out of the collection as stale
@@ -1685,7 +1686,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         try {
           await plexClient.arrangeCollectionItemsInOrder(
             collectionRatingKey,
-            plexItems
+            plexItems,
+            collectionName
           );
         } catch (error) {
           logger.warn(
