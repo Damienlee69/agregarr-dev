@@ -765,7 +765,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       missingItems,
       config,
       plexClient,
-      autoRequestHandler
+      autoRequestHandler,
+      sourceTmdbIds
     );
   }
 
@@ -788,7 +789,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     missingItems: MissingItem[],
     config: CollectionConfig,
     plexClient: PlexAPI,
-    autoRequestHandler?: () => Promise<void>
+    autoRequestHandler?: () => Promise<void>,
+    sourceTmdbIds?: Set<number>
   ): Promise<CollectionItem[]> {
     if (!missingItems || missingItems.length === 0) {
       return [];
@@ -831,7 +833,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       placeholderItems = await processPlaceholdersForMissingItems(
         filteredItems,
         config,
-        plexClient
+        plexClient,
+        sourceTmdbIds
       );
     }
 

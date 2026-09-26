@@ -1492,6 +1492,8 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
     // fully-failed discovery still gets reported even when zero franchises survive
     // filtering - orphan cleanup being skipped is not the same as no deletions ever
     // happening (placeholder creation for cleanly-discovered franchises still runs).
+    let allFranchiseTmdbIds: Set<number> | undefined;
+
     if (failedCount > 0) {
       // discoverFranchises absorbs per-movie/per-collection TMDB failures, so any
       // union built from franchiseMap may be missing movies from franchises we never
@@ -1503,7 +1505,7 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
         { label: 'TMDB Franchise', configId: config.id, failedCount }
       );
     } else if (validFranchises.size > 0) {
-      const allFranchiseTmdbIds = new Set<number>();
+      allFranchiseTmdbIds = new Set<number>();
       for (const franchiseData of validFranchises.values()) {
         for (const movie of franchiseData.movies) {
           // Placeholders are keyed by the numeric id they had at creation; coerce so
@@ -1545,7 +1547,8 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
           plexClient,
           allCollections,
           processedCollectionKeys,
-          libraryCache
+          libraryCache,
+          allFranchiseTmdbIds
         );
         created += result.created;
         updated += result.updated;
@@ -1808,7 +1811,8 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
     plexClient: PlexAPI,
     allCollections: PlexCollection[],
     processedCollectionKeys?: Set<string>,
-    libraryCache?: LibraryItemsCache
+    libraryCache?: LibraryItemsCache,
+    sourceTmdbIds?: Set<number>
   ): Promise<SyncResult> {
     // Generate collection name using template engine
     const context = this.templateEngine.createFranchiseContext(franchiseData);
@@ -1912,7 +1916,8 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
       plexClient,
       missingItems.length > 0
         ? () => this.handleAutoRequests(missingItems, config)
-        : undefined
+        : undefined,
+      sourceTmdbIds
     );
 
     // Merge Plex items and placeholders in TMDB franchise order

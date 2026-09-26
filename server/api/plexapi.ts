@@ -520,6 +520,33 @@ class PlexAPI {
     };
   }
 
+  public async getAllLibraryContents(id: string): Promise<PlexLibraryItem[]> {
+    let allItems: PlexLibraryItem[] = [];
+    let offset = 0;
+    const pageSize = 500;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.getLibraryContents(id, {
+        offset,
+        size: pageSize,
+      });
+
+      if (response.items.length === 0) {
+        break;
+      }
+
+      allItems = allItems.concat(response.items);
+      offset += response.items.length;
+
+      if (offset >= response.totalSize) {
+        hasMore = false;
+      }
+    }
+
+    return allItems;
+  }
+
   /**
    * Fetch all items of a specific type from a library section.
    * type=4 for episodes, type=3 for seasons, type=2 for shows, type=1 for movies.

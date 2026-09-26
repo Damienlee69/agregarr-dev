@@ -30,7 +30,8 @@ import {
 export async function processPlaceholdersForMissingItems(
   missingItems: MissingItem[],
   config: CollectionConfig,
-  plexClient: PlexAPI
+  plexClient: PlexAPI,
+  sourceTmdbIds?: Set<number>
 ): Promise<CollectionItem[]> {
   if (!isPlaceholderCreationEnabled(config)) {
     return [];
@@ -302,7 +303,8 @@ export async function processPlaceholdersForMissingItems(
     remainingSourceData,
     config,
     plexClient,
-    sonarrFolderNames
+    sonarrFolderNames,
+    sourceTmdbIds
   );
 }
 
@@ -327,6 +329,25 @@ export function isPlaceholderCreationEnabled(
   config: CollectionConfig
 ): boolean {
   return config.createPlaceholdersForMissing === true;
+}
+
+// Adopt if this config's source contains it; otherwise leave for other owners, else delete.
+export function classifyRecordlessPlaceholder({
+  inCreationCandidates,
+  inFullSource,
+  otherPossibleOwners,
+}: {
+  inCreationCandidates: boolean;
+  inFullSource?: boolean;
+  otherPossibleOwners: number;
+}): 'adopt' | 'leave' | 'delete' {
+  if (inCreationCandidates || inFullSource === true) {
+    return 'adopt';
+  }
+  if (otherPossibleOwners > 0 || inFullSource === undefined) {
+    return 'leave';
+  }
+  return 'delete';
 }
 
 /**
@@ -1371,7 +1392,8 @@ async function createPlaceholders(
   sourceData: ComingSoonSourceData[],
   config: CollectionConfig,
   plexClient: PlexAPI,
-  sonarrFolderNames?: Map<number, string>
+  sonarrFolderNames?: Map<number, string>,
+  sourceTmdbIds?: Set<number>
 ): Promise<CollectionItem[]> {
   if (missingItems.length === 0) {
     return [];
@@ -1383,6 +1405,8 @@ async function createPlaceholders(
   });
 
   const sourceMap = new Map(sourceData.map((s) => [s.tmdbId, s]));
+  // Already in the sync's `items` - excluded below to avoid a duplicate ratingKey.
+  const adoptedFromFullSourceOnly = new Set<number>();
 
   // Step 0: Pre-filter items - only create placeholders for items with posters available
   const TmdbAPI = (await import('@server/api/themoviedb')).default;
@@ -1464,7 +1488,7 @@ async function createPlaceholders(
   });
 
   // Get all items in the library
-  const libraryItems = await plexClient.getLibraryContents(config.libraryId);
+  const libraryItems = await plexClient.getAllLibraryContents(config.libraryId);
   const orphanedPlaceholders: {
     sourceItem: ComingSoonSourceData;
     plexItem: { ratingKey: string; title: string };
@@ -1560,7 +1584,7 @@ async function createPlaceholders(
   };
 
   // Check each library item to see if it's an orphaned placeholder
-  for (const item of libraryItems.items) {
+  for (const item of libraryItems) {
     // Check if this is a placeholder using PlaceholderContextService
     const itemExtended = item as {
       type: string;
@@ -1600,15 +1624,6 @@ async function createPlaceholders(
       continue;
     }
 
-    // For TV placeholders, ensure episode title is correct
-    if (itemExtended.type === 'show') {
-      await ensurePlaceholderEpisodeTitle(
-        plexClient,
-        item.ratingKey,
-        item.title
-      );
-    }
-
     // Extract TMDB ID from Plex item
     let tmdbId: number | undefined;
     if (item.Guid && Array.isArray(item.Guid)) {
@@ -1630,33 +1645,69 @@ async function createPlaceholders(
     // Check if it has a database record
     const hasRecord = existingByTmdbId.has(tmdbId);
 
-    if (!hasRecord) {
-      // Check if this placeholder is in our source data
-      const sourceItem = sourceMap.get(tmdbId);
-      if (!sourceItem) {
-        const orphanMediaType: 'movie' | 'tv' =
-          itemExtended.type === 'movie' ? 'movie' : 'tv';
+    // Tracked items are titled at creation.
+    if (itemExtended.type === 'show' && !hasRecord) {
+      await ensurePlaceholderEpisodeTitle(
+        plexClient,
+        item.ratingKey,
+        item.title
+      );
+    }
 
+    if (!hasRecord) {
+      const inCreationCandidates = sourceMap.has(tmdbId);
+      const orphanMediaType: 'movie' | 'tv' =
+        itemExtended.type === 'movie' ? 'movie' : 'tv';
+      const otherPossibleOwners = otherPossibleOwnerCounts[orphanMediaType];
+      const inFullSource = sourceTmdbIds?.has(tmdbId);
+
+      const classification = classifyRecordlessPlaceholder({
+        inCreationCandidates,
+        inFullSource,
+        otherPossibleOwners,
+      });
+
+      if (classification === 'adopt' && !inCreationCandidates) {
+        // Not a creation candidate, but the matcher already counts it as present.
+        sourceMap.set(tmdbId, {
+          tmdbId,
+          mediaType: orphanMediaType,
+          title: item.title,
+          year: item.year,
+          source: sourceData[0].source,
+          monitored: false,
+        });
+        adoptedFromFullSourceOnly.add(tmdbId);
+        logger.info(
+          'Adopting record-less placeholder that already satisfies a source item',
+          {
+            label: 'PlaceholderService',
+            title: item.title,
+            tmdbId,
+            ratingKey: item.ratingKey,
+          }
+        );
+      }
+
+      if (classification === 'leave') {
         // Not in THIS config's source, but another placeholder-enabled
         // config's source may still contain it - deleting here would strand
         // that config's placeholder. Leave it for its owner's sync to adopt.
-        const otherPossibleOwners = otherPossibleOwnerCounts[orphanMediaType];
-        if (otherPossibleOwners > 0) {
-          logger.info(
-            'Found record-less placeholder not in this source - leaving it for other placeholder-enabled configs to adopt',
-            {
-              label: 'PlaceholderService',
-              title: item.title,
-              tmdbId,
-              ratingKey: item.ratingKey,
-              otherPossibleOwners,
-            }
-          );
-          continue;
-        }
+        logger.info(
+          'Found record-less placeholder not in this source - leaving it for other placeholder-enabled configs to adopt',
+          {
+            label: 'PlaceholderService',
+            title: item.title,
+            tmdbId,
+            ratingKey: item.ratingKey,
+            otherPossibleOwners,
+          }
+        );
+        continue;
+      }
 
-        // Orphaned placeholder not in any placeholder-enabled config's
-        // possible ownership - delete it
+      if (classification === 'delete') {
+        // Not in any placeholder-enabled config's possible ownership - delete it
         logger.warn('Found orphaned placeholder - deleting immediately', {
           label: 'PlaceholderService',
           title: item.title,
@@ -2452,6 +2503,9 @@ async function createPlaceholders(
 
   const collectionItems: CollectionItem[] = [];
   for (const [tmdbId, plexItem] of discoveredItemsMap) {
+    if (adoptedFromFullSourceOnly.has(tmdbId)) {
+      continue; // Already in the sync's own `items` - don't duplicate.
+    }
     const sourceItem = sourceMap.get(tmdbId);
     if (sourceItem) {
       collectionItems.push({
