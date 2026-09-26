@@ -4,7 +4,7 @@ import type { MaintainerrCollection } from '@server/api/maintainerr';
 import type { PlexLibraryItem } from '@server/api/plexapi';
 import RottenTomatoes, { type RTRating } from '@server/api/rottentomatoes';
 import type { RadarrMovie } from '@server/api/servarr/radarr';
-import type { SonarrSeries } from '@server/api/servarr/sonarr';
+import type { SonarrSeason, SonarrSeries } from '@server/api/servarr/sonarr';
 import TheMovieDb from '@server/api/themoviedb';
 import type {
   TmdbWatchProviderDetails,
@@ -1668,6 +1668,21 @@ async function applySonarrFirstNextEpisode(
   return resolveSonarrFirstNextEpisode(base, sonarr);
 }
 
+// Sonarr episodeCount = (monitored AND aired) OR hasFile, so this survives unmonitored deletes
+export function calculateMissingEpisodeCount(seasons?: SonarrSeason[]): number {
+  if (!seasons) {
+    return 0;
+  }
+
+  return seasons
+    .filter((season) => season.seasonNumber > 0)
+    .reduce((sum, season) => {
+      const episodeCount = season.statistics?.episodeCount ?? 0;
+      const episodeFileCount = season.statistics?.episodeFileCount ?? 0;
+      return sum + Math.max(0, episodeCount - episodeFileCount);
+    }, 0);
+}
+
 /**
  * Check monitoring status in Radarr/Sonarr
  * Returns whether item exists in *arr and if it's monitored (series-level)
@@ -1687,6 +1702,7 @@ export async function checkMonitoringStatus(
   inSonarr?: boolean;
   isMonitored?: boolean;
   hasFile?: boolean;
+  missingEpisodeCount?: number;
   radarrTags?: string[];
   sonarrTags?: string[];
 }> {
@@ -1862,6 +1878,7 @@ export async function checkMonitoringStatus(
               inSonarr: true,
               isMonitored: series.monitored,
               hasFile,
+              missingEpisodeCount: calculateMissingEpisodeCount(series.seasons),
               sonarrTags: tagNames.length > 0 ? tagNames : undefined,
             };
           }

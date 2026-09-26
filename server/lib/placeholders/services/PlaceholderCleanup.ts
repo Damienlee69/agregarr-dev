@@ -1131,9 +1131,8 @@ async function sweepRecordlessPlaceholder(
 /**
  * Back-fill the `.comingsoon` marker for EVERY DB-tracked placeholder that is
  * missing it on disk. Runs once per sync, iterating the coming_soon_item table
- * directly - deliberately independent of the orphan-adoption scan
- * (`getLibraryContents` returns only the library's first page, so that scan
- * back-fills at most the first ~50 items). A DB record is PROOF of Agregarr
+ * directly - deliberately independent of the orphan-adoption scan.
+ * A DB record is PROOF of Agregarr
  * ownership, so this is additive and non-destructive: `backfillPlaceholderMarker`
  * only ever writes an ABSENT marker beside an existing tracked file (create-only
  * 'wx'), never deletes, never infers ownership from filename tokens, never

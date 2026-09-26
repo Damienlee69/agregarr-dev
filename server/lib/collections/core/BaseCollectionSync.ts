@@ -765,7 +765,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       missingItems,
       config,
       plexClient,
-      autoRequestHandler
+      autoRequestHandler,
+      sourceTmdbIds
     );
   }
 
@@ -788,7 +789,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     missingItems: MissingItem[],
     config: CollectionConfig,
     plexClient: PlexAPI,
-    autoRequestHandler?: () => Promise<void>
+    autoRequestHandler?: () => Promise<void>,
+    sourceTmdbIds?: Set<number>
   ): Promise<CollectionItem[]> {
     if (!missingItems || missingItems.length === 0) {
       return [];
@@ -831,7 +833,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       placeholderItems = await processPlaceholdersForMissingItems(
         filteredItems,
         config,
-        plexClient
+        plexClient,
+        sourceTmdbIds
       );
     }
 
@@ -1582,7 +1585,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             // Smart update: add new items, remove old ones
             const updateResult = await plexClient.updateCollectionContents(
               collectionRatingKey,
-              plexItems
+              plexItems,
+              collectionName
             );
 
             // Label items that fell out of the collection as stale
@@ -1685,7 +1689,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         try {
           await plexClient.arrangeCollectionItemsInOrder(
             collectionRatingKey,
-            plexItems
+            plexItems,
+            collectionName
           );
         } catch (error) {
           logger.warn(

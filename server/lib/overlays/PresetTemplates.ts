@@ -908,6 +908,12 @@ export const PRESET_TEMPLATES: {
               operator: 'eq',
               value: true,
             },
+            {
+              ruleOperator: 'and',
+              field: 'missingEpisodeCount',
+              operator: 'gt',
+              value: 0,
+            },
           ],
         },
         {
@@ -938,6 +944,12 @@ export const PRESET_TEMPLATES: {
               field: 'inSonarr',
               operator: 'eq',
               value: true,
+            },
+            {
+              ruleOperator: 'and',
+              field: 'missingEpisodeCount',
+              operator: 'gt',
+              value: 0,
             },
           ],
         },

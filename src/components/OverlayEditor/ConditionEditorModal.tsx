@@ -85,6 +85,7 @@ const NUMERIC_FIELDS = [
   'daysUntilAction',
   'seasonNumber',
   'episodeNumber',
+  'missingEpisodeCount',
   'width',
   'height',
   'aspectRatio',
