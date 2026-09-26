@@ -298,6 +298,7 @@ export interface OverlayRenderContext {
   inRadarr?: boolean;
   inSonarr?: boolean;
   downloaded?: boolean;
+  missingEpisodeCount?: number; // TV
   radarrTags?: string[]; // Array of Radarr tag names
   sonarrTags?: string[]; // Array of Sonarr tag names
 
@@ -565,6 +566,11 @@ export const AVAILABLE_VARIABLES = {
     { field: 'inRadarr', label: 'In Radarr', example: 'true' },
     { field: 'inSonarr', label: 'In Sonarr', example: 'true' },
     { field: 'downloaded', label: 'Downloaded', example: 'true' },
+    {
+      field: 'missingEpisodeCount',
+      label: 'Missing Episode Count (TV)',
+      example: '3',
+    },
     { field: 'radarrTags', label: 'Radarr Tags', example: 'english-audio' },
     { field: 'sonarrTags', label: 'Sonarr Tags', example: 'german-audio' },
     {
@@ -815,6 +821,11 @@ export const CONDITION_FIELD_CATEGORIES = {
     { field: 'inRadarr', label: 'In Radarr', example: 'true' },
     { field: 'inSonarr', label: 'In Sonarr', example: 'true' },
     { field: 'downloaded', label: 'Downloaded', example: 'true' },
+    {
+      field: 'missingEpisodeCount',
+      label: 'Missing Episode Count (TV)',
+      example: '3',
+    },
     { field: 'radarrTags', label: 'Radarr Tags', example: 'english-audio' },
     { field: 'sonarrTags', label: 'Sonarr Tags', example: 'german-audio' },
     { field: 'plexLabels', label: 'Plex Label', example: '4K DV' },
@@ -1070,6 +1081,7 @@ export const SAMPLE_PREVIEW_CONTEXTS: {
     isMonitored: true,
     inSonarr: true,
     downloaded: true,
+    missingEpisodeCount: 0,
     daysUntilAction: 12,
     streamingProvider: 'Disney Plus',
     streamingProviderId: 337,

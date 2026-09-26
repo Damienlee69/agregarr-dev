@@ -3520,6 +3520,7 @@ class OverlayLibraryService {
           hasFile: context.hasFile,
           isMonitored: context.isMonitored,
           inSonarr: context.inSonarr,
+          missingEpisodeCount: context.missingEpisodeCount,
           daysAgo: context.daysAgo,
           isPlaceholder: context.isPlaceholder,
           // fork#35: the fields behind next-episode/next-season overlays, so a
