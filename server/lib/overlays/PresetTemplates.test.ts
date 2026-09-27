@@ -65,3 +65,35 @@ describe('Audio Codec preset', () => {
     expect(element.properties.mappings).toEqual([]);
   });
 });
+
+describe('Awaiting Download preset', () => {
+  const preset = PRESET_TEMPLATES.find((p) => p.name === 'Awaiting Download');
+
+  it('does not match a TV show whose deleted episodes were just unmonitored', () => {
+    const context = {
+      isPlaceholder: false,
+      mediaType: 'show' as const,
+      daysAgo: 5,
+      downloaded: false,
+      isMonitored: true,
+      inSonarr: true,
+      missingEpisodeCount: 0,
+    };
+    expect(evaluateCondition(preset?.applicationCondition, context)).toBe(
+      false
+    );
+  });
+
+  it('matches a TV show still genuinely awaiting download', () => {
+    const context = {
+      isPlaceholder: false,
+      mediaType: 'show' as const,
+      daysAgo: 5,
+      downloaded: false,
+      isMonitored: true,
+      inSonarr: true,
+      missingEpisodeCount: 3,
+    };
+    expect(evaluateCondition(preset?.applicationCondition, context)).toBe(true);
+  });
+});

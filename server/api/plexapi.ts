@@ -5,6 +5,7 @@ import {
   isPlexNotFoundError,
 } from '@server/api/plexMetadataClassify';
 import type { PlexHubManagementResponse } from '@server/interfaces/api/plexInterfaces';
+import { extractErrorMessage } from '@server/lib/collections/core/CollectionUtilities';
 import PlexHubManager from '@server/lib/collections/plex/PlexHubManager';
 import PlexPosterManager from '@server/lib/collections/plex/PlexPosterManager';
 import PlexSmartCollectionManager from '@server/lib/collections/plex/PlexSmartCollectionManager';
@@ -517,6 +518,33 @@ class PlexAPI {
       totalSize,
       items: response.MediaContainer.Metadata ?? [],
     };
+  }
+
+  public async getAllLibraryContents(id: string): Promise<PlexLibraryItem[]> {
+    let allItems: PlexLibraryItem[] = [];
+    let offset = 0;
+    const pageSize = 500;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.getLibraryContents(id, {
+        offset,
+        size: pageSize,
+      });
+
+      if (response.items.length === 0) {
+        break;
+      }
+
+      allItems = allItems.concat(response.items);
+      offset += response.items.length;
+
+      if (offset >= response.totalSize) {
+        hasMore = false;
+      }
+    }
+
+    return allItems;
   }
 
   /**
@@ -2041,45 +2069,10 @@ class PlexAPI {
     }
   }
 
-  public async moveItemInCollection(
-    collectionRatingKey: string,
-    itemRatingKey: string,
-    afterItemRatingKey: string
-  ): Promise<boolean> {
-    // PROTECTION: Never move items in smart collections - they have their own ordering.
-    // Treat an unknown status (transport failure) the same as smart: refuse.
-    const smartStatus = await this.isSmartCollection(collectionRatingKey);
-    if (smartStatus !== 'not_smart') {
-      logger.debug(
-        `PROTECTION: Attempted to move item in smart collection ${collectionRatingKey}. Skipping move for smart collection.`,
-        {
-          label: 'Plex API',
-          collectionRatingKey,
-          itemRatingKey,
-          smartStatus,
-          protection: 'SMART_COLLECTION_SKIP',
-        }
-      );
-      return false; // Just return false for smart collections, don't throw error
-    }
-
-    try {
-      // Use the exact API endpoint discovered from Python PlexAPI debug output:
-      // PUT /library/collections/{collectionRatingKey}/items/{itemRatingKey}/move?after={afterItemRatingKey}
-      const moveUrl = `/library/collections/${collectionRatingKey}/items/${itemRatingKey}/move?after=${afterItemRatingKey}`;
-
-      await this.safePutQuery(moveUrl);
-      this.recordWrite('arrange');
-      return true;
-    } catch (error) {
-      // Silently fail - this is not critical for functionality
-      return false;
-    }
-  }
-
   public async arrangeCollectionItemsInOrder(
     collectionRatingKey: string,
-    orderedItems: PlexCollectionItem[]
+    orderedItems: PlexCollectionItem[],
+    collectionName?: string
   ): Promise<void> {
     if (orderedItems.length <= 1) {
       return; // No need to arrange single item or empty collections
@@ -2126,34 +2119,25 @@ class PlexAPI {
 
     let moveCount = 0;
     let failCount = 0;
+    const failures: {
+      itemRatingKey: string;
+      afterItemRatingKey?: string;
+      reason: string;
+    }[] = [];
 
     // Selective reordering: Only move items that are out of position
     for (let i = 0; i < desiredOrder.length; i++) {
       if (currentOrder[i] !== desiredOrder[i]) {
         const itemToMove = desiredOrder[i];
+        const afterItemRatingKey = i > 0 ? desiredOrder[i - 1] : undefined;
 
-        let success = false;
-        if (i === 0) {
-          // Special case: position 0 - move without 'after' parameter
-          try {
-            const moveUrl = `/library/collections/${collectionRatingKey}/items/${itemToMove}/move`;
-            await this.safePutQuery(moveUrl);
-            this.recordWrite('arrange');
-            success = true;
-          } catch (error) {
-            success = false;
-          }
-        } else {
-          // Normal case: move after the previous item
-          const afterItem = desiredOrder[i - 1];
-          success = await this.moveItemInCollection(
-            collectionRatingKey,
-            itemToMove,
-            afterItem
-          );
-        }
+        try {
+          const moveUrl = `/library/collections/${collectionRatingKey}/items/${itemToMove}/move${
+            afterItemRatingKey ? `?after=${afterItemRatingKey}` : ''
+          }`;
+          await this.safePutQuery(moveUrl);
+          this.recordWrite('arrange');
 
-        if (success) {
           moveCount++;
           // Update in-memory tracking: remove from old position and insert at new position
           const oldIndex = currentOrder.indexOf(itemToMove);
@@ -2161,8 +2145,15 @@ class PlexAPI {
             currentOrder.splice(oldIndex, 1);
           }
           currentOrder.splice(i, 0, itemToMove);
-        } else {
+        } catch (error) {
           failCount++;
+          if (failures.length < 3) {
+            failures.push({
+              itemRatingKey: itemToMove,
+              afterItemRatingKey,
+              reason: extractErrorMessage(error),
+            });
+          }
         }
       }
     }
@@ -2180,10 +2171,12 @@ class PlexAPI {
     }
 
     if (failCount > 0) {
+      const nameSuffix = collectionName ? ` "${collectionName}"` : '';
       logger.warn(
-        `Failed to arrange ${failCount} items in collection ${collectionRatingKey}`,
+        `Failed to arrange ${failCount} items in collection${nameSuffix} (${collectionRatingKey})`,
         {
           label: 'Plex API',
+          failures,
         }
       );
     }
@@ -2338,7 +2331,8 @@ class PlexAPI {
    */
   public async updateCollectionContents(
     collectionRatingKey: string,
-    desiredItems: PlexCollectionItem[]
+    desiredItems: PlexCollectionItem[],
+    collectionName?: string
   ): Promise<{
     added: number;
     removed: number;
@@ -2417,7 +2411,8 @@ class PlexAPI {
         try {
           await this.arrangeCollectionItemsInOrder(
             collectionRatingKey,
-            desiredItems
+            desiredItems,
+            collectionName
           );
           reordered = true;
         } catch (error) {

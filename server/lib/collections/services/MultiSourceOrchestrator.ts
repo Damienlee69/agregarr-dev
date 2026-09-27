@@ -723,6 +723,15 @@ export class MultiSourceOrchestrator {
       const { items, missingItems } =
         await syncService.applyFilteringToMappedItems(mappedResult, tempConfig);
 
+      const sourceTmdbIds = new Set<number>([
+        ...items
+          .map((item) => item.tmdbId)
+          .filter((id): id is number => typeof id === 'number'),
+        ...(missingItems
+          ?.map((item) => item.tmdbId)
+          .filter((id): id is number => typeof id === 'number') || []),
+      ]);
+
       // Note: Overlays for Coming Soon items are applied by the overlay sync job
       // The collection sync only handles collection membership and placeholder creation
 
@@ -766,7 +775,8 @@ export class MultiSourceOrchestrator {
           const newPlaceholderItems = await processPlaceholdersForMissingItems(
             filteredItems,
             tempConfig,
-            plexClient
+            plexClient,
+            sourceTmdbIds
           );
 
           // Add the newly created placeholders to the items array
@@ -1922,7 +1932,8 @@ export class MultiSourceOrchestrator {
             );
             await plexClient.updateCollectionContents(
               collectionRatingKey,
-              plexItems
+              plexItems,
+              collectionName
             );
             created = 1;
           } else {
@@ -1945,7 +1956,8 @@ export class MultiSourceOrchestrator {
             );
             const updateResult = await plexClient.updateCollectionContents(
               collectionRatingKey,
-              plexItems
+              plexItems,
+              collectionName
             );
 
             // updateCollectionContents catches 404s internally and returns
@@ -2083,7 +2095,8 @@ export class MultiSourceOrchestrator {
         try {
           await plexClient.arrangeCollectionItemsInOrder(
             collectionRatingKey,
-            plexItems
+            plexItems,
+            collectionName
           );
         } catch (error) {
           logger.warn(

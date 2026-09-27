@@ -454,6 +454,7 @@ export interface OverlayRenderContext {
   inSonarr?: boolean;
   hasFile?: boolean; // Whether *arr reports item has files
   downloaded?: boolean; // Derived from hasFile for monitored items, or !isPlaceholder for others
+  missingEpisodeCount?: number; // TV
   radarrTags?: string[]; // Array of Radarr tag names
   sonarrTags?: string[]; // Array of Sonarr tag names
 
