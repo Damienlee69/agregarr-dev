@@ -167,3 +167,45 @@ describe('arrangeCollectionItemsInOrder failure reporting', () => {
     expect(message).toContain('Existing Collection');
   });
 });
+
+describe('arrangeCollectionItemsInOrder duplicate ratingKeys', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('never moves an item after itself and skips when already in order', async () => {
+    const { api, logger } = await setupArrangeApi(['1', '2', '3']);
+    const put = (api as unknown as { safePutQuery: ReturnType<typeof vi.fn> })
+      .safePutQuery;
+
+    await api.arrangeCollectionItemsInOrder('378965', [
+      { ratingKey: '1', title: 'A' },
+      { ratingKey: '2', title: 'B' },
+      { ratingKey: '2', title: 'B again' },
+      { ratingKey: '3', title: 'C' },
+    ]);
+
+    expect(put).not.toHaveBeenCalled();
+    expect(findArrangeWarn(logger)).toBeUndefined();
+  });
+
+  it('reorders with duplicates collapsed and no self-referential move', async () => {
+    const { api } = await setupArrangeApi(['1', '2', '3']);
+    const put = (api as unknown as { safePutQuery: ReturnType<typeof vi.fn> })
+      .safePutQuery;
+
+    await api.arrangeCollectionItemsInOrder('378965', [
+      { ratingKey: '3', title: 'C' },
+      { ratingKey: '3', title: 'C again' },
+      { ratingKey: '1', title: 'A' },
+      { ratingKey: '2', title: 'B' },
+    ]);
+
+    const urls = put.mock.calls.map(([u]: [string]) => u);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) {
+      const m = u.match(/items\/(\d+)\/move\?after=(\d+)/);
+      if (m) expect(m[1]).not.toBe(m[2]);
+    }
+  });
+});

@@ -2097,7 +2097,9 @@ class PlexAPI {
 
     // Fetch current order once
     const currentOrder = await this.getCollectionItems(collectionRatingKey);
-    const desiredOrder = orderedItems.map((item) => item.ratingKey);
+    const desiredOrder = [
+      ...new Set(orderedItems.map((item) => item.ratingKey)),
+    ];
 
     // Early return optimization: Check if already in correct order
     if (
