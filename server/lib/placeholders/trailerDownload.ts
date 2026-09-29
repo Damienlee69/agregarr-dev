@@ -129,7 +129,7 @@ async function copyPlaceholderVideo(outputPath: string): Promise<void> {
 /**
  * Download YouTube video using yt-dlp with duration filtering
  */
-async function downloadWithYtDlp(
+export async function downloadWithYtDlp(
   videoUrl: string,
   outputPath: string,
   maxDuration = 210

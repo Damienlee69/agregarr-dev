@@ -15,9 +15,11 @@ export function getYoutubeCookiesState(
   let content: string;
   try {
     content = fs.readFileSync(cookiesPath, 'utf8');
-  } catch {
-    return 'missing';
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? 'missing'
+      : 'invalid';
   }
-  const firstLine = content.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0];
+  const firstLine = content.split(/\r?\n/, 1)[0];
   return NETSCAPE_HEADER.test(firstLine) ? 'valid' : 'invalid';
 }

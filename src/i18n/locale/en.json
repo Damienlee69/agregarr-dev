@@ -1871,7 +1871,7 @@
   "components.Settings.youtubeCookiesFoundButDisabledMessage": "The {cookiesPath} file is configured, but the \"Skip YouTube Trailer Downloads\" option is enabled. YouTube trailers will not be downloaded even though cookies are available.",
   "components.Settings.youtubeCookiesFoundMessage": "The {cookiesPath} file is configured and will be used for YouTube trailer downloads.",
   "components.Settings.youtubeCookiesInvalid": "YouTube cookies file is not valid",
-  "components.Settings.youtubeCookiesInvalidMessage": "The {cookiesPath} file is empty or not in Netscape cookies format, so it is being ignored. Re-export your cookies and replace the file.",
+  "components.Settings.youtubeCookiesInvalidMessage": "The {cookiesPath} file is empty, unreadable, or not in Netscape cookies format, so it is being ignored. Re-export your cookies and replace the file.",
   "components.Settings.youtubeCookiesNotFound": "YouTube cookies file not found",
   "components.Settings.youtubeCookiesNotFoundMessage": "The {cookiesPath} file was not found in your config directory. Without this file, YouTube trailer downloads may fail due to bot detection.",
   "components.Settings.youtubeSettings": "YouTube Cookie Configuration",

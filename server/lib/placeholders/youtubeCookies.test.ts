@@ -26,6 +26,15 @@ describe('getYoutubeCookiesState', () => {
     expect(getYoutubeCookiesState(write('[{"name":"SID"}]'))).toBe('invalid');
   });
 
+  it.skipIf(process.getuid?.() === 0)(
+    'reports an unreadable file as invalid',
+    () => {
+      const p = write('# Netscape HTTP Cookie File\n');
+      fs.chmodSync(p, 0o000);
+      expect(getYoutubeCookiesState(p)).toBe('invalid');
+    }
+  );
+
   it('accepts both Netscape header spellings', () => {
     expect(
       getYoutubeCookiesState(

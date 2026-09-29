@@ -78,7 +78,7 @@ const messages = defineMessages({
     'The {cookiesPath} file was not found in your config directory. Without this file, YouTube trailer downloads may fail due to bot detection.',
   youtubeCookiesInvalid: 'YouTube cookies file is not valid',
   youtubeCookiesInvalidMessage:
-    'The {cookiesPath} file is empty or not in Netscape cookies format, so it is being ignored. Re-export your cookies and replace the file.',
+    'The {cookiesPath} file is empty, unreadable, or not in Netscape cookies format, so it is being ignored. Re-export your cookies and replace the file.',
   youtubeCookiesFound: 'YouTube cookies file found',
   youtubeCookiesFoundMessage:
     'The {cookiesPath} file is configured and will be used for YouTube trailer downloads.',
