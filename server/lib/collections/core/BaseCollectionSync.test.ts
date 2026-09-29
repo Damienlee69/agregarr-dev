@@ -176,6 +176,41 @@ describe('createOrUpdateCollectionStandardized: filterUnwatched threading', () =
   });
 });
 
+describe('createOrUpdateCollectionStandardized: stale item in a smart collection', () => {
+  it('skips an item whose label apply 404s instead of aborting the sync', async () => {
+    const cfg = config({ showUnwatchedOnly: true });
+    settings.plex.collectionConfigs = [cfg];
+    const plexClient = failAfterCreate('187611');
+    const labelMock = plexClient.addLabelToItem as ReturnType<typeof vi.fn>;
+    (plexClient as unknown as { recordPhaseTime: unknown }).recordPhaseTime =
+      vi.fn();
+    labelMock.mockImplementation(async (key: string) => {
+      if (key === '189997') {
+        throw new Error('response code: 404');
+      }
+    });
+
+    await expect(
+      new TestSync().createOrUpdateCollectionStandardized(
+        [
+          { ratingKey: '189997', title: 'Stale', type: 'movie' },
+          { ratingKey: '197176', title: 'Current', type: 'movie' },
+        ],
+        cfg.name,
+        'movie',
+        cfg,
+        plexClient,
+        []
+      )
+    ).rejects.toThrow('Plex went away mid-create');
+
+    expect(labelMock).toHaveBeenCalledWith(
+      '197176',
+      'agregarr-unwatched-cfg-1'
+    );
+  });
+});
+
 // Mirrors radarr.ts's own processConfiguration catch: wraps a real failure
 // into a CollectionSyncError plain object (not an Error instance) before it
 // reaches processCollections' outer catch, which is where fork#76b's

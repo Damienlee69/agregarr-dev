@@ -1276,7 +1276,18 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
 
       // Label all items (new and existing)
       for (const itemKey of itemRatingKeys) {
-        await plexClient.addLabelToItem(itemKey, labelName);
+        try {
+          await plexClient.addLabelToItem(itemKey, labelName);
+        } catch (error) {
+          logger.warn(
+            `Failed to label item ${itemKey} for smart collection "${collectionName}" (skipping)`,
+            {
+              label: 'Collection Creation',
+              itemRatingKey: itemKey,
+              error: extractErrorMessage(error),
+            }
+          );
+        }
       }
 
       // CLEANUP: Remove labels from items that are no longer in the collection
