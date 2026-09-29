@@ -1279,12 +1279,16 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         try {
           await plexClient.addLabelToItem(itemKey, labelName);
         } catch (error) {
+          const message = extractErrorMessage(error);
+          if (!isPlexNotFoundError(message)) {
+            throw error;
+          }
           logger.warn(
-            `Failed to label item ${itemKey} for smart collection "${collectionName}" (skipping)`,
+            `Item ${itemKey} not found in Plex, skipping label for smart collection "${collectionName}"`,
             {
               label: 'Collection Creation',
               itemRatingKey: itemKey,
-              error: extractErrorMessage(error),
+              error: message,
             }
           );
         }

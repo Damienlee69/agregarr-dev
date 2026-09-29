@@ -211,6 +211,42 @@ describe('createOrUpdateCollectionStandardized: stale item in a smart collection
   });
 });
 
+describe.each([
+  [
+    '503',
+    'Plex Server didnt respond with a valid 2xx status code, response code: 503',
+  ],
+  ['network error without a status', 'connect ECONNREFUSED 127.0.0.1:32400'],
+  [
+    '404-looking ratingKey with another status',
+    'PUT /library/metadata/40412 failed, response code: 500',
+  ],
+])('createOrUpdateCollectionStandardized: label failure (%s)', (_name, msg) => {
+  it('still rejects and cleans nothing up', async () => {
+    const cfg = config({ showUnwatchedOnly: true });
+    settings.plex.collectionConfigs = [cfg];
+    const plexClient = failAfterCreate('187612');
+    (plexClient.addLabelToItem as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error(msg)
+    );
+    (
+      plexClient as unknown as { removeLabelFromItem: unknown }
+    ).removeLabelFromItem = vi.fn();
+    const getLabeled = plexClient.getItemsWithLabel as ReturnType<typeof vi.fn>;
+
+    await expect(run(plexClient, cfg)).rejects.toThrow(msg);
+
+    expect(getLabeled).not.toHaveBeenCalled();
+    expect(
+      (
+        plexClient as unknown as {
+          removeLabelFromItem: ReturnType<typeof vi.fn>;
+        }
+      ).removeLabelFromItem
+    ).not.toHaveBeenCalled();
+  });
+});
+
 // Mirrors radarr.ts's own processConfiguration catch: wraps a real failure
 // into a CollectionSyncError plain object (not an Error instance) before it
 // reaches processCollections' outer catch, which is where fork#76b's
