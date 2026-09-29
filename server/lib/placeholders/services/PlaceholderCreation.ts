@@ -843,7 +843,7 @@ export async function handleUnmatchedPlaceholders(
           path.dirname(placeholderPath)
         );
         const ageMs = marker ? Date.now() - Date.parse(marker.createdAt) : NaN;
-        if (ageMs >= 0 && ageMs < UNMATCHED_GRACE_MS) {
+        if (Math.abs(ageMs) < UNMATCHED_GRACE_MS) {
           logger.info(
             'Placeholder found in Plex but no TMDB guid yet - keeping file on disk, will retry next sync (not deleted)',
             {

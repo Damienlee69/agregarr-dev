@@ -95,10 +95,19 @@ describe('handleUnmatchedPlaceholders guid-less Plex entry', () => {
     expect(excluded.size).toBe(0);
   });
 
-  it('deletes when createdAt is in the future (clock skew)', async () => {
-    mocks.readPlaceholderMarker.mockResolvedValue({ createdAt: hoursAgo(-5) });
+  it('deletes when createdAt is far in the future', async () => {
+    mocks.readPlaceholderMarker.mockResolvedValue({ createdAt: hoursAgo(-25) });
     await run();
     expect(mocks.removePlaceholder).toHaveBeenCalledOnce();
+  });
+
+  it('keeps when createdAt is slightly in the future (clock stepped back)', async () => {
+    mocks.readPlaceholderMarker.mockResolvedValue({
+      createdAt: hoursAgo(-0.1),
+    });
+    await run();
+    expect(mocks.removePlaceholder).not.toHaveBeenCalled();
+    expect(mocks.recordUnmatchedPlaceholder).not.toHaveBeenCalled();
   });
 
   it('finds the real TV marker beside the trailer file', async () => {
