@@ -7,6 +7,7 @@ import { getRepository } from '@server/datasource';
 import { OverlayLibraryConfig } from '@server/entity/OverlayLibraryConfig';
 import { OverlayTemplate } from '@server/entity/OverlayTemplate';
 import { getAdminUser } from '@server/lib/collections/core/CollectionUtilities';
+import { CloudflareSolver } from '@server/lib/collections/utils/CloudflareSolver';
 import { LetterboxdHttpClient } from '@server/lib/collections/utils/LetterboxdHttpClient';
 import { probeSeerrIgnorePatterns } from '@server/lib/placeholders/seerrIgnorePatterns';
 import { getSettings } from '@server/lib/settings';
@@ -41,6 +42,10 @@ export interface HealthStatusResponse {
 }
 
 const CHECK_TIMEOUT_MS = 10_000;
+// Two probe attempts plus margin
+const RETRYING_CHECK_TIMEOUT_MS = 15_000;
+const RATINGS_PROXY_ATTEMPT_MS = 6_000;
+const SOLVER_ATTEMPT_MS = 5_000;
 
 const results = new Map<string, HealthCheckResult>();
 let lastRunAt: string | null = null;
@@ -58,6 +63,30 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
       )
     ),
   ]);
+
+const isTimeoutError = (e: unknown): boolean => {
+  const err = e as {
+    name?: string;
+    code?: string;
+    cause?: { code?: string };
+  };
+  return (
+    err?.name === 'TimeoutError' ||
+    err?.code === 'ECONNABORTED' ||
+    err?.code === 'ETIMEDOUT' ||
+    err?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT'
+  );
+};
+
+// Timeouts only: refused connections and HTTP errors are real failures
+const retryOnTimeout = async <T>(fn: () => Promise<T>): Promise<T> => {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!isTimeoutError(e)) throw e;
+    return fn();
+  }
+};
 
 const sanitize = (msg: string): string => scrubSecrets(msg).slice(0, 200);
 
@@ -192,17 +221,19 @@ const connectionTmdbCheck: HealthCheck = {
   },
 };
 
-const connectionRatingsProxyCheck: HealthCheck = {
+export const connectionRatingsProxyCheck: HealthCheck = {
   id: 'connection:ratings-proxy',
   name: 'Ratings Proxy',
 
   run: async () => {
     try {
-      const res = await fetch('https://api.agregarr.org', {
-        signal: AbortSignal.timeout(5000),
+      const body = await retryOnTimeout(async () => {
+        const res = await fetch('https://api.agregarr.org', {
+          signal: AbortSignal.timeout(RATINGS_PROXY_ATTEMPT_MS),
+        });
+        if (!res.ok) throw new Error(`Ratings proxy returned ${res.status}`);
+        return (await res.json()) as Record<string, unknown>;
       });
-      if (!res.ok) throw new Error(`Ratings proxy returned ${res.status}`);
-      const body = (await res.json()) as Record<string, unknown>;
       if (!body.name) throw new Error('Unexpected response from ratings proxy');
       return { status: 'ok' };
     } catch (err) {
@@ -228,12 +259,22 @@ export const connectionFlareSolverrCheck: HealthCheck = {
     );
     if (!solvers.length) return { status: 'skipped' };
 
-    // Parallel: sequential 5s probes of dead solvers would trip the
-    // 10s runner timeout and lose the per-instance message
+    // Parallel so one dead solver doesn't delay the others' messages
+    let busy = 0;
     const probes = await Promise.allSettled(
-      solvers.map((solver) =>
-        axios.get(solver.url.replace(/\/+$/, ''), { timeout: 5000 })
-      )
+      solvers.map(async (solver) => {
+        try {
+          await retryOnTimeout(() =>
+            axios.get(solver.url.replace(/\/+$/, ''), {
+              timeout: SOLVER_ATTEMPT_MS,
+            })
+          );
+        } catch (e) {
+          // A solver mid-challenge stops answering for ~35s
+          if (isTimeoutError(e) && CloudflareSolver.isSolving()) busy++;
+          else throw e;
+        }
+      })
     );
     const failures: string[] = [];
     probes.forEach((probe, i) => {
@@ -255,7 +296,7 @@ export const connectionFlareSolverrCheck: HealthCheck = {
         status: 'ok',
         message: `${solvers.length}/${solvers.length} solver${
           solvers.length === 1 ? '' : 's'
-        } reachable`,
+        } reachable${busy ? ` (${busy} busy solving a challenge)` : ''}`,
       };
     }
     return {
@@ -801,6 +842,9 @@ export async function runHealthChecks(): Promise<void> {
         const timeout =
           check.id === 'orphaned-collection-keys'
             ? orphanTimeout
+            : check.id === 'connection:ratings-proxy' ||
+              check.id === 'connection:flaresolverr'
+            ? RETRYING_CHECK_TIMEOUT_MS
             : CHECK_TIMEOUT_MS;
         try {
           const result = await withTimeout(check.run(), timeout);

@@ -64,6 +64,10 @@ export class CloudflareSolver {
     return (getSettings().main.cloudflareSolvers ?? []).filter((s) => s?.url);
   }
 
+  static isSolving(): boolean {
+    return this.fetchInProgress.size > 0;
+  }
+
   /**
    * Fetch page content, bypassing Cloudflare.
    * Results are cached for 5 minutes — the same URL is often requested
