@@ -1,6 +1,12 @@
 import type PlexAPI from '@server/api/plexapi';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { getTvPlaceholderFilePath } from './PlaceholderCreation';
+import {
+  getTvPlaceholderFilePath,
+  hasOwnershipMarker,
+} from './PlaceholderCreation';
 
 const FILE = '/plex/tv/Below Deck (2013)/Season 00/S00E00.Trailer.mp4';
 
@@ -82,5 +88,31 @@ describe('getTvPlaceholderFilePath', () => {
     await expect(
       getTvPlaceholderFilePath(plex, '100', 'Below Deck')
     ).resolves.toBe(win);
+  });
+});
+
+describe('hasOwnershipMarker', () => {
+  async function seasonDir(marker?: object) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ph-marker-'));
+    await fs.writeFile(path.join(dir, 'S00E00.Trailer.mp4'), 'x');
+    if (marker) {
+      await fs.writeFile(path.join(dir, '.comingsoon'), JSON.stringify(marker));
+    }
+    return dir;
+  }
+
+  it('accepts a marker with the matching tmdbId', async () => {
+    const dir = await seasonDir({ createdAt: 'x', title: 'Show', tmdbId: 5 });
+    await expect(hasOwnershipMarker(dir, 5)).resolves.toBe(true);
+  });
+
+  it('rejects a trailer-named file with no marker', async () => {
+    const dir = await seasonDir();
+    await expect(hasOwnershipMarker(dir, 5)).resolves.toBe(false);
+  });
+
+  it('rejects a marker belonging to another tmdbId', async () => {
+    const dir = await seasonDir({ createdAt: 'x', title: 'Show', tmdbId: 9 });
+    await expect(hasOwnershipMarker(dir, 5)).resolves.toBe(false);
   });
 });

@@ -308,6 +308,19 @@ export async function processPlaceholdersForMissingItems(
   );
 }
 
+export async function hasOwnershipMarker(
+  dir: string,
+  tmdbId: number
+): Promise<boolean> {
+  const { readPlaceholderMarker } = await import(
+    '@server/lib/placeholders/placeholderManager'
+  );
+  const marker = await readPlaceholderMarker(dir);
+  return (
+    marker !== null && (marker.tmdbId === undefined || marker.tmdbId === tmdbId)
+  );
+}
+
 export async function getTvPlaceholderFilePath(
   plexClient: PlexAPI,
   showRatingKey: string,
@@ -2036,6 +2049,24 @@ async function createPlaceholders(
         const fs = await import('fs/promises');
         try {
           await fs.access(fullPath);
+          if (
+            sourceItem.mediaType === 'tv' &&
+            !(await hasOwnershipMarker(
+              path.dirname(fullPath),
+              sourceItem.tmdbId
+            ))
+          ) {
+            logger.warn(
+              'Not adopting record-less placeholder without an ownership marker',
+              {
+                label: 'PlaceholderService',
+                title: item.title,
+                tmdbId,
+                path: fullPath,
+              }
+            );
+            continue;
+          }
           placeholderPath = relativePath; // Store relative path
 
           logger.debug('Found orphaned placeholder file', {
