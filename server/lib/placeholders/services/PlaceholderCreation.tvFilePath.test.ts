@@ -2,7 +2,7 @@ import type PlexAPI from '@server/api/plexapi';
 import { describe, expect, it, vi } from 'vitest';
 import { getTvPlaceholderFilePath } from './PlaceholderCreation';
 
-const FILE = '/plex/tv/Below Deck (2013)/Season 00/Below Deck - S00E01.mp4';
+const FILE = '/plex/tv/Below Deck (2013)/Season 00/S00E00.Trailer.mp4';
 
 // Shapes probed live: a show's plain metadata has no Children key, seasons and
 // episodes only come back from /children.
@@ -53,5 +53,34 @@ describe('getTvPlaceholderFilePath', () => {
     await expect(
       getTvPlaceholderFilePath(plex, '100', 'Below Deck')
     ).resolves.toBeUndefined();
+  });
+
+  it('rejects a real Season 00 special that is not the trailer file', async () => {
+    const plex = mockPlex({
+      getMetadata: vi.fn(async () => ({
+        Media: [
+          {
+            Part: [
+              {
+                file: '/plex/tv/Show (2020)/Season 00/Show - S00E01 - Pilot Preview.mkv',
+              },
+            ],
+          },
+        ],
+      })),
+    });
+    await expect(
+      getTvPlaceholderFilePath(plex, '100', 'Show')
+    ).resolves.toBeUndefined();
+  });
+
+  it('accepts a Windows-style trailer path', async () => {
+    const win = 'O:\\tv\\Below Deck (2013)\\Season 00\\S00E00.Trailer.mp4';
+    const plex = mockPlex({
+      getMetadata: vi.fn(async () => ({ Media: [{ Part: [{ file: win }] }] })),
+    });
+    await expect(
+      getTvPlaceholderFilePath(plex, '100', 'Below Deck')
+    ).resolves.toBe(win);
   });
 });

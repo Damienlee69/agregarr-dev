@@ -350,6 +350,13 @@ export async function getTvPlaceholderFilePath(
     });
     return undefined;
   }
+  if (filePath.replace(/\\/g, '/').split('/').pop() !== 'S00E00.Trailer.mp4') {
+    logger.warn(
+      'Could not extract file path - Season 00 episode is not a placeholder trailer',
+      { label, title, episodeRatingKey: episodes[0].ratingKey }
+    );
+    return undefined;
+  }
   return filePath;
 }
 
