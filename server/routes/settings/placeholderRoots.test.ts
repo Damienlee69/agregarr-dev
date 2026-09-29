@@ -55,5 +55,10 @@ describe('POST /main placeholder root folders', () => {
     const main = onDisk();
     expect(main.placeholderMovieRootFolders).toEqual({ '3': '/data/movies' });
     expect(main.placeholderTVRootFolders).toEqual({});
+
+    await post({ letterboxdUsePlainHttp: true });
+    const after = onDisk();
+    expect(after.placeholderMovieRootFolders).toEqual({ '3': '/data/movies' });
+    expect(after.placeholderTVRootFolders).toEqual({});
   });
 });
