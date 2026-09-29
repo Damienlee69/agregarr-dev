@@ -35,6 +35,7 @@ vi.mock('@server/lib/settings', () => ({ getSettings: () => settings }));
 import { getRepository } from '@server/datasource';
 import logger from '@server/logger';
 import { BaseCollectionSync } from './BaseCollectionSync';
+import { extractErrorCause } from './CollectionUtilities';
 
 class TestSync extends BaseCollectionSync<'tmdb'> {
   constructor() {
@@ -340,6 +341,52 @@ describe('processCollections: surfaces the real cause instead of [object Object]
       'Failed to process Radarr Tag collection Neon Noir'
     );
     expect(meta?.cause).toBe('Request failed with status code 401');
+  });
+});
+
+describe('processCollections: a failed config reaches the result', () => {
+  it('sets result.error with the cause so callers do not mark the sync green', async () => {
+    settings.plex.collectionConfigs = [config()];
+    const sync = new ThrowingSync(new Error('solver in backoff'));
+
+    const result = await sync.processCollections([config()], {} as PlexAPI, []);
+
+    expect(result.error).toBe(
+      'Failed to process configuration Neon Noir: solver in backoff'
+    );
+    expect(result.created).toBe(0);
+  });
+});
+
+class NestedThrowingSync extends ThrowingSync {
+  protected async processConfiguration(cfg: CollectionConfig): Promise<never> {
+    try {
+      throw this.createSyncError(
+        CollectionSyncErrorType.API_ERROR,
+        'Failed to fetch list: solver in backoff'
+      );
+    } catch (error) {
+      throw this.createSyncError(
+        CollectionSyncErrorType.COLLECTION_ERROR,
+        `Failed to process collection ${cfg.name}`,
+        { configId: cfg.id },
+        extractErrorCause(error)
+      );
+    }
+  }
+}
+
+describe('processCollections: nested sync errors keep their message in result.error', () => {
+  it('does not render [object Object]', async () => {
+    settings.plex.collectionConfigs = [config()];
+    const sync = new NestedThrowingSync(new Error('unused'));
+
+    const result = await sync.processCollections([config()], {} as PlexAPI, []);
+
+    expect(result.error).not.toContain('[object Object]');
+    expect(result.error).toBe(
+      'Failed to process configuration Neon Noir: Failed to fetch list: solver in backoff'
+    );
   });
 });
 

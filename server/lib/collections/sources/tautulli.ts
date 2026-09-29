@@ -2,6 +2,7 @@ import type PlexAPI from '@server/api/plexapi';
 import TautulliAPI from '@server/api/tautulli';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
+  extractErrorCause,
   extractTmdbIdFromGuids,
   extractTvdbIdFromGuids,
   getCollectionMediaType,
@@ -122,7 +123,7 @@ export class TautulliCollectionSync extends BaseCollectionSync<'tautulli'> {
         CollectionSyncErrorType.COLLECTION_ERROR,
         `Failed to process Tautulli collection ${config.name}`,
         { configId: config.id, configName: config.name },
-        error instanceof Error ? error : new Error(String(error))
+        extractErrorCause(error)
       );
     }
   }

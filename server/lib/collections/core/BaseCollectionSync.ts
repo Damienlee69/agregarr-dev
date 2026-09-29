@@ -417,10 +417,16 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         // Processing completed with changes
       }
 
+      const failure = errors[0];
       return {
         created,
         updated,
         mutated: mutated || created > 0,
+        ...(failure && {
+          error: failure.originalError
+            ? `${failure.message}: ${failure.originalError.message}`
+            : failure.message,
+        }),
         ...(warning && { warning }),
         details: {
           processingTime: Date.now() - startTime,

@@ -6,6 +6,7 @@ import type {
 } from '@server/api/themoviedb/interfaces';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
+  extractErrorMessage,
   findPlexItemsByTmdbIds,
   getCollectionMediaType,
   processMissingItemsWithMode,
@@ -898,10 +899,10 @@ export class LetterboxdCollectionSync extends BaseCollectionSync<'letterboxd'> {
         {
           label: 'Letterboxd Collections',
           configName: config.name,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: extractErrorMessage(error),
         }
       );
-      return { created: 0, updated: 0 };
+      throw error;
     }
   }
 
