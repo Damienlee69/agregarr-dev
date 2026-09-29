@@ -960,12 +960,18 @@ export class LetterboxdCollectionSync extends BaseCollectionSync<'letterboxd'> {
       const fullDisplayNameRegex = /data-item-full-display-name="([^"]+)"/;
       const titleRegex = /data-item-name="([^"]+)"/;
 
+      // Lists render their own posters in a -grid ul; the "Cloned from" sidebar uses a different one
+      const grid = html.match(
+        /<ul[^>]*class="[^"]*\bposter-list\b[^"]*-grid[^"]*"[^>]*>([\s\S]*?)<\/ul>/
+      );
+      const listHtml = grid ? grid[1] : html;
+
       let matches: RegExpMatchArray[] = [];
       let patternUsed = 0;
 
       // Try patterns in order until we find matches
       for (let i = 0; i < patterns.length; i++) {
-        matches = [...html.matchAll(patterns[i])];
+        matches = [...listHtml.matchAll(patterns[i])];
         if (matches.length > 0) {
           patternUsed = i + 1;
           logger.debug(
