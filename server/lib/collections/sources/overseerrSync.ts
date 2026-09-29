@@ -68,6 +68,16 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     return config.maxItems && config.maxItems > 0 ? config.maxItems : 9999;
   }
 
+  private limitItems<T extends CollectionItem>(
+    items: T[],
+    config: CollectionConfig
+  ): T[] {
+    const seen = new Set<string>();
+    return items
+      .filter((item) => !seen.has(item.ratingKey) && seen.add(item.ratingKey))
+      .slice(0, this.getMaxItems(config));
+  }
+
   /**
    * Process collections with shared requests data for performance optimization
    * Fetches requests once and shares across all Overseerr collections
@@ -752,7 +762,7 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     }
 
     // Apply maxItems limit
-    const limitedItems = mediaItems.slice(0, this.getMaxItems(config));
+    const limitedItems = this.limitItems(mediaItems, config);
 
     // Process template for global collections
     const collectionName = await this.createGlobalCollectionName(
@@ -803,7 +813,7 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     }
 
     // Apply maxItems limit
-    const limitedItems = mediaItems.slice(0, this.getMaxItems(config));
+    const limitedItems = this.limitItems(mediaItems, config);
 
     const serverOwner = await this.getServerOwnerUser();
     if (!serverOwner) {
@@ -876,11 +886,15 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     }
 
     // Apply maxItems
-    const limitedItems = mediaItems.slice(0, this.getMaxItems(config));
+    const limitedItems = this.limitItems(mediaItems, config);
 
     // Filter missing items for this media type
+    const seenMissing = new Set<number>();
     const userMissingItems = userCollections.missingItems.filter(
-      (item) => item.mediaType === collectionMediaType
+      (item) =>
+        item.mediaType === collectionMediaType &&
+        !seenMissing.has(item.tmdbId) &&
+        seenMissing.add(item.tmdbId)
     );
 
     // Process the collection (simple, direct approach)

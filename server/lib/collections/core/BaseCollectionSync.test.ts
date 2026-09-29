@@ -176,6 +176,82 @@ describe('createOrUpdateCollectionStandardized: filterUnwatched threading', () =
   });
 });
 
+describe('createOrUpdateCollectionStandardized: stale item in a smart collection', () => {
+  it('skips an item whose label apply 404s instead of aborting the sync', async () => {
+    const cfg = config({ showUnwatchedOnly: true });
+    settings.plex.collectionConfigs = [cfg];
+    const plexClient = failAfterCreate('187611');
+    const labelMock = plexClient.addLabelToItem as ReturnType<typeof vi.fn>;
+    (plexClient as unknown as { recordPhaseTime: unknown }).recordPhaseTime =
+      vi.fn();
+    const removeMock = vi.fn();
+    (
+      plexClient as unknown as { removeLabelFromItem: unknown }
+    ).removeLabelFromItem = removeMock;
+    labelMock.mockImplementation(async (key: string) => {
+      if (key === '189997') {
+        throw new Error('response code: 404');
+      }
+    });
+
+    await expect(
+      new TestSync().createOrUpdateCollectionStandardized(
+        [
+          { ratingKey: '189997', title: 'Stale', type: 'movie' },
+          { ratingKey: '197176', title: 'Current', type: 'movie' },
+        ],
+        cfg.name,
+        'movie',
+        cfg,
+        plexClient,
+        []
+      )
+    ).rejects.toThrow('Plex went away mid-create');
+
+    expect(labelMock).toHaveBeenCalledWith(
+      '197176',
+      'agregarr-unwatched-cfg-1'
+    );
+    expect(removeMock).not.toHaveBeenCalledWith('189997', expect.anything());
+  });
+});
+
+describe.each([
+  [
+    '503',
+    'Plex Server didnt respond with a valid 2xx status code, response code: 503',
+  ],
+  ['network error without a status', 'connect ECONNREFUSED 127.0.0.1:32400'],
+  [
+    '404-looking ratingKey with another status',
+    'PUT /library/metadata/40412 failed, response code: 500',
+  ],
+])('createOrUpdateCollectionStandardized: label failure (%s)', (_name, msg) => {
+  it('still rejects and cleans nothing up', async () => {
+    const cfg = config({ showUnwatchedOnly: true });
+    settings.plex.collectionConfigs = [cfg];
+    const plexClient = failAfterCreate('187612');
+    (plexClient.addLabelToItem as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error(msg)
+    );
+    (
+      plexClient as unknown as { removeLabelFromItem: unknown }
+    ).removeLabelFromItem = vi.fn();
+    const getLabeled = plexClient.getItemsWithLabel as ReturnType<typeof vi.fn>;
+
+    await expect(run(plexClient, cfg)).rejects.toThrow(msg);
+
+    expect(getLabeled).not.toHaveBeenCalled();
+    expect(
+      (
+        plexClient as unknown as {
+          removeLabelFromItem: ReturnType<typeof vi.fn>;
+        }
+      ).removeLabelFromItem
+    ).not.toHaveBeenCalled();
+  });
+});
+
 // Mirrors radarr.ts's own processConfiguration catch: wraps a real failure
 // into a CollectionSyncError plain object (not an Error instance) before it
 // reaches processCollections' outer catch, which is where fork#76b's
