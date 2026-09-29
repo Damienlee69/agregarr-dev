@@ -76,6 +76,9 @@ const messages = defineMessages({
   youtubeCookiesNotFound: 'YouTube cookies file not found',
   youtubeCookiesNotFoundMessage:
     'The {cookiesPath} file was not found in your config directory. Without this file, YouTube trailer downloads may fail due to bot detection.',
+  youtubeCookiesInvalid: 'YouTube cookies file is not valid',
+  youtubeCookiesInvalidMessage:
+    'The {cookiesPath} file is empty, unreadable, or not in Netscape cookies format, so it is being ignored. Re-export your cookies and replace the file.',
   youtubeCookiesFound: 'YouTube cookies file found',
   youtubeCookiesFoundMessage:
     'The {cookiesPath} file is configured and will be used for YouTube trailer downloads.',
@@ -310,9 +313,10 @@ const SettingsDownloads = ({ onComplete }: SettingsDownloadsProps) => {
   const { data: dataOverseerr, mutate: revalidateOverseerr } =
     useSWR<OverseerrSettings>('/api/v1/settings/overseerr');
 
-  const { data: youtubeCookiesStatus } = useSWR<{ exists: boolean }>(
-    '/api/v1/settings/youtube-cookies-status'
-  );
+  const { data: youtubeCookiesStatus } = useSWR<{
+    exists: boolean;
+    valid: boolean;
+  }>('/api/v1/settings/youtube-cookies-status');
 
   const deleteServer = async () => {
     if (deleteServerModal.type === 'overseerr') {
@@ -873,7 +877,25 @@ const SettingsDownloads = ({ onComplete }: SettingsDownloadsProps) => {
             </p>
           </Alert>
         )}
-        {youtubeCookiesStatus && youtubeCookiesStatus.exists && (
+        {youtubeCookiesStatus &&
+          youtubeCookiesStatus.exists &&
+          !youtubeCookiesStatus.valid && (
+            <Alert
+              title={intl.formatMessage(messages.youtubeCookiesInvalid)}
+              type="warning"
+            >
+              <p>
+                {intl.formatMessage(messages.youtubeCookiesInvalidMessage, {
+                  cookiesPath: (
+                    <code className="rounded bg-stone-700 px-1 py-0.5 font-mono text-sm">
+                      youtube-cookies.txt
+                    </code>
+                  ),
+                })}
+              </p>
+            </Alert>
+          )}
+        {youtubeCookiesStatus && youtubeCookiesStatus.valid && (
           <div className="mb-4 rounded-md bg-stone-800 p-4 ring-1 ring-stone-600">
             <div className="flex">
               <div className="flex-shrink-0">
