@@ -267,6 +267,20 @@ describe('processCollections: surfaces the real cause instead of [object Object]
   });
 });
 
+describe('processCollections: a failed config reaches the result', () => {
+  it('sets result.error with the cause so callers do not mark the sync green', async () => {
+    settings.plex.collectionConfigs = [config()];
+    const sync = new ThrowingSync(new Error('solver in backoff'));
+
+    const result = await sync.processCollections([config()], {} as PlexAPI, []);
+
+    expect(result.error).toBe(
+      'Failed to process configuration Neon Noir: solver in backoff'
+    );
+    expect(result.created).toBe(0);
+  });
+});
+
 describe('createOrUpdateCollectionStandardized: smart collections never own missing-item rows', () => {
   const repo = { delete: vi.fn(), insert: vi.fn() };
 
