@@ -184,6 +184,10 @@ describe('createOrUpdateCollectionStandardized: stale item in a smart collection
     const labelMock = plexClient.addLabelToItem as ReturnType<typeof vi.fn>;
     (plexClient as unknown as { recordPhaseTime: unknown }).recordPhaseTime =
       vi.fn();
+    const removeMock = vi.fn();
+    (
+      plexClient as unknown as { removeLabelFromItem: unknown }
+    ).removeLabelFromItem = removeMock;
     labelMock.mockImplementation(async (key: string) => {
       if (key === '189997') {
         throw new Error('response code: 404');
@@ -208,6 +212,7 @@ describe('createOrUpdateCollectionStandardized: stale item in a smart collection
       '197176',
       'agregarr-unwatched-cfg-1'
     );
+    expect(removeMock).not.toHaveBeenCalledWith('189997', expect.anything());
   });
 });
 
