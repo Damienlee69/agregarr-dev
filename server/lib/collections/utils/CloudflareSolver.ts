@@ -64,8 +64,31 @@ export class CloudflareSolver {
     return (getSettings().main.cloudflareSolvers ?? []).filter((s) => s?.url);
   }
 
-  static isSolving(): boolean {
-    return this.fetchInProgress.size > 0;
+  private static activeSolves: Map<string, number> = new Map();
+
+  private static normaliseInstance(url: string): string {
+    return url.replace(/\/+$/, '');
+  }
+
+  static isSolving(instanceUrl: string): boolean {
+    return (
+      (this.activeSolves.get(this.normaliseInstance(instanceUrl)) ?? 0) > 0
+    );
+  }
+
+  private static async trackSolve(
+    instance: string,
+    fetch: () => Promise<string>
+  ): Promise<string> {
+    const key = this.normaliseInstance(instance);
+    this.activeSolves.set(key, (this.activeSolves.get(key) ?? 0) + 1);
+    try {
+      return await fetch();
+    } finally {
+      const left = (this.activeSolves.get(key) ?? 1) - 1;
+      if (left > 0) this.activeSolves.set(key, left);
+      else this.activeSolves.delete(key);
+    }
   }
 
   /**
@@ -151,7 +174,7 @@ export class CloudflareSolver {
     }
 
     try {
-      const content = await fetch();
+      const content = await this.trackSolve(instance, fetch);
       if (!isChallengeHtml(content)) {
         this.htmlCache.set(url, { html: content, fetchedAt: Date.now() });
       }

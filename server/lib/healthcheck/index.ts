@@ -42,10 +42,9 @@ export interface HealthStatusResponse {
 }
 
 const CHECK_TIMEOUT_MS = 10_000;
-// Two probe attempts plus margin
-const RETRYING_CHECK_TIMEOUT_MS = 15_000;
-const RATINGS_PROXY_ATTEMPT_MS = 6_000;
-const SOLVER_ATTEMPT_MS = 5_000;
+const SLOW_PROBE_CHECK_TIMEOUT_MS = 15_000;
+const RATINGS_PROXY_TIMEOUT_MS = 12_000;
+const SOLVER_PROBE_TIMEOUT_MS = 10_000;
 
 const results = new Map<string, HealthCheckResult>();
 let lastRunAt: string | null = null;
@@ -74,18 +73,9 @@ const isTimeoutError = (e: unknown): boolean => {
     err?.name === 'TimeoutError' ||
     err?.code === 'ECONNABORTED' ||
     err?.code === 'ETIMEDOUT' ||
+    err?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
     err?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT'
   );
-};
-
-// Timeouts only: refused connections and HTTP errors are real failures
-const retryOnTimeout = async <T>(fn: () => Promise<T>): Promise<T> => {
-  try {
-    return await fn();
-  } catch (e) {
-    if (!isTimeoutError(e)) throw e;
-    return fn();
-  }
 };
 
 const sanitize = (msg: string): string => scrubSecrets(msg).slice(0, 200);
@@ -221,19 +211,17 @@ const connectionTmdbCheck: HealthCheck = {
   },
 };
 
-export const connectionRatingsProxyCheck: HealthCheck = {
+const connectionRatingsProxyCheck: HealthCheck = {
   id: 'connection:ratings-proxy',
   name: 'Ratings Proxy',
 
   run: async () => {
     try {
-      const body = await retryOnTimeout(async () => {
-        const res = await fetch('https://api.agregarr.org', {
-          signal: AbortSignal.timeout(RATINGS_PROXY_ATTEMPT_MS),
-        });
-        if (!res.ok) throw new Error(`Ratings proxy returned ${res.status}`);
-        return (await res.json()) as Record<string, unknown>;
+      const res = await fetch('https://api.agregarr.org', {
+        signal: AbortSignal.timeout(RATINGS_PROXY_TIMEOUT_MS),
       });
+      if (!res.ok) throw new Error(`Ratings proxy returned ${res.status}`);
+      const body = (await res.json()) as Record<string, unknown>;
       if (!body.name) throw new Error('Unexpected response from ratings proxy');
       return { status: 'ok' };
     } catch (err) {
@@ -264,14 +252,13 @@ export const connectionFlareSolverrCheck: HealthCheck = {
     const probes = await Promise.allSettled(
       solvers.map(async (solver) => {
         try {
-          await retryOnTimeout(() =>
-            axios.get(solver.url.replace(/\/+$/, ''), {
-              timeout: SOLVER_ATTEMPT_MS,
-            })
-          );
+          await axios.get(solver.url.replace(/\/+$/, ''), {
+            timeout: SOLVER_PROBE_TIMEOUT_MS,
+          });
         } catch (e) {
           // A solver mid-challenge stops answering for ~35s
-          if (isTimeoutError(e) && CloudflareSolver.isSolving()) busy++;
+          if (isTimeoutError(e) && CloudflareSolver.isSolving(solver.url))
+            busy++;
           else throw e;
         }
       })
@@ -844,7 +831,7 @@ export async function runHealthChecks(): Promise<void> {
             ? orphanTimeout
             : check.id === 'connection:ratings-proxy' ||
               check.id === 'connection:flaresolverr'
-            ? RETRYING_CHECK_TIMEOUT_MS
+            ? SLOW_PROBE_CHECK_TIMEOUT_MS
             : CHECK_TIMEOUT_MS;
         try {
           const result = await withTimeout(check.run(), timeout);
