@@ -308,6 +308,71 @@ export async function processPlaceholdersForMissingItems(
   );
 }
 
+export async function hasOwnershipMarker(
+  dir: string,
+  tmdbId: number
+): Promise<boolean> {
+  const { readPlaceholderMarker } = await import(
+    '@server/lib/placeholders/placeholderManager'
+  );
+  const marker = await readPlaceholderMarker(dir);
+  return (
+    marker !== null && (marker.tmdbId === undefined || marker.tmdbId === tmdbId)
+  );
+}
+
+export async function getTvPlaceholderFilePath(
+  plexClient: PlexAPI,
+  showRatingKey: string,
+  title: string
+): Promise<string | undefined> {
+  const label = 'PlaceholderService';
+
+  const seasons = await plexClient.getChildrenMetadata(showRatingKey);
+  const season00 = seasons.find((s) => s.index === 0);
+  if (!season00) {
+    logger.warn('Could not extract file path - no Season 00 found', {
+      label,
+      title,
+      seasonCount: seasons.length,
+    });
+    return undefined;
+  }
+
+  const episodes = await plexClient.getChildrenMetadata(
+    String(season00.ratingKey)
+  );
+  if (episodes.length === 0) {
+    logger.warn('Could not extract file path - Season 00 has no episodes', {
+      label,
+      title,
+      season00RatingKey: season00.ratingKey,
+    });
+    return undefined;
+  }
+
+  const episodeMetadata = await plexClient.getMetadata(
+    String(episodes[0].ratingKey)
+  );
+  const filePath = episodeMetadata.Media?.[0]?.Part?.[0]?.file;
+  if (!filePath) {
+    logger.warn('Could not extract file path - episode has no Media Part', {
+      label,
+      title,
+      episodeRatingKey: episodes[0].ratingKey,
+    });
+    return undefined;
+  }
+  if (filePath.replace(/\\/g, '/').split('/').pop() !== 'S00E00.Trailer.mp4') {
+    logger.warn(
+      'Could not extract file path - Season 00 episode is not a placeholder trailer',
+      { label, title, episodeRatingKey: episodes[0].ratingKey }
+    );
+    return undefined;
+  }
+  return filePath;
+}
+
 /**
  * Get effective released days from config (with backward compatibility)
  */
@@ -734,12 +799,15 @@ export async function backfillPlaceholderMarker(record: {
   }
 }
 
+// A guid-less Plex entry only counts as a failed match once the placeholder is this old
+const UNMATCHED_GRACE_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Handle unmatched placeholders - search by title and cleanup if truly unmatched
  * This is a fallback for when Plex doesn't match items with TMDB metadata
  * Optimized: Deletes all unmatched files immediately and triggers ONE cleanup scan at the end
  */
-async function handleUnmatchedPlaceholders(
+export async function handleUnmatchedPlaceholders(
   unmatchedItems: ComingSoonSourceData[],
   config: CollectionConfig,
   plexClient: PlexAPI,
@@ -747,7 +815,7 @@ async function handleUnmatchedPlaceholders(
   excludedUnmatched: Set<number>,
   placeholderPathMap: Map<number, string>
 ): Promise<void> {
-  const { removePlaceholder } = await import(
+  const { removePlaceholder, readPlaceholderMarker } = await import(
     '@server/lib/placeholders/placeholderManager'
   );
 
@@ -833,6 +901,24 @@ async function handleUnmatchedPlaceholders(
             title: item.title,
             tmdbId: item.tmdbId,
           });
+          continue;
+        }
+
+        const marker = await readPlaceholderMarker(
+          path.dirname(placeholderPath)
+        );
+        const ageMs = marker ? Date.now() - Date.parse(marker.createdAt) : NaN;
+        if (Math.abs(ageMs) < UNMATCHED_GRACE_MS) {
+          logger.info(
+            'Placeholder found in Plex but no TMDB guid yet - keeping file on disk, will retry next sync (not deleted)',
+            {
+              label: 'PlaceholderService',
+              title: item.title,
+              tmdbId: item.tmdbId,
+              plexTitle: match.title,
+              placeholderPath,
+            }
+          );
           continue;
         }
 
@@ -1912,104 +1998,15 @@ async function createPlaceholders(
             }
           }
         } else {
-          // For TV shows, we need to get an episode from Season 00
-          // Show-level items don't have Media/Part, only episodes do
-          const fullMetadata = await plexClient.getMetadata(item.ratingKey);
-
-          // Get children (seasons) - Plex returns seasons as Directory, not Metadata
-          const seasons =
-            fullMetadata.Children?.Metadata || fullMetadata.Children?.Directory;
-          if (!seasons) {
-            logger.warn(
-              'Could not extract file path - no Children.Metadata or Directory',
-              {
-                label: 'PlaceholderService',
-                title: item.title,
-                ratingKey: item.ratingKey,
-              }
-            );
-            continue;
-          }
-
-          // Find Season 00
-          const season00 = seasons.find(
-            (s: { index?: number }) => s.index === 0
+          const tvFilePath = await getTvPlaceholderFilePath(
+            plexClient,
+            item.ratingKey,
+            item.title
           );
-
-          if (!season00 || !('ratingKey' in season00)) {
-            logger.warn('Could not extract file path - no Season 00 found', {
-              label: 'PlaceholderService',
-              title: item.title,
-              seasonCount: seasons.length,
-            });
+          if (!tvFilePath) {
             continue;
           }
-
-          // Get episodes from Season 00
-          const seasonMetadata = await plexClient.getMetadata(
-            String(season00.ratingKey)
-          );
-
-          const episodes =
-            seasonMetadata.Children?.Metadata ||
-            seasonMetadata.Children?.Directory;
-          if (!episodes || episodes.length === 0) {
-            logger.warn(
-              'Could not extract file path - Season 00 has no episodes',
-              {
-                label: 'PlaceholderService',
-                title: item.title,
-                season00RatingKey: season00.ratingKey,
-              }
-            );
-            continue;
-          }
-
-          const firstEpisode = episodes[0];
-
-          if (!('ratingKey' in firstEpisode)) {
-            logger.warn(
-              'Could not extract file path - episode has no ratingKey',
-              {
-                label: 'PlaceholderService',
-                title: item.title,
-              }
-            );
-            continue;
-          }
-
-          // Get file path from episode
-          const episodeMetadata = await plexClient.getMetadata(
-            String(firstEpisode.ratingKey)
-          );
-
-          if (
-            !episodeMetadata.Media ||
-            !Array.isArray(episodeMetadata.Media) ||
-            episodeMetadata.Media.length === 0
-          ) {
-            logger.warn('Could not extract file path - episode has no Media', {
-              label: 'PlaceholderService',
-              title: item.title,
-              episodeRatingKey: firstEpisode.ratingKey,
-            });
-            continue;
-          }
-
-          const media = episodeMetadata.Media[0];
-          if (
-            !media.Part ||
-            !Array.isArray(media.Part) ||
-            media.Part.length === 0
-          ) {
-            logger.warn('Could not extract file path - media has no Part', {
-              label: 'PlaceholderService',
-              title: item.title,
-            });
-            continue;
-          }
-
-          plexFilePath = media.Part[0].file || '';
+          plexFilePath = tvFilePath;
         }
 
         if (!plexFilePath) {
@@ -2073,6 +2070,24 @@ async function createPlaceholders(
         const fs = await import('fs/promises');
         try {
           await fs.access(fullPath);
+          if (
+            sourceItem.mediaType === 'tv' &&
+            !(await hasOwnershipMarker(
+              path.dirname(fullPath),
+              sourceItem.tmdbId
+            ))
+          ) {
+            logger.warn(
+              'Not adopting record-less placeholder without an ownership marker',
+              {
+                label: 'PlaceholderService',
+                title: item.title,
+                tmdbId,
+                path: fullPath,
+              }
+            );
+            continue;
+          }
           placeholderPath = relativePath; // Store relative path
 
           logger.debug('Found orphaned placeholder file', {

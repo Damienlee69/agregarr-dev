@@ -284,7 +284,7 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: Per-library movie placeholder root folders (libraryKey -> path)
+          description: Per-library movie placeholder root folders (libraryKey -> path). Sending a map replaces it entirely; blank values remove an entry; omit to leave unchanged.
           example:
             '1': /data/media/movies
             '3': /data/media/movies-4k
@@ -292,7 +292,7 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: Per-library TV placeholder root folders (libraryKey -> path)
+          description: Per-library TV placeholder root folders (libraryKey -> path). Sending a map replaces it entirely; blank values remove an entry; omit to leave unchanged.
           example:
             '2': /data/media/tv
             '4': /data/media/anime
@@ -9579,7 +9579,7 @@ paths:
   /settings/youtube-cookies-status:
     get:
       summary: Check YouTube cookies file status
-      description: Checks if the youtube-cookies.txt file exists in the config directory.
+      description: Checks if the youtube-cookies.txt file exists in the config directory and is in Netscape format.
       tags:
         - settings-general
       responses:
@@ -9589,10 +9589,17 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - exists
+                  - valid
                 properties:
                   exists:
                     type: boolean
                     description: Whether the youtube-cookies.txt file exists
+                    example: true
+                  valid:
+                    type: boolean
+                    description: Whether the file starts with a Netscape cookies header yt-dlp accepts
                     example: true
   /settings/reset:
     post:
