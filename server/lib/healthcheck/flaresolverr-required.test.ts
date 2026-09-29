@@ -16,6 +16,7 @@ vi.mock('axios', () => ({
   default: { get: vi.fn(), post: vi.fn() },
 }));
 
+import { CloudflareSolver } from '@server/lib/collections/utils/CloudflareSolver';
 import {
   connectionFlareSolverrCheck,
   flareSolverrRequiredCheck,
@@ -123,5 +124,70 @@ describe('connectionFlareSolverrCheck', () => {
     expect(result.status).toBe('error');
     expect(result.message).toContain('FlareSolverr');
     expect(result.message).toContain('Byparr');
+  });
+
+  const timeoutErr = () =>
+    Object.assign(new Error('timeout of 10000ms exceeded'), {
+      code: 'ECONNABORTED',
+    });
+  const mockPost = vi.mocked(axios.post);
+
+  // Starts a real solve on `instanceUrl` that stays in flight until released
+  const startSolve = (instanceUrl: string, page: string) => {
+    let release!: (err: Error) => void;
+    mockPost.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          release = reject;
+        })
+    );
+    const solve = CloudflareSolver.fetchPage(page).catch(() => undefined);
+    return async () => {
+      release(new Error('solve failed'));
+      await solve;
+    };
+  };
+
+  it('does not retry a timeout', async () => {
+    state.settings = settingsWith([], [solverOne]);
+    mockGet.mockReset();
+    mockGet.mockRejectedValue(timeoutErr());
+    const result = await connectionFlareSolverrCheck.run();
+    expect(result.status).toBe('error');
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports busy, not unreachable, when the probed solver is mid-solve', async () => {
+    state.settings = settingsWith([], [solverOne]);
+    mockGet.mockReset();
+    mockGet.mockRejectedValue(timeoutErr());
+    const finish = startSolve(solverOne.url, 'https://busy-a.example/');
+    const result = await connectionFlareSolverrCheck.run();
+    await finish();
+    expect(result.status).toBe('ok');
+    expect(result.message).toContain('busy');
+  });
+
+  it('a solve on solver A does not mask a dead solver B', async () => {
+    state.settings = settingsWith([], [solverOne, solverTwo]);
+    mockGet.mockReset();
+    mockGet.mockRejectedValue(timeoutErr());
+    const finish = startSolve(solverOne.url + '/', 'https://busy-b.example/');
+    const result = await connectionFlareSolverrCheck.run();
+    await finish();
+    expect(result.status).toBe('warning');
+    expect(result.message).toContain('Byparr');
+    expect(result.message).not.toContain("'FlareSolverr'");
+  });
+
+  it('clears the in-flight entry after a rejected solve', async () => {
+    state.settings = settingsWith([], [solverOne]);
+    const finish = startSolve(solverOne.url, 'https://busy-c.example/');
+    expect(CloudflareSolver.isSolving(solverOne.url)).toBe(true);
+    await finish();
+    expect(CloudflareSolver.isSolving(solverOne.url)).toBe(false);
+    mockGet.mockReset();
+    mockGet.mockRejectedValue(timeoutErr());
+    expect((await connectionFlareSolverrCheck.run()).status).toBe('error');
   });
 });
