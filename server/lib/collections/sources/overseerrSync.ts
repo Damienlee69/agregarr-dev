@@ -1,6 +1,7 @@
 import type PlexAPI from '@server/api/plexapi';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
+  extractErrorCause,
   extractErrorMessage,
   findPlexItemsByTmdbIds,
   getCollectionMediaType,
@@ -311,7 +312,7 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
         CollectionSyncErrorType.COLLECTION_ERROR,
         `Failed to process Overseerr collection ${config.name}`,
         { configId: config.id, configName: config.name },
-        error instanceof Error ? error : new Error(String(error))
+        extractErrorCause(error)
       );
     }
   }
