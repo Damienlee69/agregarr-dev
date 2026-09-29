@@ -662,9 +662,28 @@ const SettingsDownloads = ({ onComplete }: SettingsDownloadsProps) => {
           enableReinitialize
           onSubmit={async (values) => {
             try {
+              const libs = plexSettings?.libraries ?? [];
+              const forLibs = (
+                type: 'movie' | 'show',
+                folders: Record<string, string>
+              ) =>
+                libs.length === 0
+                  ? folders
+                  : Object.fromEntries(
+                      libs
+                        .filter((l) => l.type === type)
+                        .map((l) => [l.key, (folders[l.key] ?? '').trim()])
+                        .filter(([, v]) => v)
+                    );
               await axios.post('/api/v1/settings/main', {
-                placeholderMovieRootFolders: values.placeholderMovieRootFolders,
-                placeholderTVRootFolders: values.placeholderTVRootFolders,
+                placeholderMovieRootFolders: forLibs(
+                  'movie',
+                  values.placeholderMovieRootFolders
+                ),
+                placeholderTVRootFolders: forLibs(
+                  'show',
+                  values.placeholderTVRootFolders
+                ),
               });
 
               addToast(
