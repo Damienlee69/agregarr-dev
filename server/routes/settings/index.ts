@@ -19,6 +19,7 @@ import { getJobRuns, scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import { runHealthChecks } from '@server/lib/healthcheck';
+import { getYoutubeCookiesState } from '@server/lib/placeholders/youtubeCookies';
 // ImageProxy removed - not needed for collections-only app
 // Plex scanner import removed - not needed for collections-only app
 import type {
@@ -1668,12 +1669,13 @@ settingsRoutes.post('/export-debug', (req, res, next) => {
   }
 });
 
-// Check if youtube-cookies.txt file exists
+// Check youtube-cookies.txt: exists, and is a Netscape-format file yt-dlp accepts
 settingsRoutes.get('/youtube-cookies-status', (_req, res) => {
-  const cookiesPath = path.join(process.cwd(), 'config', 'youtube-cookies.txt');
-  const exists = fs.existsSync(cookiesPath);
+  const state = getYoutubeCookiesState();
 
-  res.status(200).json({ exists });
+  res
+    .status(200)
+    .json({ exists: state !== 'missing', valid: state === 'valid' });
 });
 
 export default settingsRoutes;

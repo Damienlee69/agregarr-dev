@@ -9579,7 +9579,7 @@ paths:
   /settings/youtube-cookies-status:
     get:
       summary: Check YouTube cookies file status
-      description: Checks if the youtube-cookies.txt file exists in the config directory.
+      description: Checks if the youtube-cookies.txt file exists in the config directory and is in Netscape format.
       tags:
         - settings-general
       responses:
@@ -9593,6 +9593,10 @@ paths:
                   exists:
                     type: boolean
                     description: Whether the youtube-cookies.txt file exists
+                    example: true
+                  valid:
+                    type: boolean
+                    description: Whether the file starts with a Netscape cookies header yt-dlp accepts
                     example: true
   /settings/reset:
     post:
