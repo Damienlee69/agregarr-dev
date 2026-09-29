@@ -201,11 +201,8 @@ describe('arrangeCollectionItemsInOrder duplicate ratingKeys', () => {
       { ratingKey: '2', title: 'B' },
     ]);
 
-    const urls = put.mock.calls.map(([u]: [string]) => u);
-    expect(urls.length).toBeGreaterThan(0);
-    for (const u of urls) {
-      const m = u.match(/items\/(\d+)\/move\?after=(\d+)/);
-      if (m) expect(m[1]).not.toBe(m[2]);
-    }
+    expect(put.mock.calls.map(([u]: [string]) => u)).toEqual([
+      '/library/collections/378965/items/3/move',
+    ]);
   });
 });
