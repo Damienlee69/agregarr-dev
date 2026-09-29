@@ -734,12 +734,15 @@ export async function backfillPlaceholderMarker(record: {
   }
 }
 
+// A guid-less Plex entry only counts as a failed match once the placeholder is this old
+const UNMATCHED_GRACE_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Handle unmatched placeholders - search by title and cleanup if truly unmatched
  * This is a fallback for when Plex doesn't match items with TMDB metadata
  * Optimized: Deletes all unmatched files immediately and triggers ONE cleanup scan at the end
  */
-async function handleUnmatchedPlaceholders(
+export async function handleUnmatchedPlaceholders(
   unmatchedItems: ComingSoonSourceData[],
   config: CollectionConfig,
   plexClient: PlexAPI,
@@ -747,7 +750,7 @@ async function handleUnmatchedPlaceholders(
   excludedUnmatched: Set<number>,
   placeholderPathMap: Map<number, string>
 ): Promise<void> {
-  const { removePlaceholder } = await import(
+  const { removePlaceholder, readPlaceholderMarker } = await import(
     '@server/lib/placeholders/placeholderManager'
   );
 
@@ -833,6 +836,24 @@ async function handleUnmatchedPlaceholders(
             title: item.title,
             tmdbId: item.tmdbId,
           });
+          continue;
+        }
+
+        const marker = await readPlaceholderMarker(
+          path.dirname(placeholderPath)
+        );
+        const ageMs = marker ? Date.now() - Date.parse(marker.createdAt) : NaN;
+        if (ageMs < UNMATCHED_GRACE_MS) {
+          logger.info(
+            'Placeholder found in Plex but no TMDB guid yet - keeping file on disk, will retry next sync (not deleted)',
+            {
+              label: 'PlaceholderService',
+              title: item.title,
+              tmdbId: item.tmdbId,
+              plexTitle: match.title,
+              placeholderPath,
+            }
+          );
           continue;
         }
 
