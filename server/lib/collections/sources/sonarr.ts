@@ -3,6 +3,7 @@ import SonarrAPI from '@server/api/servarr/sonarr';
 import TheMovieDb from '@server/api/themoviedb';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
+  extractErrorCause,
   findPlexItemsByTmdbIds,
   type LibraryItemsCache,
 } from '@server/lib/collections/core/CollectionUtilities';
@@ -142,7 +143,7 @@ export class SonarrTagCollectionSync extends BaseCollectionSync<'sonarrtag'> {
         CollectionSyncErrorType.COLLECTION_ERROR,
         `Failed to process Sonarr Tag collection ${config.name}`,
         { configId: config.id, configName: config.name },
-        error instanceof Error ? error : new Error(String(error))
+        extractErrorCause(error)
       );
     }
   }

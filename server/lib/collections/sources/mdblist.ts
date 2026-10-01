@@ -6,6 +6,7 @@ import MDBListAPI, {
 import type PlexAPI from '@server/api/plexapi';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
+  extractErrorCause,
   findPlexItemsByTmdbIds,
   getCollectionMediaType,
   processMissingItemsWithMode,
@@ -161,7 +162,7 @@ export class MDBListCollectionSync extends BaseCollectionSync<'mdblist'> {
         CollectionSyncErrorType.COLLECTION_ERROR,
         `Failed to process MDBList collection ${config.name}`,
         { configId: config.id, configName: config.name },
-        error instanceof Error ? error : new Error(String(error))
+        extractErrorCause(error)
       );
     }
   }

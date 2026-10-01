@@ -426,10 +426,16 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         // Processing completed with changes
       }
 
+      const failure = errors[0];
       return {
         created,
         updated,
         mutated: mutated || created > 0,
+        ...(failure && {
+          error: failure.originalError
+            ? `${failure.message}: ${failure.originalError.message}`
+            : failure.message,
+        }),
         ...(warning && { warning }),
         details: {
           processingTime: Date.now() - startTime,
@@ -1285,7 +1291,22 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
 
       // Label all items (new and existing)
       for (const itemKey of itemRatingKeys) {
-        await plexClient.addLabelToItem(itemKey, labelName);
+        try {
+          await plexClient.addLabelToItem(itemKey, labelName);
+        } catch (error) {
+          const message = extractErrorMessage(error);
+          if (!isPlexNotFoundError(message)) {
+            throw error;
+          }
+          logger.warn(
+            `Item ${itemKey} not found in Plex, skipping label for smart collection "${collectionName}"`,
+            {
+              label: 'Collection Creation',
+              itemRatingKey: itemKey,
+              error: message,
+            }
+          );
+        }
       }
 
       // CLEANUP: Remove labels from items that are no longer in the collection

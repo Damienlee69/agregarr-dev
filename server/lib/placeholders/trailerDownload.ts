@@ -1,10 +1,10 @@
 import type { TmdbVideo } from '@server/api/themoviedb/interfaces';
 import logger from '@server/logger';
 import { spawn } from 'child_process';
-import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import type { TrailerDownloadOptions } from './types';
+import { getYoutubeCookiesState, youtubeCookiesPath } from './youtubeCookies';
 
 // Polyfill Intl.ListFormat if not available (needed for @sindresorhus/is in ts-node/CommonJS context)
 // This must be done BEFORE any dynamic imports that might use it
@@ -129,7 +129,7 @@ async function copyPlaceholderVideo(outputPath: string): Promise<void> {
 /**
  * Download YouTube video using yt-dlp with duration filtering
  */
-async function downloadWithYtDlp(
+export async function downloadWithYtDlp(
   videoUrl: string,
   outputPath: string,
   maxDuration = 210
@@ -154,22 +154,19 @@ async function downloadWithYtDlp(
       outputPath,
     ];
 
-    // Auto-detect cookies file in config directory
-    const cookiesPath = path.join(
-      process.cwd(),
-      'config',
-      'youtube-cookies.txt'
-    );
-    try {
-      fs.accessSync(cookiesPath);
+    const cookiesPath = youtubeCookiesPath();
+    const cookiesState = getYoutubeCookiesState(cookiesPath);
+    if (cookiesState === 'valid') {
       args.push('--cookies', cookiesPath);
       logger.debug('Using YouTube cookies for download', {
         label: 'PlaceholderService',
         cookiesPath,
       });
-    } catch {
+    } else {
       logger.debug(
-        'No YouTube cookies file found, proceeding without cookies',
+        cookiesState === 'invalid'
+          ? 'YouTube cookies file is not in Netscape format, proceeding without cookies'
+          : 'No YouTube cookies file found, proceeding without cookies',
         {
           label: 'PlaceholderService',
           expectedPath: cookiesPath,

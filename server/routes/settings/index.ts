@@ -19,6 +19,7 @@ import { getJobRuns, scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import { runHealthChecks } from '@server/lib/healthcheck';
+import { getYoutubeCookiesState } from '@server/lib/placeholders/youtubeCookies';
 // ImageProxy removed - not needed for collections-only app
 // Plex scanner import removed - not needed for collections-only app
 import type {
@@ -42,7 +43,7 @@ import type { Request } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import fs from 'fs';
-import { escapeRegExp, merge, pick, set, sortBy } from 'lodash';
+import { escapeRegExp, merge, pick, pickBy, set, sortBy } from 'lodash';
 import { rescheduleJob } from 'node-schedule';
 import path from 'path';
 import { URL } from 'url';
@@ -98,6 +99,8 @@ settingsRoutes.post('/main', (req, res, next) => {
     watchProviderRegion: rawRegion,
     overlayConcurrency: rawConcurrency,
     cloudflareSolvers: rawSolvers,
+    placeholderMovieRootFolders: rawMovieRoots,
+    placeholderTVRootFolders: rawTVRoots,
     ...mainBody
   } = req.body;
 
@@ -143,6 +146,14 @@ settingsRoutes.post('/main', (req, res, next) => {
   if (solvers) {
     settings.main.cloudflareSolvers = solvers;
   }
+
+  // lodash merge cannot delete keys, so cleared or removed libraries would survive
+  const replaceRoots = (raw: Record<string, string> | undefined) =>
+    raw && pickBy(raw, (v) => v.trim() !== '');
+  const movieRoots = replaceRoots(rawMovieRoots);
+  const tvRoots = replaceRoots(rawTVRoots);
+  if (movieRoots) settings.main.placeholderMovieRootFolders = movieRoots;
+  if (tvRoots) settings.main.placeholderTVRootFolders = tvRoots;
 
   settings.main = merge(settings.main, mainBody);
   settings.save();
@@ -1668,12 +1679,13 @@ settingsRoutes.post('/export-debug', (req, res, next) => {
   }
 });
 
-// Check if youtube-cookies.txt file exists
+// Check youtube-cookies.txt: exists, and is a Netscape-format file yt-dlp accepts
 settingsRoutes.get('/youtube-cookies-status', (_req, res) => {
-  const cookiesPath = path.join(process.cwd(), 'config', 'youtube-cookies.txt');
-  const exists = fs.existsSync(cookiesPath);
+  const state = getYoutubeCookiesState();
 
-  res.status(200).json({ exists });
+  res
+    .status(200)
+    .json({ exists: state !== 'missing', valid: state === 'valid' });
 });
 
 export default settingsRoutes;

@@ -112,7 +112,7 @@ const messages = defineMessages({
   alwaysActive: 'Always Active',
   youtubeCookiesNotConfigured: 'YouTube Cookies Not Configured',
   youtubeCookiesWarningMessage:
-    'The {cookiesPath} file was not found. YouTube trailer downloads for placeholders may fail due to bot detection. Configure YouTube cookies in Settings > Downloads to prevent issues.',
+    'The {cookiesPath} file was not found or is not a valid Netscape-format cookies file. YouTube trailer downloads for placeholders may fail due to bot detection. Configure YouTube cookies in Settings > Downloads to prevent issues.',
   youtubeCookiesConfigured: 'YouTube Cookies Configured',
   youtubeCookiesConfiguredMessage:
     'The {cookiesPath} file is configured and will be used for YouTube trailer downloads.',
@@ -445,9 +445,10 @@ const CollectionFormConfigForm = ({
   }>('/api/v1/settings/trakt');
 
   // Check if youtube-cookies.txt file exists
-  const { data: youtubeCookiesStatus } = useSWR<{ exists: boolean }>(
-    '/api/v1/settings/youtube-cookies-status'
-  );
+  const { data: youtubeCookiesStatus } = useSWR<{
+    exists: boolean;
+    valid: boolean;
+  }>('/api/v1/settings/youtube-cookies-status');
 
   // Fetch Plex users for target user dropdown (server owner + all shared users)
   const { data: plexUsers } = useSWR<
@@ -4366,7 +4367,7 @@ const CollectionFormConfigForm = ({
                                     {typedValues.createPlaceholdersForMissing &&
                                       !settingsData?.skipYoutubeTrailerDownloads &&
                                       youtubeCookiesStatus &&
-                                      !youtubeCookiesStatus.exists && (
+                                      !youtubeCookiesStatus.valid && (
                                         <div className="mt-3 rounded-md bg-yellow-900 bg-opacity-30 p-3 ring-1 ring-yellow-600">
                                           <div className="flex">
                                             <div className="flex-shrink-0">
@@ -4424,7 +4425,7 @@ const CollectionFormConfigForm = ({
                                     {typedValues.createPlaceholdersForMissing &&
                                       !settingsData?.skipYoutubeTrailerDownloads &&
                                       youtubeCookiesStatus &&
-                                      youtubeCookiesStatus.exists && (
+                                      youtubeCookiesStatus.valid && (
                                         <div className="mt-3 rounded-md bg-stone-800 p-3 ring-1 ring-stone-600">
                                           <div className="flex">
                                             <div className="flex-shrink-0">

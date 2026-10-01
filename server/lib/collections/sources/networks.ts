@@ -4,6 +4,7 @@ import type PlexAPI from '@server/api/plexapi';
 import TmdbAPI from '@server/api/themoviedb';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
+  extractErrorCause,
   findPlexItemsByTmdbIds,
   getCollectionMediaType,
   processMissingItemsWithMode,
@@ -151,7 +152,7 @@ export class NetworksCollectionSync extends BaseCollectionSync<'networks'> {
         CollectionSyncErrorType.COLLECTION_ERROR,
         `Failed to process Networks collection ${config.name}`,
         { configId: config.id, configName: config.name },
-        error instanceof Error ? error : new Error(String(error))
+        extractErrorCause(error)
       );
     }
   }

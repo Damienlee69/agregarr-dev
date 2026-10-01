@@ -4,6 +4,7 @@ import { ComingSoonItem } from '@server/entity/ComingSoonItem';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
   applyCollectionExclusions,
+  extractErrorCause,
   findPlexItemsByTmdbIds,
   getCollectionMediaType,
   type LibraryItemsCache,
@@ -284,7 +285,7 @@ export class ComingSoonCollectionSync extends BaseCollectionSync<'comingsoon'> {
         CollectionSyncErrorType.COLLECTION_ERROR,
         `Failed to process Coming Soon collection ${config.name}`,
         { configId: config.id, configName: config.name },
-        error instanceof Error ? error : new Error(String(error))
+        extractErrorCause(error)
       );
     }
   }
