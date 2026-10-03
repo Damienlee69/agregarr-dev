@@ -3080,7 +3080,8 @@ class PlexAPI {
       | 'recently_added'
       | 'recently_released'
       | 'recently_released_episodes'
-      | 'recently_added_episodes',
+      | 'recently_added_episodes'
+      | 'recently_aired_episodes',
     maxItems?: number,
     excludeCollectionTitles?: string[]
   ): Promise<void> {

@@ -1,6 +1,7 @@
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
+import { formatActualValue } from '@app/components/Posters/formatActualValue';
 import type {
   OverlayTestResult,
   PlexSearchResult,
@@ -28,6 +29,7 @@ const messages = defineMessages({
   noConditions: 'No conditions (always applies)',
   conditionEvaluation: 'Condition Evaluation:',
   actual: '(actual: {value})',
+  actualMissing: 'missing',
   contextVariables: 'Context Variables ({count})',
   undefined: 'undefined',
   noPoster: 'No Poster',
@@ -539,9 +541,13 @@ const TestItemModal: React.FC<TestItemModalProps> = ({ isOpen, onClose }) => {
                                                       {intl.formatMessage(
                                                         messages.actual,
                                                         {
-                                                          value: JSON.stringify(
-                                                            rule.actualValue
-                                                          ),
+                                                          value:
+                                                            formatActualValue(
+                                                              rule.actualValue,
+                                                              intl.formatMessage(
+                                                                messages.actualMissing
+                                                              )
+                                                            ),
                                                         }
                                                       )}
                                                     </span>

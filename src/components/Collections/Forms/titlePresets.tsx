@@ -1711,6 +1711,22 @@ export const getTemplatePresets = (
           },
           { label: 'Custom', value: 'custom' },
         ];
+      case 'recently_aired_episodes':
+        return [
+          {
+            label: 'Recently Released Episodes',
+            value: 'Recently Released Episodes',
+          },
+          {
+            label: 'Latest Episodes',
+            value: 'Latest Episodes',
+          },
+          {
+            label: 'Just Aired',
+            value: 'Just Aired',
+          },
+          { label: 'Custom', value: 'custom' },
+        ];
       case 'recently_added_episodes':
         return [
           {

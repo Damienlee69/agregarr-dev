@@ -169,7 +169,8 @@ export class FilteredHubCollectionSync extends BaseCollectionSync<'filtered_hub'
       | 'recently_added'
       | 'recently_released'
       | 'recently_released_episodes'
-      | 'recently_added_episodes';
+      | 'recently_added_episodes'
+      | 'recently_aired_episodes';
     if (
       !subtype ||
       ![
@@ -177,18 +178,20 @@ export class FilteredHubCollectionSync extends BaseCollectionSync<'filtered_hub'
         'recently_released',
         'recently_released_episodes',
         'recently_added_episodes',
+        'recently_aired_episodes',
       ].includes(subtype)
     ) {
       throw this.createSyncError(
         CollectionSyncErrorType.CONFIGURATION_ERROR,
-        `Invalid filtered_hub subtype: ${subtype}. Must be 'recently_added', 'recently_released', 'recently_released_episodes', or 'recently_added_episodes'`
+        `Invalid filtered_hub subtype: ${subtype}. Must be 'recently_added', 'recently_released', 'recently_released_episodes', 'recently_added_episodes', or 'recently_aired_episodes'`
       );
     }
 
     // Validate that episode-related subtypes are only used with TV libraries
     if (
       (subtype === 'recently_released_episodes' ||
-        subtype === 'recently_added_episodes') &&
+        subtype === 'recently_added_episodes' ||
+        subtype === 'recently_aired_episodes') &&
       mediaType !== 'tv'
     ) {
       throw this.createSyncError(
@@ -470,7 +473,9 @@ export class FilteredHubCollectionSync extends BaseCollectionSync<'filtered_hub'
 
     // Generate poster if autoPoster is enabled (skip for episode-level hubs — no show-level TMDB data)
     const shouldGeneratePoster =
-      subtype !== 'recently_added_episodes' && (config.autoPoster ?? true);
+      subtype !== 'recently_added_episodes' &&
+      subtype !== 'recently_aired_episodes' &&
+      (config.autoPoster ?? true);
 
     if (shouldGeneratePoster) {
       try {
