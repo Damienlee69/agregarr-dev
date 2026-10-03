@@ -615,6 +615,16 @@ class PlexAPI {
     return response.MediaContainer.Metadata[0];
   }
 
+  public async findRatingKeyByGuid(
+    libraryId: string,
+    guid: string
+  ): Promise<string | undefined> {
+    const response = await this.plexClient.query<PlexLibraryResponse>(
+      `/library/sections/${libraryId}/all?guid=${encodeURIComponent(guid)}`
+    );
+    return response.MediaContainer.Metadata?.[0]?.ratingKey;
+  }
+
   /**
    * Guarded single-item metadata fetch that never throws. Classifies the
    * outcome so callers can safely distinguish a confirmed deletion from an
