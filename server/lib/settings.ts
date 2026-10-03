@@ -2405,6 +2405,7 @@ export interface MultiSourceCollectionConfig {
     serverOwnerHome: boolean;
     libraryRecommended: boolean;
   };
+  readonly targetUserId?: string;
   readonly mediaType?: 'movie' | 'tv';
   readonly libraryId: string;
   readonly libraryName: string;

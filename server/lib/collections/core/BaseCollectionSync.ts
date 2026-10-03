@@ -28,6 +28,7 @@ import {
   extractErrorCause,
   extractErrorMessage,
   getCollectionMediaType,
+  getTargetUserLabel,
   handleRateLimit,
   hasAgregarrLabel,
   isMultiCollectionPattern,
@@ -1109,6 +1110,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     // Support user-specific collections for services like Overseerr
     const customLabel =
       userInfo?.customLabel ||
+      getTargetUserLabel(config) ||
       createCollectionLabel(
         this.source,
         config.id,
@@ -3650,7 +3652,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     if (config.targetUserId && !userInfo) {
       userInfo = {
         userId: config.targetUserId,
-        customLabel: `AgregarrTargetUser_${config.id}_${config.targetUserId}`,
+        customLabel: getTargetUserLabel(config),
       };
     }
 

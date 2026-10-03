@@ -18,6 +18,7 @@ import {
   extractTmdbIdFromGuids,
   extractTvdbIdFromGuids,
   getCollectionMediaType,
+  getTargetUserLabel,
   parseConfigIdFromLabel,
   updateConfigWithRatingKey,
   type LibraryItemsCache,
@@ -319,7 +320,8 @@ export class FilteredHubCollectionSync extends BaseCollectionSync<'filtered_hub'
 
     // Check if smart collection already exists
     // Define custom label for this collection
-    const customLabel = `Agregarr-filtered_hub-${config.id}`;
+    const identityLabel = `Agregarr-filtered_hub-${config.id}`;
+    const customLabel = getTargetUserLabel(config) ?? identityLabel;
 
     // Filter collections to only those in the target library
     const libraryCollections = allCollections.filter(
@@ -337,14 +339,14 @@ export class FilteredHubCollectionSync extends BaseCollectionSync<'filtered_hub'
     // Fallback: search by label if ratingKey not found or not in config
     if (!existingCollection) {
       existingCollection = libraryCollections.find((col) =>
-        col.labels?.some(
-          (label) =>
-            (typeof label === 'string' && label === customLabel) ||
-            (typeof label === 'object' &&
-              label !== null &&
-              'tag' in label &&
-              label.tag === customLabel)
-        )
+        col.labels?.some((label) => {
+          const tag = typeof label === 'string' ? label : label?.tag;
+          return (
+            tag === identityLabel ||
+            (!!tag?.startsWith('AgregarrTargetUser_') &&
+              parseConfigIdFromLabel(tag) === config.id)
+          );
+        })
       );
     }
 
