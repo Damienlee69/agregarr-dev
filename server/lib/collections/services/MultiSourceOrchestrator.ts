@@ -363,11 +363,21 @@ export class MultiSourceOrchestrator {
       }
 
       // Combine items according to mode
-      const combinedItems = this.combineItems(
+      let combinedItems = this.combineItems(
         itemGroups,
         config.combineMode,
         configForSync
       );
+
+      if (
+        config.sortOrder &&
+        config.sortOrder !== 'default' &&
+        config.sortOrder !== 'reverse'
+      ) {
+        combinedItems = await this.getSyncService(
+          config.sources[0].type
+        ).orderCombinedItems(combinedItems, configForSync as CollectionConfig);
+      }
 
       // 3. Validation & Filtering - use standard pipeline utilities
       const { validItems, invalidItems, validationErrors } =

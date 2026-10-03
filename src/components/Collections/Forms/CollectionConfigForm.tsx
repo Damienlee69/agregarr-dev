@@ -267,9 +267,9 @@ const messages = defineMessages({
   targetUser: 'Target User',
   targetUserNone: 'None (visible to all users)',
   targetUserHint:
-    "This user will see the collection in their library. Other users have it hidden from library browsing via label filters. Home screen promotion (Users' Home) is server-wide and cannot be scoped per user.",
+    'This user will see the collection in their library. Other users have it hidden from library browsing via label filters.',
   targetUserHomeConflict:
-    "Users' Home is enabled with a targeted user. Home screen promotion is server-wide — all users will see this collection on their Home, not just the targeted user. To restrict visibility fully, disable Users' Home.",
+    'Plex Media Server versions before 1.43.1 ignore label restrictions on collections promoted to Home, so other users may still see this collection there.',
   pleaseFixErrors: 'Please fix the following errors:',
   failedFetchTraktTitle: 'Failed to fetch Trakt list title',
   failedFetchTmdbTitle: 'Failed to fetch TMDB title',
@@ -3139,9 +3139,8 @@ const CollectionFormConfigForm = ({
                               </div>
                             </div>
 
-                            {/* Item Order - available for all collection types except multi-source and recently_added */}
-                            {values.type !== 'multi-source' &&
-                              values.type !== 'filtered_hub' &&
+                            {/* Item Order - available for all collection types except recently_added */}
+                            {values.type !== 'filtered_hub' &&
                               (() => {
                                 const isTmdbAdvancedFilters =
                                   typedValues.type === 'tmdb' &&
@@ -5384,6 +5383,10 @@ const CollectionFormConfigForm = ({
                             }[]
                           | undefined,
                         combineMode: values.combineMode,
+                        sortOrder:
+                          values.type === 'multi-source'
+                            ? (values as CollectionFormConfig).sortOrder
+                            : undefined,
                       }}
                     />
                   );

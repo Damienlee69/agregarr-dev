@@ -8504,6 +8504,10 @@ paths:
                   description: How to combine items from multiple sources
                   enum: [interleaved, list_order, randomised, cycle_lists]
                   example: 'interleaved'
+                sortOrder:
+                  type: string
+                  description: Item Order applied to the combined multi-source list
+                  example: 'date_added_desc'
                 cycleIndex:
                   type: number
                   description: For cycle_lists mode, which source to show (0-based index)
