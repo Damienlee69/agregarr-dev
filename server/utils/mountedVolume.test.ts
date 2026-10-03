@@ -36,6 +36,7 @@ describe('isOnRootFilesystem', () => {
 describe('isOnContainerRootFs', () => {
   const load = async (opts: {
     container: boolean;
+    podman?: boolean;
     mountinfo?: string;
     existing?: string[];
   }) => {
@@ -44,7 +45,13 @@ describe('isOnContainerRootFs', () => {
     vi.doMock('fs/promises', () => {
       const mocked = {
         stat: async (p: string) => {
-          if (p === '/.dockerenv' ? opts.container : existing.has(p)) return {};
+          const marker =
+            p === '/.dockerenv'
+              ? opts.container
+              : p === '/run/.containerenv'
+              ? !!opts.podman
+              : existing.has(p);
+          if (marker) return {};
           throw new Error('ENOENT');
         },
         realpath: async (p: string) => {
@@ -77,6 +84,16 @@ describe('isOnContainerRootFs', () => {
       existing: ['/data-not-mounted'],
     });
     expect(await fn('/data-not-mounted')).toBe(false);
+  });
+
+  it('detects a Podman container via /run/.containerenv', async () => {
+    const fn = await load({
+      container: false,
+      podman: true,
+      mountinfo: CONTAINER,
+      existing: ['/data-not-mounted'],
+    });
+    expect(await fn('/data-not-mounted')).toBe(true);
   });
 
   it('stays quiet when mountinfo is unreadable', async () => {
