@@ -63,7 +63,7 @@ class TestSync extends BaseCollectionSync<'tmdb'> {
 
 const config = (overrides: Partial<CollectionConfig> = {}): CollectionConfig =>
   ({
-    id: 'cfg-1',
+    id: '10',
     name: 'Neon Noir',
     type: 'tmdb',
     subtype: 'trending',
@@ -209,10 +209,7 @@ describe('createOrUpdateCollectionStandardized: stale item in a smart collection
       )
     ).rejects.toThrow('Plex went away mid-create');
 
-    expect(labelMock).toHaveBeenCalledWith(
-      '197176',
-      'agregarr-unwatched-cfg-1'
-    );
+    expect(labelMock).toHaveBeenCalledWith('197176', 'agregarr-unwatched-10');
     expect(removeMock).not.toHaveBeenCalledWith('189997', expect.anything());
   });
 });
@@ -513,6 +510,6 @@ describe('createOrUpdateCollectionStandardized: target user label', () => {
     const createMock = plexClient.createLabelBasedSmartCollection as ReturnType<
       typeof vi.fn
     >;
-    expect(createMock.mock.calls[0][5]).toBe('AgregarrTargetUser_cfg-1_1001');
+    expect(createMock.mock.calls[0][5]).toBe('AgregarrTargetUser_10_1001');
   });
 });
