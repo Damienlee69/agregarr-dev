@@ -371,6 +371,9 @@ export const saveIndividualConfigs = async (
         ...(collectionConfig.minimumImdbRating !== undefined && {
           minimumImdbRating: collectionConfig.minimumImdbRating,
         }),
+        ...(collectionConfig.minimumImdbVotes !== undefined && {
+          minimumImdbVotes: collectionConfig.minimumImdbVotes,
+        }),
         ...(collectionConfig.minimumRottenTomatoesRating !== undefined && {
           minimumRottenTomatoesRating:
             collectionConfig.minimumRottenTomatoesRating,

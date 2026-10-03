@@ -171,6 +171,7 @@ export interface CollectionConfig {
   readonly maxPositionToProcess?: number; // Only process items in positions 1-X of the list (0 = no limit)
   readonly minimumYear?: number; // Only process movies/TV shows released on or after this year (0 = no limit)
   readonly minimumImdbRating?: number; // Only process movies/TV shows with IMDb rating >= this value (0 = no limit)
+  readonly minimumImdbVotes?: number; // Only process movies/TV shows with at least this many IMDb votes (0 = no limit)
   readonly minimumRottenTomatoesRating?: number; // Only process movies/TV shows with Rotten Tomatoes critics score >= this value (0 = no limit)
   readonly minimumRottenTomatoesAudienceRating?: number; // Only process movies/TV shows with Rotten Tomatoes audience score >= this value (0 = no limit)
   readonly excludedGenres?: number[]; // @deprecated Use filterSettings.genres - Exclude items with these TMDB genre IDs from missing items search
@@ -2475,6 +2476,7 @@ export interface MultiSourceCollectionConfig {
   readonly maxPositionToProcess?: number;
   readonly minimumYear?: number;
   readonly minimumImdbRating?: number;
+  readonly minimumImdbVotes?: number;
   readonly minimumRottenTomatoesRating?: number;
   readonly minimumRottenTomatoesAudienceRating?: number;
   readonly excludedGenres?: number[];

@@ -44,6 +44,9 @@ const messages = defineMessages({
   minimumYearHelp:
     'Only grab movies/TV shows released on or after this year (0 = no limit)',
   minimumImdbRating: 'Minimum IMDb rating',
+  minimumImdbVotes: 'Minimum IMDb votes',
+  minimumImdbVotesHelp:
+    'Only grab movies/TV shows with at least this many IMDb votes (0 = no limit). Items with no IMDb vote data are skipped when set.',
   minimumImdbRatingHelp:
     'Only grab movies/TV shows with an IMDb rating >= this value (0 = no limit). Items without ratings will be allowed.',
   minimumRottenTomatoesRating: 'Minimum Rotten Tomatoes rating',
@@ -981,6 +984,29 @@ const AutoRequestSection = ({
             )}
             <div className="label-tip mt-2">
               {intl.formatMessage(messages.minimumImdbRatingHelp)}
+            </div>
+          </div>
+
+          {/* Minimum IMDb Votes */}
+          <div className="mb-6">
+            <div className="mb-2 text-sm font-medium text-gray-200">
+              {intl.formatMessage(messages.minimumImdbVotes)}
+            </div>
+            <div className="form-input-field">
+              <Field
+                type="text"
+                inputMode="numeric"
+                id="minimumImdbVotes"
+                name="minimumImdbVotes"
+                placeholder="0"
+                className="short"
+              />
+            </div>
+            {errors.minimumImdbVotes && touched.minimumImdbVotes && (
+              <div className="error">{errors.minimumImdbVotes}</div>
+            )}
+            <div className="label-tip mt-2">
+              {intl.formatMessage(messages.minimumImdbVotesHelp)}
             </div>
           </div>
 

@@ -205,6 +205,7 @@ export const linkCollectionConfig = async (
             maxPositionToProcess: masterConfig.maxPositionToProcess,
             minimumYear: masterConfig.minimumYear,
             minimumImdbRating: masterConfig.minimumImdbRating,
+            minimumImdbVotes: masterConfig.minimumImdbVotes,
             minimumRottenTomatoesRating:
               masterConfig.minimumRottenTomatoesRating,
             filterSettings: masterConfig.filterSettings,
