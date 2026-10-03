@@ -72,6 +72,7 @@ export interface PlexLibrary {
   key: string;
   title: string;
   agent: string;
+  Location?: { id: number; path: string }[];
 }
 
 interface PlexLibrariesResponse {
@@ -2683,16 +2684,12 @@ class PlexAPI {
    */
   public async getLibrarySectionPaths(libraryId: string): Promise<string[]> {
     try {
-      const response = await this.plexClient.query<{
-        MediaContainer: {
-          Directory?: { Location?: { path: string }[] }[];
-        };
-      }>(`/library/sections/${libraryId}`);
+      const libraries = await this.getLibraries();
 
       return (
-        response.MediaContainer.Directory?.[0]?.Location?.map(
-          (location) => location.path
-        ) ?? []
+        libraries
+          .find((library) => library.key === libraryId)
+          ?.Location?.map((location) => location.path) ?? []
       );
     } catch (error) {
       logger.warn('Failed to fetch Plex library section locations', {
