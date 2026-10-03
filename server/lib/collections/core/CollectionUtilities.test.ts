@@ -33,6 +33,8 @@ import {
   extractErrorMessage,
   hasAgregarrLabel,
   isMultiCollectionPattern,
+  parseConfigIdFromLabel,
+  syncConfigsWithPlexCollections,
 } from './CollectionUtilities';
 
 const config = (overrides: Partial<CollectionConfig>): CollectionConfig =>
@@ -243,5 +245,62 @@ describe('extractErrorMessage', () => {
     expect(extractErrorMessage(syncError)).toBe(
       'Failed to fetch IMDb list data: Request failed with status code 403'
     );
+  });
+});
+
+describe('syncConfigsWithPlexCollections: target user label', () => {
+  const plexCollection = {
+    ratingKey: '500',
+    title: 'Neon Noir',
+    libraryKey: '4',
+    labels: ['AgregarrTargetUser_10_1001'],
+  };
+
+  it('relabels a target-user collection with its target-user label, not the config-id label', async () => {
+    const addLabelToCollection = vi.fn(async () => true);
+
+    await syncConfigsWithPlexCollections(
+      { addLabelToCollection } as never,
+      [
+        {
+          id: '10',
+          name: 'Neon Noir',
+          libraryId: '4',
+          source: 'mdblist',
+          targetUserId: '1001',
+        },
+      ],
+      [plexCollection]
+    );
+
+    expect(addLabelToCollection).toHaveBeenCalledWith(
+      '500',
+      'AgregarrTargetUser_10_1001'
+    );
+  });
+
+  it('still relabels collections without a target user with the config-id label', async () => {
+    const addLabelToCollection = vi.fn(async () => true);
+
+    await syncConfigsWithPlexCollections(
+      { addLabelToCollection } as never,
+      [{ id: '10', name: 'Neon Noir', libraryId: '4', source: 'mdblist' }],
+      [plexCollection]
+    );
+
+    expect(addLabelToCollection).toHaveBeenCalledWith(
+      '500',
+      'Agregarrmdblist10'
+    );
+  });
+});
+
+describe('parseConfigIdFromLabel: target-user label', () => {
+  it('reads the config id out of a target-user label', () => {
+    expect(parseConfigIdFromLabel('AgregarrTargetUser_10_1001')).toBe('10');
+  });
+
+  it('still reads the config id out of the plain config label', () => {
+    expect(parseConfigIdFromLabel('Agregarrmdblist10')).toBe('10');
   });
 });

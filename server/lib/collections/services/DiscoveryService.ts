@@ -228,6 +228,7 @@ export class DiscoveryService {
           collectionRatingKey: config.collectionRatingKey,
           libraryId: config.libraryId,
           source: config.type || 'unknown', // Use type as source
+          targetUserId: config.targetUserId,
         })),
         allCollections
       );

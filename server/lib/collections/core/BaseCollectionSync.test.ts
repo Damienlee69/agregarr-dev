@@ -501,3 +501,18 @@ describe('createOrUpdateCollectionStandardized: smart collections never own miss
     expect(repo.insert).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('createOrUpdateCollectionStandardized: target user label', () => {
+  it('labels the collection with the target-user label when the caller passes no userInfo', async () => {
+    const cfg = config({ showUnwatchedOnly: true, targetUserId: '1001' });
+    settings.plex.collectionConfigs = [cfg];
+    const plexClient = failAfterCreate('187611');
+
+    await expect(run(plexClient, cfg)).rejects.toThrow();
+
+    const createMock = plexClient.createLabelBasedSmartCollection as ReturnType<
+      typeof vi.fn
+    >;
+    expect(createMock.mock.calls[0][5]).toBe('AgregarrTargetUser_cfg-1_1001');
+  });
+});

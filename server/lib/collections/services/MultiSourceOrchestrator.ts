@@ -17,6 +17,7 @@ import {
   createSyncError,
   getCollectionSyncCounter,
   getMediaTypeFromLibrary,
+  getTargetUserLabel,
   hasAgregarrLabel,
   incrementCollectionSyncCounter,
   parseConfigIdFromLabel,
@@ -1391,10 +1392,9 @@ export class MultiSourceOrchestrator {
     processedCollectionKeys?: Set<string>
   ): Promise<{ created: number; updated: number }> {
     const mediaType = getMediaTypeFromLibrary(config.libraryId);
-    const customLabel = createCollectionLabel(
-      'multi-source' as 'overseerr',
-      config.id
-    );
+    const customLabel =
+      getTargetUserLabel(config) ??
+      createCollectionLabel('multi-source' as 'overseerr', config.id);
 
     const options: CollectionUpdateOptions = {
       collectionName: config.name,
