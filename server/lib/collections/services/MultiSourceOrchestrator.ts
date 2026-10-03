@@ -283,6 +283,7 @@ export class MultiSourceOrchestrator {
 
       // Fetch items from sources
       const failedSources: string[] = [];
+      let firstFailure = '';
       for (let i = 0; i < sourcesToFetch.length; i++) {
         const source = sourcesToFetch[i];
 
@@ -358,9 +359,16 @@ export class MultiSourceOrchestrator {
             ...errorDetails,
           });
           failedSources.push(source.id || source.type);
-          // Continue with other sources
+          firstFailure ||= errorMessage;
         }
       }
+
+      const failedError =
+        failedSources.length > 0
+          ? `${failedSources.length}/${
+              sourcesToFetch.length
+            } source(s) failed (${failedSources.join(', ')}): ${firstFailure}`
+          : undefined;
 
       // Combine items according to mode
       let combinedItems = this.combineItems(
@@ -409,9 +417,6 @@ export class MultiSourceOrchestrator {
           : itemsAfterExclusion;
 
       if (finalItems.length === 0) {
-        const allFailed =
-          failedSources.length === sourcesToFetch.length &&
-          sourcesToFetch.length > 0;
         logger.warn(
           `No valid items found from any source for multi-source collection: ${collectionNameForSync}`,
           {
@@ -421,29 +426,13 @@ export class MultiSourceOrchestrator {
             originalItems: combinedItems.length,
             validItems: validItems.length,
             invalidItems: invalidItems.length,
-            failedSources: failedSources.length,
-            allSourcesFailed: allFailed,
           }
         );
-        if (allFailed) {
-          return {
-            created: 0,
-            updated: 0,
-            error: `All ${
-              failedSources.length
-            } source(s) failed: ${failedSources.join(', ')}`,
-          };
-        }
-        if (failedSources.length > 0) {
-          return {
-            created: 0,
-            updated: 0,
-            warning: `No items after combining — ${failedSources.length}/${
-              sourcesToFetch.length
-            } source(s) failed: ${failedSources.join(', ')}`,
-          };
-        }
-        return { created: 0, updated: 0 };
+        return {
+          created: 0,
+          updated: 0,
+          ...(failedError && { error: failedError }),
+        };
       }
 
       logger.info(
@@ -634,10 +623,8 @@ export class MultiSourceOrchestrator {
         );
       }
 
-      if (failedSources.length > 0) {
-        result.warning = `Synced but ${failedSources.length}/${
-          sourcesToFetch.length
-        } source(s) failed: ${failedSources.join(', ')}`;
+      if (failedError && !result.error) {
+        result.error = failedError;
       }
 
       return result;
@@ -880,7 +867,7 @@ export class MultiSourceOrchestrator {
         error: errorMessage,
         ...errorDetails,
       });
-      return { items: [] };
+      throw error;
     }
   }
 
