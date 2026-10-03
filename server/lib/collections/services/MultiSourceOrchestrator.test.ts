@@ -153,6 +153,42 @@ describe('multi-source run with failing sources', () => {
     expect(result.error).toBeUndefined();
   });
 
+  it.each([
+    ['https://example.test/lists/beta?apikey=SECRET#frag', 'beta'],
+    ['not a url?token=SECRET', 'not a url'],
+    [`https://example.test/${'x'.repeat(100)}`, 'x'.repeat(60)],
+  ])('labels a failed source from %s as %s', async (customUrl, label) => {
+    const o = internals();
+    vi.spyOn(o, 'fetchItemsFromSource').mockRejectedValue(new Error('down'));
+    const result = await o.processMultiSourceCollection(
+      config({
+        sources: [{ id: 's', type: 'trakt', customUrl }],
+        combineMode: 'list_order',
+      } as never),
+      {},
+      []
+    );
+
+    expect(result.error).toBe(`1/1 source(s) failed (${label}): down`);
+  });
+
+  it('names a source with nothing to label it by its position', async () => {
+    const o = internals();
+    vi.spyOn(o, 'fetchItemsFromSource').mockRejectedValue(new Error('down'));
+    const result = await o.processMultiSourceCollection(
+      config({
+        sources: [{ id: 's' }, { id: 't' }],
+        combineMode: 'list_order',
+      } as never),
+      {},
+      []
+    );
+
+    expect(result.error).toBe(
+      '2/2 source(s) failed (source 1, source 2): down'
+    );
+  });
+
   it('lets fetchItemsFromSource failures propagate', async () => {
     const o = internals() as unknown as {
       getSyncService: (t: string) => unknown;
