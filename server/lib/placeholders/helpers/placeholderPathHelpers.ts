@@ -23,14 +23,20 @@ export function getPlaceholderRootFolder(
   return folders?.[libraryKey];
 }
 
+const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/;
+
 export function isInsideSectionPaths(
   directory: string,
   sectionPaths: string[]
 ): boolean {
   if (sectionPaths.length === 0) return true;
-  const dir = directory.replace(/\\/g, '/');
   return sectionPaths.some((section) => {
-    const root = section.replace(/\\/g, '/');
+    let dir = directory.replace(/\\/g, '/');
+    let root = section.replace(/\\/g, '/');
+    if (WINDOWS_DRIVE.test(directory) && WINDOWS_DRIVE.test(section)) {
+      dir = dir.toLowerCase();
+      root = root.toLowerCase();
+    }
     return (
       dir !== root && dir.startsWith(root.endsWith('/') ? root : `${root}/`)
     );
