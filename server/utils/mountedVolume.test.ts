@@ -34,22 +34,26 @@ describe('isOnRootFilesystem', () => {
 });
 
 describe('isOnContainerRootFs', () => {
-  const load = async (opts: { container: boolean; mountinfo?: string }) => {
+  const load = async (opts: {
+    container: boolean;
+    mountinfo?: string;
+    existing?: string[];
+  }) => {
     vi.resetModules();
-    vi.doMock('fs', async (orig) => {
-      const actual = (await orig()) as Record<string, any>;
-      const real = (p: unknown) => String(p).includes('/.dockerenv');
+    const existing = new Set(['/', ...(opts.existing ?? [])]);
+    vi.doMock('fs/promises', () => {
       const mocked = {
-        ...actual,
-        existsSync: (p: string) =>
-          real(p) ? opts.container : p === '/data-not-mounted' ? true : false,
-        realpathSync: (p: string) => p,
-        readFileSync: (p: string) => {
-          if (p === '/proc/self/mountinfo') {
-            if (opts.mountinfo === undefined) throw new Error('ENOENT');
-            return opts.mountinfo;
-          }
-          return actual.readFileSync(p);
+        stat: async (p: string) => {
+          if (p === '/.dockerenv' ? opts.container : existing.has(p)) return {};
+          throw new Error('ENOENT');
+        },
+        realpath: async (p: string) => {
+          if (existing.has(p)) return p;
+          throw new Error('ENOENT');
+        },
+        readFile: async () => {
+          if (opts.mountinfo === undefined) throw new Error('ENOENT');
+          return opts.mountinfo;
         },
       };
       return { ...mocked, default: mocked };
@@ -58,17 +62,42 @@ describe('isOnContainerRootFs', () => {
   };
 
   it('warns for an unmounted path inside a container', async () => {
-    const fn = await load({ container: true, mountinfo: CONTAINER });
-    expect(fn('/data-not-mounted')).toBe(true);
+    const fn = await load({
+      container: true,
+      mountinfo: CONTAINER,
+      existing: ['/data-not-mounted'],
+    });
+    expect(await fn('/data-not-mounted')).toBe(true);
   });
 
   it('stays quiet on bare metal where / is a real disk', async () => {
-    const fn = await load({ container: false, mountinfo: CONTAINER });
-    expect(fn('/data-not-mounted')).toBe(false);
+    const fn = await load({
+      container: false,
+      mountinfo: CONTAINER,
+      existing: ['/data-not-mounted'],
+    });
+    expect(await fn('/data-not-mounted')).toBe(false);
   });
 
   it('stays quiet when mountinfo is unreadable', async () => {
-    const fn = await load({ container: true });
-    expect(fn('/data-not-mounted')).toBe(false);
+    const fn = await load({
+      container: true,
+      existing: ['/data-not-mounted'],
+    });
+    expect(await fn('/data-not-mounted')).toBe(false);
+  });
+
+  it('missing root under an existing mounted folder is not flagged', async () => {
+    const fn = await load({
+      container: true,
+      mountinfo: CONTAINER,
+      existing: ['/movies'],
+    });
+    expect(await fn('/movies/new/deeper')).toBe(false);
+  });
+
+  it('missing root whose only existing ancestor is / is flagged', async () => {
+    const fn = await load({ container: true, mountinfo: CONTAINER });
+    expect(await fn('/nope/new')).toBe(true);
   });
 });

@@ -795,7 +795,10 @@ export const placeholderRootVolumeCheck: HealthCheck = {
     );
     if (!roots.size) return { status: 'skipped' };
 
-    const bad = [...roots].filter((r) => isOnContainerRootFs(r));
+    const flags = await Promise.all(
+      [...roots].map((r) => isOnContainerRootFs(r))
+    );
+    const bad = [...roots].filter((_, i) => flags[i]);
     if (!bad.length) return { status: 'ok' };
     return {
       status: 'warning',

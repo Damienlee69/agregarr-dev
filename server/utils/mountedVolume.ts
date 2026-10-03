@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from 'fs';
+import { readFile, realpath, stat } from 'fs/promises';
 import path from 'path';
 
 const unescapeMount = (s: string) =>
@@ -19,26 +19,24 @@ export const isOnRootFilesystem = (
   return best === '/';
 };
 
-const inContainer = () =>
-  existsSync('/.dockerenv') || existsSync('/run/.containerenv');
+const exists = (p: string) =>
+  stat(p).then(
+    () => true,
+    () => false
+  );
 
 // Unreadable mountinfo or a non-container host means "can't tell": no warning.
-export const isOnContainerRootFs = (target: string): boolean => {
-  if (!inContainer()) return false;
-  let mountinfo: string;
+export const isOnContainerRootFs = async (target: string): Promise<boolean> => {
+  if (!(await exists('/.dockerenv')) && !(await exists('/run/.containerenv')))
+    return false;
   try {
-    mountinfo = readFileSync('/proc/self/mountinfo', 'utf8');
+    const mountinfo = await readFile('/proc/self/mountinfo', 'utf8');
+    let probe = path.resolve(target);
+    while (!(await exists(probe)) && probe !== path.dirname(probe)) {
+      probe = path.dirname(probe);
+    }
+    return isOnRootFilesystem(mountinfo, await realpath(probe));
   } catch {
     return false;
   }
-  let probe = path.resolve(target);
-  while (!existsSync(probe) && probe !== path.dirname(probe)) {
-    probe = path.dirname(probe);
-  }
-  try {
-    probe = realpathSync(probe);
-  } catch {
-    return false;
-  }
-  return isOnRootFilesystem(mountinfo, probe);
 };

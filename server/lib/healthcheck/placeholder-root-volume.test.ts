@@ -14,7 +14,7 @@ vi.mock('@server/lib/settings', async (importOriginal) => {
 });
 
 vi.mock('@server/utils/mountedVolume', () => ({
-  isOnContainerRootFs: (p: string) => state.unmounted.has(p),
+  isOnContainerRootFs: async (p: string) => state.unmounted.has(p),
 }));
 
 import { placeholderRootVolumeCheck } from '@server/lib/healthcheck';
