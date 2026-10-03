@@ -91,6 +91,13 @@ interface MetadataUpdateOptions {
   existingTitleSort?: string;
 }
 
+const sourceLabel = (source: SourceDefinition): string =>
+  source.resolvedTitle ||
+  source.radarrTagLabel ||
+  source.sonarrTagLabel ||
+  source.customUrl?.split('/').filter(Boolean).pop() ||
+  [source.type, source.subtype].filter(Boolean).join(' ');
+
 /**
  * MultiSourceOrchestrator - Orchestrates multi-source collections by combining items from multiple sources
  *
@@ -358,7 +365,7 @@ export class MultiSourceOrchestrator {
             error: errorMessage,
             ...errorDetails,
           });
-          failedSources.push(source.id || source.type);
+          failedSources.push(sourceLabel(source));
           firstFailure ||= errorMessage;
         }
       }
