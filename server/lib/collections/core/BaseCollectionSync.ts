@@ -3405,6 +3405,38 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     }
   }
 
+  public async orderItems(
+    items: CollectionItem[],
+    config: CollectionConfig,
+    alreadyEnriched = false
+  ): Promise<CollectionItem[]> {
+    const enriched =
+      !alreadyEnriched &&
+      (config.sortOrder === 'imdb_rating_desc' ||
+        config.sortOrder === 'imdb_rating_asc')
+        ? await this.enrichItemsWithImdbRatings(items)
+        : items;
+    return this.applyItemOrdering(enriched, config);
+  }
+
+  public async orderCombinedItems(
+    items: CollectionItem[],
+    config: CollectionConfig
+  ): Promise<CollectionItem[]> {
+    // Coming Soon items carry their date as releaseDateSortValue
+    const normalised = items.map((item) => {
+      const sortValue = (item as { releaseDateSortValue?: string })
+        .releaseDateSortValue;
+      return item.releaseDate === undefined && sortValue
+        ? {
+            ...item,
+            releaseDate: Math.floor(new Date(sortValue).getTime() / 1000),
+          }
+        : item;
+    });
+    return this.orderItems(normalised, config, true);
+  }
+
   /**
    * Apply filtering safety net to already-mapped items (validation, deduplication, maxItems safety check)
    * Use this after calling your specific mapSourceDataToItems implementation.
@@ -3422,19 +3454,9 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     mappingStats?: FilteringStats;
     filteringStats?: FilteringStats;
   }> {
-    let items = mappedResult.items;
-
-    // STEP 1: Enrich with IMDb ratings if needed for sorting
-    if (
-      config.sortOrder === 'imdb_rating_desc' ||
-      config.sortOrder === 'imdb_rating_asc'
-    ) {
-      items = await this.enrichItemsWithImdbRatings(items);
-    }
-
-    // STEP 2: Apply ordering (reverse/randomize/imdb rating) before filtering
+    // STEP 1-2: Enrich (if needed) and order before filtering
     // This ensures the desired order affects the full result before maxItems is applied
-    const orderedItems = this.applyItemOrdering(items, config);
+    const orderedItems = await this.orderItems(mappedResult.items, config);
 
     // STEP 3: Apply common filtering (duplicates, maxItems limit, etc.)
     const { filteredItems, stats: filteringStats } = this.applyCommonFiltering(

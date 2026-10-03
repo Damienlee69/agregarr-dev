@@ -13,7 +13,10 @@ import type {
   MissingItem,
 } from '@server/lib/collections/core/types';
 import { libraryCacheService } from '@server/lib/collections/services/LibraryCacheService';
-import type { CollectionConfig } from '@server/lib/settings';
+import type {
+  CollectionConfig,
+  CollectionSortOrder,
+} from '@server/lib/settings';
 import { getSettings, getTmdbLanguage } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -320,7 +323,7 @@ function getSourceDisplayName(source: {
 /**
  * Process multi-source preview - fetches from multiple sources and combines them
  */
-async function processMultiSourcePreview(
+export async function processMultiSourcePreview(
   sessionId: string,
   sources: {
     id: string;
@@ -338,6 +341,7 @@ async function processMultiSourcePreview(
     sonarrTagServerId?: number;
   }[],
   combineMode: 'interleaved' | 'list_order' | 'randomised' | 'cycle_lists',
+  sortOrder: CollectionSortOrder | undefined,
   maxItems: number,
   libraryId: string,
   libraryName: string,
@@ -400,6 +404,7 @@ async function processMultiSourcePreview(
           libraryRecommended: false,
         },
         maxItems: 0, // Don't limit per-source, we'll limit the combined result
+        sortOrder,
         template: '',
         isLibraryPromoted: false,
         everLibraryPromoted: false,
@@ -583,6 +588,12 @@ async function processMultiSourcePreview(
       // So just use that one source's items
       combinedItems = allItemGroups.flat();
       break;
+  }
+
+  if (sortOrder && sortOrder !== 'default' && sortOrder !== 'reverse') {
+    combinedItems = await (
+      await collectionSyncService.createSyncService(sources[0].type)
+    ).orderCombinedItems(combinedItems, { sortOrder } as CollectionConfig);
   }
 
   // Remove duplicates based on ratingKey or tmdbId
@@ -959,6 +970,7 @@ async function processPreviewAsync(
       sonarrTagServerId?: number;
     }[];
     combineMode?: 'interleaved' | 'list_order' | 'randomised' | 'cycle_lists';
+    sortOrder?: CollectionSortOrder;
     cycleIndex?: number; // For cycle_lists mode, which source to show
   }
 ): Promise<void> {
@@ -991,6 +1003,7 @@ async function processPreviewAsync(
       isMultiSource,
       sources,
       combineMode,
+      sortOrder,
       cycleIndex,
     } = requestBody;
 
@@ -1157,6 +1170,7 @@ async function processPreviewAsync(
         sessionId,
         sources,
         combineMode || 'interleaved',
+        sortOrder,
         maxItems || 50,
         libraryId,
         library.title,

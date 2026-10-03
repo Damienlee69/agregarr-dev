@@ -2418,6 +2418,7 @@ export interface MultiSourceCollectionConfig {
   readonly sortOrderHome?: number;
   readonly sortOrderLibrary?: number;
   readonly isLibraryPromoted?: boolean;
+  readonly sortOrder?: CollectionSortOrder;
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
   readonly timeRestriction?: {
     readonly alwaysActive: boolean;

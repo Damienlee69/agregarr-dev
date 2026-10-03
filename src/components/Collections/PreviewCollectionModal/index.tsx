@@ -122,6 +122,7 @@ interface PreviewCollectionModalProps {
       networksCountry?: string;
     }[];
     combineMode?: 'interleaved' | 'list_order' | 'randomised' | 'cycle_lists';
+    sortOrder?: string;
   };
 }
 
@@ -238,6 +239,7 @@ const PreviewCollectionModal = ({
     isMultiSource: previewConfig.isMultiSource,
     sources: previewConfig.sources,
     combineMode: previewConfig.combineMode,
+    sortOrder: previewConfig.sortOrder,
     libraryIds: previewConfig.libraryIds,
   });
 
@@ -328,6 +330,7 @@ const PreviewCollectionModal = ({
           isMultiSource: previewConfig.isMultiSource,
           sources: previewConfig.sources,
           combineMode: previewConfig.combineMode,
+          sortOrder: previewConfig.sortOrder,
           cycleIndex: cycleIndex,
         });
 

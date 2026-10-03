@@ -3139,9 +3139,8 @@ const CollectionFormConfigForm = ({
                               </div>
                             </div>
 
-                            {/* Item Order - available for all collection types except multi-source and recently_added */}
-                            {values.type !== 'multi-source' &&
-                              values.type !== 'filtered_hub' &&
+                            {/* Item Order - available for all collection types except recently_added */}
+                            {values.type !== 'filtered_hub' &&
                               (() => {
                                 const isTmdbAdvancedFilters =
                                   typedValues.type === 'tmdb' &&
@@ -5384,6 +5383,10 @@ const CollectionFormConfigForm = ({
                             }[]
                           | undefined,
                         combineMode: values.combineMode,
+                        sortOrder:
+                          values.type === 'multi-source'
+                            ? (values as CollectionFormConfig).sortOrder
+                            : undefined,
                       }}
                     />
                   );
