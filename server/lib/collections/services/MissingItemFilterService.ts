@@ -263,7 +263,7 @@ export class MissingItemFilterService {
             tmdbId: item.tmdbId,
             title: item.title,
           });
-          lowRatedItems.push(item.title);
+          (minImdbRating > 0 ? lowRatedItems : lowVotedItems).push(item.title);
           continue;
         }
       }
