@@ -63,7 +63,7 @@ class TestSync extends BaseCollectionSync<'tmdb'> {
 
 const config = (overrides: Partial<CollectionConfig> = {}): CollectionConfig =>
   ({
-    id: 'cfg-1',
+    id: '10',
     name: 'Neon Noir',
     type: 'tmdb',
     subtype: 'trending',
@@ -209,10 +209,7 @@ describe('createOrUpdateCollectionStandardized: stale item in a smart collection
       )
     ).rejects.toThrow('Plex went away mid-create');
 
-    expect(labelMock).toHaveBeenCalledWith(
-      '197176',
-      'agregarr-unwatched-cfg-1'
-    );
+    expect(labelMock).toHaveBeenCalledWith('197176', 'agregarr-unwatched-10');
     expect(removeMock).not.toHaveBeenCalledWith('189997', expect.anything());
   });
 });
@@ -499,5 +496,20 @@ describe('createOrUpdateCollectionStandardized: smart collections never own miss
     );
 
     expect(repo.insert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createOrUpdateCollectionStandardized: target user label', () => {
+  it('labels the collection with the target-user label when the caller passes no userInfo', async () => {
+    const cfg = config({ showUnwatchedOnly: true, targetUserId: '1001' });
+    settings.plex.collectionConfigs = [cfg];
+    const plexClient = failAfterCreate('187611');
+
+    await expect(run(plexClient, cfg)).rejects.toThrow();
+
+    const createMock = plexClient.createLabelBasedSmartCollection as ReturnType<
+      typeof vi.fn
+    >;
+    expect(createMock.mock.calls[0][5]).toBe('AgregarrTargetUser_10_1001');
   });
 });

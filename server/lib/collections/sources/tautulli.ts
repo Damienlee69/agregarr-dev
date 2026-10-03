@@ -1,4 +1,5 @@
 import type PlexAPI from '@server/api/plexapi';
+import { isPlexNotFoundError } from '@server/api/plexMetadataClassify';
 import TautulliAPI from '@server/api/tautulli';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
@@ -26,6 +27,7 @@ import logger from '@server/logger';
 
 interface TautulliCollectionItem extends CollectionItem {
   totalPlays: number;
+  guid?: string;
 }
 
 // TautulliSourceData interface is now imported from types.ts
@@ -325,6 +327,7 @@ export class TautulliCollectionSync extends BaseCollectionSync<'tautulli'> {
           ratingKey,
           title,
           totalPlays: item.total_plays || 0,
+          guid: item.guid,
           type: mediaType,
           tmdbId: item.tmdb_id,
           year: item.year,
@@ -351,10 +354,45 @@ export class TautulliCollectionSync extends BaseCollectionSync<'tautulli'> {
             });
           }
         } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
           logger.debug(`Failed to get Plex metadata for ${item.title}`, {
             ratingKey: item.ratingKey,
-            error: error instanceof Error ? error.message : String(error),
+            error: message,
           });
+          if (
+            isPlexNotFoundError(message) &&
+            item.type === 'movie' &&
+            item.guid
+          ) {
+            try {
+              const current = await plexClient.findItemByGuid(
+                config.libraryId,
+                item.guid
+              );
+              if (current) {
+                logger.info(
+                  `Resolved stale Tautulli rating key for ${item.title}`,
+                  {
+                    label: 'Tautulli Collections',
+                    staleRatingKey: item.ratingKey,
+                    ratingKey: current.ratingKey,
+                  }
+                );
+                item.ratingKey = current.ratingKey;
+                tmdbId = extractTmdbIdFromGuids(current.Guid);
+                tvdbId = extractTvdbIdFromGuids(current.Guid);
+              }
+            } catch (lookupError) {
+              logger.debug(`Guid lookup failed for ${item.title}`, {
+                label: 'Tautulli Collections',
+                error:
+                  lookupError instanceof Error
+                    ? lookupError.message
+                    : String(lookupError),
+              });
+            }
+          }
         }
       }
 

@@ -171,6 +171,7 @@ export interface CollectionConfig {
   readonly maxPositionToProcess?: number; // Only process items in positions 1-X of the list (0 = no limit)
   readonly minimumYear?: number; // Only process movies/TV shows released on or after this year (0 = no limit)
   readonly minimumImdbRating?: number; // Only process movies/TV shows with IMDb rating >= this value (0 = no limit)
+  readonly minimumImdbVotes?: number; // Only process movies/TV shows with at least this many IMDb votes (0 = no limit)
   readonly minimumRottenTomatoesRating?: number; // Only process movies/TV shows with Rotten Tomatoes critics score >= this value (0 = no limit)
   readonly minimumRottenTomatoesAudienceRating?: number; // Only process movies/TV shows with Rotten Tomatoes audience score >= this value (0 = no limit)
   readonly excludedGenres?: number[]; // @deprecated Use filterSettings.genres - Exclude items with these TMDB genre IDs from missing items search
@@ -700,6 +701,7 @@ export interface MainSettings {
   placeholderMovieRootFolders?: Record<string, string>; // libraryKey -> movie placeholder path mapping
   placeholderTVRootFolders?: Record<string, string>; // libraryKey -> TV placeholder path mapping
   // Trailer download settings
+  placeholderFolderTmdbId?: boolean; // If true, new movie placeholder folders are named 'Title (Year) {tmdb-ID}'
   skipYoutubeTrailerDownloads?: boolean; // If true, skip YouTube trailer downloads and use hardcoded placeholder video only (speeds up sync)
   preferTmdbTrailers?: boolean; // If true (default), resolve trailers from TMDB /videos before falling back to YouTube search
   trailerExcludeWords?: string; // Comma-separated words — any match in title rejects the candidate
@@ -2405,6 +2407,7 @@ export interface MultiSourceCollectionConfig {
     serverOwnerHome: boolean;
     libraryRecommended: boolean;
   };
+  readonly targetUserId?: string;
   readonly mediaType?: 'movie' | 'tv';
   readonly libraryId: string;
   readonly libraryName: string;
@@ -2418,6 +2421,7 @@ export interface MultiSourceCollectionConfig {
   readonly sortOrderHome?: number;
   readonly sortOrderLibrary?: number;
   readonly isLibraryPromoted?: boolean;
+  readonly sortOrder?: CollectionSortOrder;
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
   readonly timeRestriction?: {
     readonly alwaysActive: boolean;
@@ -2472,6 +2476,7 @@ export interface MultiSourceCollectionConfig {
   readonly maxPositionToProcess?: number;
   readonly minimumYear?: number;
   readonly minimumImdbRating?: number;
+  readonly minimumImdbVotes?: number;
   readonly minimumRottenTomatoesRating?: number;
   readonly minimumRottenTomatoesAudienceRating?: number;
   readonly excludedGenres?: number[];

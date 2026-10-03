@@ -222,6 +222,10 @@ const autoRequestValidations = {
     )
     .integer('Minimum year must be a whole number'),
 
+  minimumImdbVotes: Yup.number()
+    .min(0, 'Minimum IMDb votes must be 0 or greater (0 = no limit)')
+    .integer('Minimum IMDb votes must be a whole number'),
+
   minimumImdbRating: Yup.number()
     .min(0, 'Minimum IMDb rating must be 0 or greater (0 = no limit)')
     .max(10, 'IMDb ratings cannot exceed 10')

@@ -17,6 +17,7 @@ import {
   createSyncError,
   getCollectionSyncCounter,
   getMediaTypeFromLibrary,
+  getTargetUserLabel,
   hasAgregarrLabel,
   incrementCollectionSyncCounter,
   parseConfigIdFromLabel,
@@ -89,6 +90,26 @@ interface MetadataUpdateOptions {
   existingTitle?: string;
   existingTitleSort?: string;
 }
+
+const urlSlug = (url: string): string | undefined => {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    path = url.split(/[?#]/)[0];
+  }
+  return path.split('/').filter(Boolean).pop();
+};
+
+const sourceLabel = (source: SourceDefinition, index: number): string =>
+  (
+    source.resolvedTitle ||
+    source.radarrTagLabel ||
+    source.sonarrTagLabel ||
+    (source.customUrl && urlSlug(source.customUrl)) ||
+    [source.type, source.subtype].filter(Boolean).join(' ') ||
+    `source ${index + 1}`
+  ).slice(0, 60);
 
 /**
  * MultiSourceOrchestrator - Orchestrates multi-source collections by combining items from multiple sources
@@ -282,6 +303,7 @@ export class MultiSourceOrchestrator {
 
       // Fetch items from sources
       const failedSources: string[] = [];
+      let firstFailure = '';
       for (let i = 0; i < sourcesToFetch.length; i++) {
         const source = sourcesToFetch[i];
 
@@ -356,17 +378,36 @@ export class MultiSourceOrchestrator {
             error: errorMessage,
             ...errorDetails,
           });
-          failedSources.push(source.id || source.type);
-          // Continue with other sources
+          failedSources.push(
+            sourceLabel(source, config.sources.indexOf(source))
+          );
+          firstFailure ||= errorMessage;
         }
       }
 
+      const failedError =
+        failedSources.length > 0
+          ? `${failedSources.length}/${
+              sourcesToFetch.length
+            } source(s) failed (${failedSources.join(', ')}): ${firstFailure}`
+          : undefined;
+
       // Combine items according to mode
-      const combinedItems = this.combineItems(
+      let combinedItems = this.combineItems(
         itemGroups,
         config.combineMode,
         configForSync
       );
+
+      if (
+        config.sortOrder &&
+        config.sortOrder !== 'default' &&
+        config.sortOrder !== 'reverse'
+      ) {
+        combinedItems = await this.getSyncService(
+          config.sources[0].type
+        ).orderCombinedItems(combinedItems, configForSync as CollectionConfig);
+      }
 
       // 3. Validation & Filtering - use standard pipeline utilities
       const { validItems, invalidItems, validationErrors } =
@@ -398,9 +439,6 @@ export class MultiSourceOrchestrator {
           : itemsAfterExclusion;
 
       if (finalItems.length === 0) {
-        const allFailed =
-          failedSources.length === sourcesToFetch.length &&
-          sourcesToFetch.length > 0;
         logger.warn(
           `No valid items found from any source for multi-source collection: ${collectionNameForSync}`,
           {
@@ -410,29 +448,13 @@ export class MultiSourceOrchestrator {
             originalItems: combinedItems.length,
             validItems: validItems.length,
             invalidItems: invalidItems.length,
-            failedSources: failedSources.length,
-            allSourcesFailed: allFailed,
           }
         );
-        if (allFailed) {
-          return {
-            created: 0,
-            updated: 0,
-            error: `All ${
-              failedSources.length
-            } source(s) failed: ${failedSources.join(', ')}`,
-          };
-        }
-        if (failedSources.length > 0) {
-          return {
-            created: 0,
-            updated: 0,
-            warning: `No items after combining — ${failedSources.length}/${
-              sourcesToFetch.length
-            } source(s) failed: ${failedSources.join(', ')}`,
-          };
-        }
-        return { created: 0, updated: 0 };
+        return {
+          created: 0,
+          updated: 0,
+          ...(failedError && { error: failedError }),
+        };
       }
 
       logger.info(
@@ -623,10 +645,8 @@ export class MultiSourceOrchestrator {
         );
       }
 
-      if (failedSources.length > 0) {
-        result.warning = `Synced but ${failedSources.length}/${
-          sourcesToFetch.length
-        } source(s) failed: ${failedSources.join(', ')}`;
+      if (failedError && !result.error) {
+        result.error = failedError;
       }
 
       return result;
@@ -869,7 +889,7 @@ export class MultiSourceOrchestrator {
         error: errorMessage,
         ...errorDetails,
       });
-      return { items: [] };
+      throw error;
     }
   }
 
@@ -1391,10 +1411,9 @@ export class MultiSourceOrchestrator {
     processedCollectionKeys?: Set<string>
   ): Promise<{ created: number; updated: number }> {
     const mediaType = getMediaTypeFromLibrary(config.libraryId);
-    const customLabel = createCollectionLabel(
-      'multi-source' as 'overseerr',
-      config.id
-    );
+    const customLabel =
+      getTargetUserLabel(config) ??
+      createCollectionLabel('multi-source' as 'overseerr', config.id);
 
     const options: CollectionUpdateOptions = {
       collectionName: config.name,

@@ -553,6 +553,7 @@ export interface MDBListSourceData {
 
 export interface TautulliSourceData {
   rating_key?: string;
+  guid?: string;
   grandparent_rating_key?: string;
   title?: string;
   grandparent_title?: string;

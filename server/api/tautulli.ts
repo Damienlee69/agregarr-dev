@@ -207,8 +207,33 @@ interface TautulliCollectionStats {
   user_stats: TautulliWatchUser[];
 }
 
+interface WatchPassEntry {
+  ratingKey: string;
+  stats: TautulliWatchStats[];
+}
+
+const DASHBOARD_QUERY_DAYS = [7, 30];
+
+const WATCH_PASS_TTL_MS = 5 * 60 * 1000;
+interface CollectionDetail {
+  title: string;
+  sectionId: number;
+  sectionName: string;
+  itemCount: number;
+  userStats: TautulliWatchUser[];
+  ok: boolean;
+}
+
+interface WatchPass {
+  pass: Promise<WatchPassEntry[]>;
+  details: Map<string, Promise<CollectionDetail>>;
+}
+
+const watchPassCache = new Map<string, WatchPass & { expires: number }>();
+
 class TautulliAPI {
   private axios: AxiosInstance;
+  private baseURL: string;
 
   constructor(settings: TautulliSettings) {
     // Use conditional port logic to match OverseerrAPI - only include port if specified
@@ -216,8 +241,9 @@ class TautulliAPI {
     const port = settings.port ? `:${settings.port}` : '';
     const urlBase = settings.urlBase ?? '';
 
+    this.baseURL = `${protocol}://${settings.hostname}${port}${urlBase}`;
     this.axios = axios.create({
-      baseURL: `${protocol}://${settings.hostname}${port}${urlBase}`,
+      baseURL: this.baseURL,
       params: { apikey: settings.apiKey },
       timeout: 30000, // 30 second timeout to match OverseerrAPI
     });
@@ -710,6 +736,126 @@ class TautulliAPI {
     }
   }
 
+  private getWatchTimePass(ratingKeys: string[], queryDays: number): WatchPass {
+    const days = [...new Set([...DASHBOARD_QUERY_DAYS, queryDays])]
+      .sort((a, b) => a - b)
+      .join(',');
+    const key = `${this.baseURL}|${days}|${[...ratingKeys].sort().join(',')}`;
+    const hit = watchPassCache.get(key);
+    if (hit && hit.expires > Date.now()) {
+      return hit;
+    }
+
+    const run = (async () => {
+      const entries: WatchPassEntry[] = [];
+      let complete = true;
+      for (const ratingKey of ratingKeys) {
+        try {
+          const response = await this.axios.get<TautulliWatchStatsResponse>(
+            '/api/v2',
+            {
+              params: {
+                cmd: 'get_item_watch_time_stats',
+                rating_key: ratingKey,
+                media_type: 'collection',
+                grouping: 1,
+                query_days: days,
+              },
+            }
+          );
+          entries.push({ ratingKey, stats: response.data.response.data });
+        } catch (error) {
+          complete = false;
+          logger.warn(`Failed to get stats for collection ${ratingKey}`, {
+            label: 'Tautulli API',
+            ratingKey,
+            error: error.message,
+          });
+        }
+      }
+      return { entries, complete };
+    })();
+
+    const pass = run.then((r) => r.entries);
+    const now = Date.now();
+    for (const [k, v] of watchPassCache) {
+      if (v.expires <= now) watchPassCache.delete(k);
+    }
+    const entry = { expires: Infinity, pass, details: new Map() };
+    watchPassCache.set(key, entry);
+    void run.then(({ complete }) => {
+      if (watchPassCache.get(key) !== entry) return;
+      if (complete) entry.expires = Date.now() + WATCH_PASS_TTL_MS;
+      else watchPassCache.delete(key);
+    });
+    return entry;
+  }
+
+  private getDetail(
+    details: WatchPass['details'],
+    ratingKey: string
+  ): Promise<CollectionDetail> {
+    const hit = details.get(ratingKey);
+    if (hit) return hit;
+
+    const detail = (async (): Promise<CollectionDetail> => {
+      const result: CollectionDetail = {
+        title: `Collection ${ratingKey}`,
+        sectionId: 0,
+        sectionName: '',
+        itemCount: 0,
+        userStats: [],
+        ok: true,
+      };
+
+      try {
+        const metadataResponse = await this.axios.get('/api/v2', {
+          params: { cmd: 'get_metadata', rating_key: ratingKey },
+        });
+        const metadata = metadataResponse.data.response.data;
+        if (metadata) {
+          result.title = metadata.title || result.title;
+          result.sectionId = metadata.section_id || 0;
+          result.sectionName = metadata.library_name || '';
+          result.itemCount = metadata.children_count || 0;
+        }
+      } catch (metadataError) {
+        result.ok = false;
+        logger.warn(`Failed to get metadata for collection ${ratingKey}`, {
+          label: 'Tautulli API',
+          ratingKey,
+          error: metadataError.message,
+        });
+      }
+
+      try {
+        const userStatsResponse =
+          await this.axios.get<TautulliWatchUsersResponse>('/api/v2', {
+            params: {
+              cmd: 'get_item_user_stats',
+              rating_key: ratingKey,
+              media_type: 'collection',
+              grouping: 1,
+            },
+          });
+        result.userStats = userStatsResponse.data.response.data || [];
+      } catch (userStatsError) {
+        result.ok = false;
+        logger.warn(`Failed to get user stats for collection ${ratingKey}`, {
+          label: 'Tautulli API',
+          ratingKey,
+          error: userStatsError.message,
+        });
+      }
+
+      if (!result.ok) details.delete(ratingKey);
+      return result;
+    })();
+
+    details.set(ratingKey, detail);
+    return detail;
+  }
+
   /**
    * Get top collections by plays or duration for our configured collections
    * This method gets stats for each of our collections individually since Tautulli
@@ -737,151 +883,60 @@ class TautulliAPI {
         return [];
       }
 
-      const collectionStats: TautulliCollectionStats[] = [];
+      const { pass: passPromise, details } = this.getWatchTimePass(
+        collectionRatingKeys,
+        queryDays
+      );
+      const pass = await passPromise;
+      const ranked = pass.flatMap(({ ratingKey, stats }) => {
+        const own = stats.filter((s) => s.query_days === queryDays);
+        const targetStats = own[0];
+        return targetStats && targetStats.total_plays !== 0
+          ? [{ ratingKey, stats: own, targetStats }]
+          : [];
+      });
+      const top = ranked
+        .sort((a, b) =>
+          statType === 'plays'
+            ? b.targetStats.total_plays - a.targetStats.total_plays
+            : b.targetStats.total_time - a.targetStats.total_time
+        )
+        .slice(0, limit);
 
-      // Get stats for each collection individually
-      for (const ratingKey of collectionRatingKeys) {
+      const result: TautulliCollectionStats[] = [];
+
+      for (const entry of top) {
+        const { ratingKey } = entry;
         try {
-          logger.debug(`Getting stats for collection ${ratingKey}`, {
-            label: 'Tautulli API',
-            ratingKey,
-          });
-
-          // Get watch time stats for the specified time period
-          const watchTimeStats =
-            await this.axios.get<TautulliWatchStatsResponse>('/api/v2', {
-              params: {
-                cmd: 'get_item_watch_time_stats',
-                rating_key: ratingKey,
-                media_type: 'collection',
-                grouping: 1,
-                query_days: `${queryDays}`,
-              },
-            });
-
-          const stats = watchTimeStats.data.response.data;
-          logger.debug(`Got watch time stats for ${ratingKey}`, {
-            label: 'Tautulli API',
-            ratingKey,
-            statsCount: stats.length,
-            stats: stats.map((s) => ({
-              days: s.query_days,
-              plays: s.total_plays,
-              time: s.total_time,
-            })),
-          });
-
-          // Find the stats for our requested time period
-          const targetStats =
-            stats.find((s) => s.query_days === queryDays) || stats[0];
-
-          if (!targetStats || targetStats.total_plays === 0) {
-            logger.debug(`No meaningful stats for collection ${ratingKey}`, {
-              label: 'Tautulli API',
-              ratingKey,
-              targetStats,
-            });
-            continue;
-          }
-
-          // Get basic collection metadata
-          let collectionTitle = `Collection ${ratingKey}`;
-          let sectionId = 0;
-          let sectionName = '';
-          let itemCount = 0;
-
-          try {
-            const metadataResponse = await this.axios.get('/api/v2', {
-              params: {
-                cmd: 'get_metadata',
-                rating_key: ratingKey,
-              },
-            });
-
-            const metadata = metadataResponse.data.response.data;
-            if (metadata) {
-              collectionTitle = metadata.title || collectionTitle;
-              sectionId = metadata.section_id || 0;
-              sectionName = metadata.library_name || '';
-              itemCount = metadata.children_count || 0;
-            }
-          } catch (metadataError) {
-            logger.warn(`Failed to get metadata for collection ${ratingKey}`, {
-              label: 'Tautulli API',
-              ratingKey,
-              error: metadataError.message,
-            });
-          }
-
-          // Get user stats for this collection
-          let userStats: TautulliWatchUser[] = [];
-          try {
-            const userStatsResponse =
-              await this.axios.get<TautulliWatchUsersResponse>('/api/v2', {
-                params: {
-                  cmd: 'get_item_user_stats',
-                  rating_key: ratingKey,
-                  media_type: 'collection',
-                  grouping: 1,
-                },
-              });
-            userStats = userStatsResponse.data.response.data || [];
-          } catch (userStatsError) {
-            logger.warn(
-              `Failed to get user stats for collection ${ratingKey}`,
-              {
-                label: 'Tautulli API',
-                ratingKey,
-                error: userStatsError.message,
-              }
-            );
-          }
+          const detail = await this.getDetail(details, ratingKey);
 
           const collectionStat: TautulliCollectionStats = {
             rating_key: ratingKey,
-            title: collectionTitle,
+            title: detail.title,
             media_type: 'collection',
-            section_id: sectionId,
-            section_name: sectionName,
-            item_count: itemCount,
-            total_plays: targetStats.total_plays,
-            total_duration: targetStats.total_time,
+            section_id: detail.sectionId,
+            section_name: detail.sectionName,
+            item_count: detail.itemCount,
+            total_plays: entry.targetStats.total_plays,
+            total_duration: entry.targetStats.total_time,
             last_played: undefined, // Would need additional API call to get this
-            watch_time_stats: stats,
-            user_stats: userStats,
+            watch_time_stats: entry.stats,
+            user_stats: detail.userStats,
           };
 
-          collectionStats.push(collectionStat);
-
-          logger.debug(`Successfully processed collection ${collectionTitle}`, {
-            label: 'Tautulli API',
-            ratingKey,
-            plays: targetStats.total_plays,
-            duration: targetStats.total_time,
-            userCount: userStats.length,
-          });
+          result.push(collectionStat);
         } catch (error) {
           logger.warn(`Failed to get stats for collection ${ratingKey}`, {
             label: 'Tautulli API',
             ratingKey,
             error: error.message,
           });
-          continue;
         }
       }
 
-      // Sort by the requested stat type
-      const sortedStats = collectionStats.sort((a, b) => {
-        return statType === 'plays'
-          ? b.total_plays - a.total_plays
-          : b.total_duration - a.total_duration;
-      });
-
-      const result = sortedStats.slice(0, limit);
-
       logger.info('Successfully processed collection stats', {
         label: 'Tautulli API',
-        totalProcessed: collectionStats.length,
+        totalProcessed: ranked.length,
         returnedCount: result.length,
         topCollections: result.slice(0, 3).map((c) => ({
           title: c.title,

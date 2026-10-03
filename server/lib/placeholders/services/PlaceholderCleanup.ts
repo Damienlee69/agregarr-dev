@@ -3,7 +3,10 @@ import { getRepository } from '@server/datasource';
 import { ComingSoonItem } from '@server/entity/ComingSoonItem';
 import type { LibraryItemsCache } from '@server/lib/collections/core/CollectionUtilities';
 import type { MissingItem } from '@server/lib/collections/core/types';
-import { getPlaceholderRootFolder } from '@server/lib/placeholders/helpers/placeholderPathHelpers';
+import {
+  getPlaceholderRootFolder,
+  isInsideSectionPaths,
+} from '@server/lib/placeholders/helpers/placeholderPathHelpers';
 import type { CollectionConfig } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -906,12 +909,7 @@ export async function removeGhostEntries(
   //    library-wide to piggyback on).
   const sectionPaths = await plexClient.getLibrarySectionPaths(libraryId);
   const isInsideSection = (directory: string): boolean =>
-    sectionPaths.length === 0 ||
-    sectionPaths.some(
-      (root) =>
-        directory !== root &&
-        directory.startsWith(root.endsWith('/') ? root : `${root}/`)
-    );
+    isInsideSectionPaths(directory, sectionPaths);
 
   let scansTriggered = 0;
   let outsideSection = 0;
