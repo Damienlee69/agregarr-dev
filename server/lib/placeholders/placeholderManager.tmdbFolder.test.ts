@@ -87,6 +87,22 @@ describe('movie placeholder folder tmdb hint', () => {
     expect(await wantsTmdbFolderHint({ ...opts, tmdbId: 1698863 })).toBe(true);
   });
 
+  it('keeps the legacy folder when the existence check fails for a reason other than ENOENT', async () => {
+    settingsState.enabled = true;
+    const spy = vi
+      .spyOn(fs, 'access')
+      .mockRejectedValue(
+        Object.assign(new Error('denied'), { code: 'EACCES' })
+      );
+    try {
+      expect(
+        await wantsTmdbFolderHint({ ...odyssey(1), libraryPath: root })
+      ).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('two same-title movies with the hint create two folders and both scan back', async () => {
     for (const id of [1368337, 1698863]) {
       await fs.writeFile(trailer, 'x');
