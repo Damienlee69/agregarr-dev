@@ -615,6 +615,18 @@ class PlexAPI {
     return response.MediaContainer.Metadata[0];
   }
 
+  public async findItemByGuid(
+    libraryId: string,
+    guid: string
+  ): Promise<PlexLibraryItem | undefined> {
+    const response = await this.plexClient.query<PlexLibraryResponse>(
+      `/library/sections/${libraryId}/all?guid=${encodeURIComponent(
+        guid
+      )}&includeGuids=1`
+    );
+    return response.MediaContainer.Metadata?.[0];
+  }
+
   /**
    * Guarded single-item metadata fetch that never throws. Classifies the
    * outcome so callers can safely distinguish a confirmed deletion from an
