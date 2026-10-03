@@ -93,20 +93,35 @@ describe('Tautulli stale rating key', () => {
   });
 
   it('keeps the stale key when the guid resolves nothing', async () => {
+    const find = vi.fn().mockResolvedValue(undefined);
     const items = await run(
       { rating_key: '100', guid: GUID },
       vi.fn().mockRejectedValue(notFound),
-      vi.fn().mockResolvedValue(undefined)
+      find
     );
+    expect(find).toHaveBeenCalledWith('4', GUID);
     expect(items.map((i) => i.ratingKey)).toEqual(['100']);
   });
 
   it('keeps the stale key when the guid lookup throws', async () => {
+    const find = vi.fn().mockRejectedValue(new Error('response code: 500'));
     const items = await run(
       { rating_key: '100', guid: GUID },
       vi.fn().mockRejectedValue(notFound),
-      vi.fn().mockRejectedValue(new Error('response code: 500'))
+      find
     );
+    expect(find).toHaveBeenCalledWith('4', GUID);
+    expect(items.map((i) => i.ratingKey)).toEqual(['100']);
+  });
+
+  it('skips without a lookup when a stale row has no guid', async () => {
+    const find = vi.fn();
+    const items = await run(
+      { rating_key: '100' },
+      vi.fn().mockRejectedValue(notFound),
+      find
+    );
+    expect(find).not.toHaveBeenCalled();
     expect(items.map((i) => i.ratingKey)).toEqual(['100']);
   });
 
