@@ -14,6 +14,7 @@ import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { appDataPath } from '@server/utils/appDataVolume';
 import { scrubSecrets } from '@server/utils/logRedaction';
+import { isOnContainerRootFs } from '@server/utils/mountedVolume';
 import axios from 'axios';
 import { accessSync, constants, unlinkSync, writeFileSync } from 'fs';
 import path from 'path';
@@ -780,6 +781,33 @@ export const jobFreshnessCheck: HealthCheck = {
   },
 };
 
+export const placeholderRootVolumeCheck: HealthCheck = {
+  id: 'placeholder-root-volume',
+  name: 'Placeholder Folders',
+
+  run: async () => {
+    const { main } = getSettings();
+    const roots = new Set(
+      [
+        ...Object.values(main.placeholderMovieRootFolders ?? {}),
+        ...Object.values(main.placeholderTVRootFolders ?? {}),
+      ].filter(Boolean)
+    );
+    if (!roots.size) return { status: 'skipped' };
+
+    const bad = [...roots].filter((r) => isOnContainerRootFs(r));
+    if (!bad.length) return { status: 'ok' };
+    return {
+      status: 'warning',
+      message: sanitize(
+        `Not on a mounted volume, placeholders are written inside the container image: ${bad.join(
+          ', '
+        )}. Mount these folders into the container.`
+      ),
+    };
+  },
+};
+
 // --- Registry ---
 
 const checks: HealthCheck[] = [
@@ -797,6 +825,7 @@ const checks: HealthCheck[] = [
   plexLibrariesCheck,
   overlayTemplateRefsCheck,
   appdataWritableCheck,
+  placeholderRootVolumeCheck,
   timezoneConfigurationCheck,
   jobFreshnessCheck,
 ];
