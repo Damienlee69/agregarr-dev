@@ -35,6 +35,11 @@ import { MultiSourceOrchestrator } from './MultiSourceOrchestrator';
 type Internals = {
   createOrUpdatePlexCollection: (...a: unknown[]) => Promise<unknown>;
   createOrUpdateCollectionStandardized: (...a: unknown[]) => Promise<unknown>;
+  fetchItemsFromSource: (...a: unknown[]) => Promise<unknown>;
+  processMultiSourceCollection: (...a: unknown[]) => Promise<{
+    error?: string;
+    warning?: string;
+  }>;
   findExistingMultiSourceCollection: (...a: unknown[]) => PlexCollection | null;
 };
 
@@ -89,5 +94,69 @@ describe('multi-source lookup of a target-user collection', () => {
     );
 
     expect(found?.ratingKey).toBe('700');
+  });
+});
+
+describe('multi-source run with failing sources', () => {
+  const sources = [
+    { id: 'a', type: 'trakt' },
+    { id: 'b', type: 'imdb' },
+  ];
+  const item = { ratingKey: '1', title: 'One', type: 'movie', tmdbId: 1 };
+
+  const run = async (outcomes: ('ok' | 'fail')[], fetchSource = vi.fn()) => {
+    const o = internals();
+    outcomes.forEach((x) =>
+      x === 'ok'
+        ? fetchSource.mockResolvedValueOnce({ items: [item] })
+        : fetchSource.mockRejectedValueOnce(new Error('upstream 403'))
+    );
+    vi.spyOn(o, 'fetchItemsFromSource').mockImplementation(fetchSource);
+    const write = vi
+      .spyOn(o, 'createOrUpdatePlexCollection')
+      .mockResolvedValue({ created: 0, updated: 1 });
+    const result = await o.processMultiSourceCollection(
+      config({ sources, combineMode: 'list_order' } as never),
+      {},
+      []
+    );
+    return { result, write, fetchSource };
+  };
+
+  it('updates with the surviving items and reports the failure', async () => {
+    const { result, write } = await run(['ok', 'fail']);
+
+    expect(write.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ ratingKey: '1' }),
+    ]);
+    expect(result.error).toBe('1/2 source(s) failed (b): upstream 403');
+  });
+
+  it('reports the failure when every source fails', async () => {
+    const { result, write } = await run(['fail', 'fail']);
+
+    expect(write).not.toHaveBeenCalled();
+    expect(result.error).toBe('2/2 source(s) failed (a, b): upstream 403');
+  });
+
+  it('reports nothing when every source succeeds', async () => {
+    const { result, write, fetchSource } = await run(['ok', 'ok']);
+
+    expect(fetchSource).toHaveBeenCalledTimes(2);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('lets fetchItemsFromSource failures propagate', async () => {
+    const o = internals() as unknown as {
+      getSyncService: (t: string) => unknown;
+    } & Internals;
+    vi.spyOn(o, 'getSyncService').mockReturnValue({
+      fetchSourceData: () => Promise.reject(new Error('boom')),
+    });
+
+    await expect(
+      o.fetchItemsFromSource(sources[0], config(), {})
+    ).rejects.toThrow('boom');
   });
 });
