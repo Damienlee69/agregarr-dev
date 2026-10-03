@@ -91,12 +91,25 @@ interface MetadataUpdateOptions {
   existingTitleSort?: string;
 }
 
-const sourceLabel = (source: SourceDefinition): string =>
-  source.resolvedTitle ||
-  source.radarrTagLabel ||
-  source.sonarrTagLabel ||
-  source.customUrl?.split('/').filter(Boolean).pop() ||
-  [source.type, source.subtype].filter(Boolean).join(' ');
+const urlSlug = (url: string): string | undefined => {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    path = url.split(/[?#]/)[0];
+  }
+  return path.split('/').filter(Boolean).pop();
+};
+
+const sourceLabel = (source: SourceDefinition, index: number): string =>
+  (
+    source.resolvedTitle ||
+    source.radarrTagLabel ||
+    source.sonarrTagLabel ||
+    (source.customUrl && urlSlug(source.customUrl)) ||
+    [source.type, source.subtype].filter(Boolean).join(' ') ||
+    `source ${index + 1}`
+  ).slice(0, 60);
 
 /**
  * MultiSourceOrchestrator - Orchestrates multi-source collections by combining items from multiple sources
@@ -365,7 +378,9 @@ export class MultiSourceOrchestrator {
             error: errorMessage,
             ...errorDetails,
           });
-          failedSources.push(sourceLabel(source));
+          failedSources.push(
+            sourceLabel(source, config.sources.indexOf(source))
+          );
           firstFailure ||= errorMessage;
         }
       }
