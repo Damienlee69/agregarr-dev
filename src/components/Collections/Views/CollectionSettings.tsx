@@ -121,11 +121,14 @@ const checkPlaceholderHubWarning = (
   // - movie.recentlyadded, movie.recentlyreleased (Movies)
   // - tv.recentlyadded, tv.recentlyaired (TV)
   // There is NO tv.recentlyreleased hub (recently_released for TV is user-created only)
-  const hubSubtypeMapping: Record<string, string> = {
-    'movie.recentlyadded': 'recently_added',
-    'movie.recentlyreleased': 'recently_released',
-    'tv.recentlyadded': 'recently_added',
-    'tv.recentlyaired': 'recently_released_episodes',
+  const hubSubtypeMapping: Record<string, string[]> = {
+    'movie.recentlyadded': ['recently_added'],
+    'movie.recentlyreleased': ['recently_released'],
+    'tv.recentlyadded': ['recently_added'],
+    'tv.recentlyaired': [
+      'recently_released_episodes',
+      'recently_aired_episodes',
+    ],
   };
 
   libs.forEach((library) => {
@@ -166,11 +169,13 @@ const checkPlaceholderHubWarning = (
     const problematicHubs: HubIssue[] = [];
 
     enabledHubs.forEach((hub) => {
-      const filteredSubtype = hubSubtypeMapping[hub.hubIdentifier];
-      if (!filteredSubtype) return;
+      const filteredSubtypes = hubSubtypeMapping[hub.hubIdentifier];
+      if (!filteredSubtypes) return;
 
       // Check if a filtered hub with the required subtype exists and get its name
-      const filteredHubName = filteredHubsBySubtype.get(filteredSubtype);
+      const filteredHubName = filteredSubtypes
+        .map((s) => filteredHubsBySubtype.get(s))
+        .find(Boolean);
       const hasFilteredHub = !!filteredHubName;
 
       // Always warn if default hub has visibility - either need to create filtered hub

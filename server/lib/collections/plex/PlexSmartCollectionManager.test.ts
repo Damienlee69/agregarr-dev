@@ -1,4 +1,5 @@
 import type PlexAPI from '@server/api/plexapi';
+import logger from '@server/logger';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@server/logger', () => ({
@@ -60,6 +61,49 @@ describe('PlexSmartCollectionManager.createFilteredHub', () => {
     const decodedUri = decodeURIComponent(createUrl);
     expect(decodedUri).toContain('show.label!=trailer-placeholder');
     expect(decodedUri).not.toMatch(/[^.]label!=trailer-placeholder/);
+  });
+
+  it('builds an episode-level air-date query with an upper bound for recently_aired_episodes', async () => {
+    const { manager, mockPlexApi } = createManager();
+
+    await manager.createFilteredHub(
+      'Aired Episodes',
+      '3',
+      'tv',
+      'recently_aired_episodes',
+      20,
+      ['Some Collection']
+    );
+
+    const createUrl = mockPlexApi.safePostQuery.mock.calls[0][0] as string;
+    const decodedUri = decodeURIComponent(createUrl);
+    expect(createUrl).toContain('type=4');
+    expect(decodedUri).toContain('sort=originallyAvailableAt:desc');
+    expect(decodedUri).toContain('originallyAvailableAt<<=-0d');
+    expect(decodedUri).toContain('show.label!=trailer-placeholder');
+    expect(decodedUri).not.toContain('collection!=');
+    expect(decodedUri).toContain('limit=20');
+  });
+
+  it('rejects recently_aired_episodes on movie libraries', async () => {
+    const { manager, mockPlexApi } = createManager();
+
+    const result = await manager.createFilteredHub(
+      'Aired Episodes',
+      '1',
+      'movie',
+      'recently_aired_episodes'
+    );
+
+    expect(result).toBeNull();
+    expect(mockPlexApi.safePostQuery).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        error:
+          'recently_aired_episodes subtype is only supported for TV libraries',
+      })
+    );
   });
 
   it('creates type=2 collection for recently_released_episodes (shows, not episodes)', async () => {
@@ -386,6 +430,24 @@ describe('PlexSmartCollectionManager.updateFilteredHubUri', () => {
     const putUrl = mockPlexApi.safePutQuery.mock.calls[0][0] as string;
     const decodedUri = decodeURIComponent(putUrl);
     expect(decodedUri).toContain('type=4');
+    expect(decodedUri).toContain('show.label!=trailer-placeholder');
+  });
+
+  it('uses the air-date upper bound in the update URI for recently_aired_episodes', async () => {
+    const { manager, mockPlexApi } = createManager();
+
+    await manager.updateFilteredHubUri(
+      '99999',
+      '3',
+      'tv',
+      'recently_aired_episodes'
+    );
+
+    const putUrl = mockPlexApi.safePutQuery.mock.calls[0][0] as string;
+    const decodedUri = decodeURIComponent(putUrl);
+    expect(decodedUri).toContain('type=4');
+    expect(decodedUri).toContain('sort=originallyAvailableAt:desc');
+    expect(decodedUri).toContain('originallyAvailableAt<<=-0d');
     expect(decodedUri).toContain('show.label!=trailer-placeholder');
   });
 
