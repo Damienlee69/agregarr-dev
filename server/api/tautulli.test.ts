@@ -129,27 +129,49 @@ describe('TautulliAPI.getTopCollections', () => {
     expect(callsOf('get_item_user_stats')).toBe(8);
   });
 
-  it('does not memoize a failed detail call', async () => {
+  it.each([
+    ['get_metadata', 24],
+    ['get_item_user_stats', 25],
+  ])('does not memoize a failed %s call', async (failingCmd, days) => {
     const base = get.getMockImplementation() as (
       u: string,
       c: never
     ) => Promise<unknown>;
     let failed = false;
     get.mockImplementation(async (url, cfg) => {
-      if (!failed && cfg.params.cmd === 'get_metadata') {
+      if (!failed && cfg.params.cmd === failingCmd) {
         failed = true;
         throw new Error('boom');
       }
       return base(url, cfg);
     });
 
-    const first = await api().getTopCollections(2, 'plays', 20, keys);
-    expect(first[0].title).toBe('Collection 8');
+    await api().getTopCollections(2, 'plays', days, keys);
+    await api().getTopCollections(2, 'plays', days, keys);
 
-    const second = await api().getTopCollections(2, 'plays', 20, keys);
-    expect(second[0].title).toBe('C8');
-    expect(callsOf('get_metadata')).toBe(3);
-    expect(callsOf('get_item_user_stats')).toBe(3);
+    expect(callsOf(failingCmd)).toBe(3);
+  });
+
+  it('shares in-flight detail calls between overlapping requests', async () => {
+    const base = get.getMockImplementation() as (
+      u: string,
+      c: never
+    ) => Promise<unknown>;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    get.mockImplementation(async (url, cfg) => {
+      if (cfg.params.cmd !== 'get_item_watch_time_stats') await gate;
+      return base(url, cfg);
+    });
+
+    const a = api().getTopCollections(2, 'plays', 26, keys);
+    const b = api().getTopCollections(2, 'plays', 26, keys);
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    await Promise.all([a, b]);
+
+    expect(callsOf('get_metadata')).toBe(2);
+    expect(callsOf('get_item_user_stats')).toBe(2);
   });
 
   it('drops details together with an evicted partial pass', async () => {
