@@ -119,6 +119,63 @@ describe('TautulliAPI.getTopCollections', () => {
     expect(result).toEqual([]);
   });
 
+  it('reuses detail calls on repeat and across the 7/30 day views', async () => {
+    const own = keys.slice(0, 9);
+    await api().getTopCollections(50, 'plays', 7, own);
+    await api().getTopCollections(8, 'plays', 30, own);
+    await api().getTopCollections(50, 'plays', 7, own);
+
+    expect(callsOf('get_metadata')).toBe(8);
+    expect(callsOf('get_item_user_stats')).toBe(8);
+  });
+
+  it('does not memoize a failed detail call', async () => {
+    const base = get.getMockImplementation() as (
+      u: string,
+      c: never
+    ) => Promise<unknown>;
+    let failed = false;
+    get.mockImplementation(async (url, cfg) => {
+      if (!failed && cfg.params.cmd === 'get_metadata') {
+        failed = true;
+        throw new Error('boom');
+      }
+      return base(url, cfg);
+    });
+
+    const first = await api().getTopCollections(2, 'plays', 20, keys);
+    expect(first[0].title).toBe('Collection 8');
+
+    const second = await api().getTopCollections(2, 'plays', 20, keys);
+    expect(second[0].title).toBe('C8');
+    expect(callsOf('get_metadata')).toBe(3);
+    expect(callsOf('get_item_user_stats')).toBe(3);
+  });
+
+  it('drops details together with an evicted partial pass', async () => {
+    const base = get.getMockImplementation() as (
+      u: string,
+      c: never
+    ) => Promise<unknown>;
+    let failed = false;
+    get.mockImplementation(async (url, cfg) => {
+      if (
+        !failed &&
+        cfg.params.cmd === 'get_item_watch_time_stats' &&
+        cfg.params.rating_key === '3'
+      ) {
+        failed = true;
+        throw new Error('boom');
+      }
+      return base(url, cfg);
+    });
+
+    await api().getTopCollections(2, 'plays', 21, keys);
+    await api().getTopCollections(2, 'plays', 21, keys);
+
+    expect(callsOf('get_metadata')).toBe(4);
+  });
+
   describe('pass lifetime', () => {
     afterEach(() => vi.useRealTimers());
 

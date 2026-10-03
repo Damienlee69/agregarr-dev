@@ -215,10 +215,21 @@ interface WatchPassEntry {
 const DASHBOARD_QUERY_DAYS = [7, 30];
 
 const WATCH_PASS_TTL_MS = 5 * 60 * 1000;
-const watchPassCache = new Map<
-  string,
-  { expires: number; pass: Promise<WatchPassEntry[]> }
->();
+interface CollectionDetail {
+  title: string;
+  sectionId: number;
+  sectionName: string;
+  itemCount: number;
+  userStats: TautulliWatchUser[];
+  ok: boolean;
+}
+
+interface WatchPass {
+  pass: Promise<WatchPassEntry[]>;
+  details: Map<string, Promise<CollectionDetail>>;
+}
+
+const watchPassCache = new Map<string, WatchPass & { expires: number }>();
 
 class TautulliAPI {
   private axios: AxiosInstance;
@@ -725,17 +736,14 @@ class TautulliAPI {
     }
   }
 
-  private getWatchTimePass(
-    ratingKeys: string[],
-    queryDays: number
-  ): Promise<WatchPassEntry[]> {
+  private getWatchTimePass(ratingKeys: string[], queryDays: number): WatchPass {
     const days = [...new Set([...DASHBOARD_QUERY_DAYS, queryDays])]
       .sort((a, b) => a - b)
       .join(',');
     const key = `${this.baseURL}|${days}|${[...ratingKeys].sort().join(',')}`;
     const hit = watchPassCache.get(key);
     if (hit && hit.expires > Date.now()) {
-      return hit.pass;
+      return hit;
     }
 
     const run = (async () => {
@@ -773,14 +781,79 @@ class TautulliAPI {
     for (const [k, v] of watchPassCache) {
       if (v.expires <= now) watchPassCache.delete(k);
     }
-    const entry = { expires: Infinity, pass };
+    const entry = { expires: Infinity, pass, details: new Map() };
     watchPassCache.set(key, entry);
     void run.then(({ complete }) => {
       if (watchPassCache.get(key) !== entry) return;
       if (complete) entry.expires = Date.now() + WATCH_PASS_TTL_MS;
       else watchPassCache.delete(key);
     });
-    return pass;
+    return entry;
+  }
+
+  private getDetail(
+    details: WatchPass['details'],
+    ratingKey: string
+  ): Promise<CollectionDetail> {
+    const hit = details.get(ratingKey);
+    if (hit) return hit;
+
+    const detail = (async (): Promise<CollectionDetail> => {
+      const result: CollectionDetail = {
+        title: `Collection ${ratingKey}`,
+        sectionId: 0,
+        sectionName: '',
+        itemCount: 0,
+        userStats: [],
+        ok: true,
+      };
+
+      try {
+        const metadataResponse = await this.axios.get('/api/v2', {
+          params: { cmd: 'get_metadata', rating_key: ratingKey },
+        });
+        const metadata = metadataResponse.data.response.data;
+        if (metadata) {
+          result.title = metadata.title || result.title;
+          result.sectionId = metadata.section_id || 0;
+          result.sectionName = metadata.library_name || '';
+          result.itemCount = metadata.children_count || 0;
+        }
+      } catch (metadataError) {
+        result.ok = false;
+        logger.warn(`Failed to get metadata for collection ${ratingKey}`, {
+          label: 'Tautulli API',
+          ratingKey,
+          error: metadataError.message,
+        });
+      }
+
+      try {
+        const userStatsResponse =
+          await this.axios.get<TautulliWatchUsersResponse>('/api/v2', {
+            params: {
+              cmd: 'get_item_user_stats',
+              rating_key: ratingKey,
+              media_type: 'collection',
+              grouping: 1,
+            },
+          });
+        result.userStats = userStatsResponse.data.response.data || [];
+      } catch (userStatsError) {
+        result.ok = false;
+        logger.warn(`Failed to get user stats for collection ${ratingKey}`, {
+          label: 'Tautulli API',
+          ratingKey,
+          error: userStatsError.message,
+        });
+      }
+
+      if (!result.ok) details.delete(ratingKey);
+      return result;
+    })();
+
+    details.set(ratingKey, detail);
+    return detail;
   }
 
   /**
@@ -810,7 +883,11 @@ class TautulliAPI {
         return [];
       }
 
-      const pass = await this.getWatchTimePass(collectionRatingKeys, queryDays);
+      const { pass: passPromise, details } = this.getWatchTimePass(
+        collectionRatingKeys,
+        queryDays
+      );
+      const pass = await passPromise;
       const ranked = pass.flatMap(({ ratingKey, stats }) => {
         const own = stats.filter((s) => s.query_days === queryDays);
         const targetStats = own[0];
@@ -831,71 +908,20 @@ class TautulliAPI {
       for (const entry of top) {
         const { ratingKey } = entry;
         try {
-          // Get basic collection metadata
-          let collectionTitle = `Collection ${ratingKey}`;
-          let sectionId = 0;
-          let sectionName = '';
-          let itemCount = 0;
-
-          try {
-            const metadataResponse = await this.axios.get('/api/v2', {
-              params: {
-                cmd: 'get_metadata',
-                rating_key: ratingKey,
-              },
-            });
-
-            const metadata = metadataResponse.data.response.data;
-            if (metadata) {
-              collectionTitle = metadata.title || collectionTitle;
-              sectionId = metadata.section_id || 0;
-              sectionName = metadata.library_name || '';
-              itemCount = metadata.children_count || 0;
-            }
-          } catch (metadataError) {
-            logger.warn(`Failed to get metadata for collection ${ratingKey}`, {
-              label: 'Tautulli API',
-              ratingKey,
-              error: metadataError.message,
-            });
-          }
-
-          // Get user stats for this collection
-          let userStats: TautulliWatchUser[] = [];
-          try {
-            const userStatsResponse =
-              await this.axios.get<TautulliWatchUsersResponse>('/api/v2', {
-                params: {
-                  cmd: 'get_item_user_stats',
-                  rating_key: ratingKey,
-                  media_type: 'collection',
-                  grouping: 1,
-                },
-              });
-            userStats = userStatsResponse.data.response.data || [];
-          } catch (userStatsError) {
-            logger.warn(
-              `Failed to get user stats for collection ${ratingKey}`,
-              {
-                label: 'Tautulli API',
-                ratingKey,
-                error: userStatsError.message,
-              }
-            );
-          }
+          const detail = await this.getDetail(details, ratingKey);
 
           const collectionStat: TautulliCollectionStats = {
             rating_key: ratingKey,
-            title: collectionTitle,
+            title: detail.title,
             media_type: 'collection',
-            section_id: sectionId,
-            section_name: sectionName,
-            item_count: itemCount,
+            section_id: detail.sectionId,
+            section_name: detail.sectionName,
+            item_count: detail.itemCount,
             total_plays: entry.targetStats.total_plays,
             total_duration: entry.targetStats.total_time,
             last_played: undefined, // Would need additional API call to get this
             watch_time_stats: entry.stats,
-            user_stats: userStats,
+            user_stats: detail.userStats,
           };
 
           result.push(collectionStat);
