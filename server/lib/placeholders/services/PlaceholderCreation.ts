@@ -11,6 +11,7 @@ import type {
   MissingItem,
   PlaceholderSourceData,
 } from '@server/lib/collections/core/types';
+import { isInsideSectionPaths } from '@server/lib/placeholders/helpers/placeholderPathHelpers';
 import type { CollectionConfig, Library } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -1429,12 +1430,7 @@ async function scanNewPlaceholderDirectories(
   // Plex - the same assumption removeGhostEntries relies on.
   const sectionPaths = await plexClient.getLibrarySectionPaths(libraryId);
   const isInsideSection = (directory: string): boolean =>
-    sectionPaths.length === 0 ||
-    sectionPaths.some(
-      (root) =>
-        directory !== root &&
-        directory.startsWith(root.endsWith('/') ? root : `${root}/`)
-    );
+    isInsideSectionPaths(directory, sectionPaths);
 
   const scopedDirectories = uniqueDirectories.filter(isInsideSection);
   const outsideSection = uniqueDirectories.length - scopedDirectories.length;

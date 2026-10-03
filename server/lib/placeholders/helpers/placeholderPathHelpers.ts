@@ -22,3 +22,17 @@ export function getPlaceholderRootFolder(
 
   return folders?.[libraryKey];
 }
+
+export function isInsideSectionPaths(
+  directory: string,
+  sectionPaths: string[]
+): boolean {
+  if (sectionPaths.length === 0) return true;
+  const dir = directory.replace(/\\/g, '/');
+  return sectionPaths.some((section) => {
+    const root = section.replace(/\\/g, '/');
+    return (
+      dir !== root && dir.startsWith(root.endsWith('/') ? root : `${root}/`)
+    );
+  });
+}
