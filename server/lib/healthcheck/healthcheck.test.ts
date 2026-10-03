@@ -347,8 +347,9 @@ describe('getHealthStatus aggregation', () => {
     expect(ids).toContain('plex-libraries');
     expect(ids).toContain('overlay-template-refs');
     expect(ids).toContain('appdata-writable');
+    expect(ids).toContain('placeholder-root-volume');
     expect(ids).toContain('timezone-configuration');
     expect(ids).toContain('job-freshness');
-    expect(ids).toHaveLength(16);
+    expect(ids).toHaveLength(17);
   });
 });
