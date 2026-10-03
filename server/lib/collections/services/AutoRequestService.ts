@@ -430,6 +430,7 @@ export class AutoRequestService {
       const totalSkipped =
         skippedRequests +
         filterResult.lowRatedItems.length +
+        filterResult.lowVotedItems.length +
         filterResult.lowRatedRTItems.length +
         filterResult.excludedGenreItems.length +
         filterResult.excludedCountryItems.length +

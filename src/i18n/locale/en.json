@@ -210,6 +210,8 @@
   "components.Collections.FormSections.mdblistUrlExample": "Example: https://mdblist.com/lists/username/list-name",
   "components.Collections.FormSections.minimumImdbRating": "Minimum IMDb rating",
   "components.Collections.FormSections.minimumImdbRatingHelp": "Only grab movies/TV shows with an IMDb rating >= this value (0 = no limit). Items without ratings will be allowed.",
+  "components.Collections.FormSections.minimumImdbVotes": "Minimum IMDb votes",
+  "components.Collections.FormSections.minimumImdbVotesHelp": "Only grab movies/TV shows with at least this many IMDb votes (0 = no limit). Items with no IMDb vote data are skipped when set.",
   "components.Collections.FormSections.minimumItems": "Minimum Items",
   "components.Collections.FormSections.minimumItemsHelp": "Only create if this person has at least this many items (default: 5, minimum allowed: 2)",
   "components.Collections.FormSections.minimumPlayCount": "Minimum Play Count",

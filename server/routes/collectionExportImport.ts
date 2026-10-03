@@ -63,6 +63,7 @@ const portableFields = [
   'maxPositionToProcess',
   'minimumYear',
   'minimumImdbRating',
+  'minimumImdbVotes',
   'minimumRottenTomatoesRating',
   'minimumRottenTomatoesAudienceRating',
   'sortOrder',

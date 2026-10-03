@@ -772,6 +772,11 @@ components:
           minimum: 0
           maximum: 10
           nullable: true
+        minimumImdbVotes:
+          type: integer
+          description: 'Only process movies/TV shows with at least this many IMDb votes (0 = no limit)'
+          example: 1000
+          minimum: 0
         minimumRottenTomatoesRating:
           type: number
           format: float
@@ -1506,6 +1511,11 @@ components:
           minimum: 0
           maximum: 10
           nullable: true
+        minimumImdbVotes:
+          type: integer
+          description: 'Only process movies/TV shows with at least this many IMDb votes (0 = no limit)'
+          example: 1000
+          minimum: 0
         minimumRottenTomatoesRating:
           type: number
           format: float
@@ -2415,6 +2425,11 @@ components:
           minimum: 0
           maximum: 10
           nullable: true
+        minimumImdbVotes:
+          type: integer
+          description: 'Only process movies/TV shows with at least this many IMDb votes (0 = no limit)'
+          example: 1000
+          minimum: 0
         minimumRottenTomatoesRating:
           type: number
           format: float
