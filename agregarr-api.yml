@@ -296,6 +296,10 @@ components:
           example:
             '2': /data/media/tv
             '4': /data/media/anime
+        placeholderFolderTmdbId:
+          type: boolean
+          description: If true, new movie placeholder folders are named "Title (Year) {tmdb-ID}" so same-title movies get separate folders. Existing folders are not renamed.
+          example: false
         skipYoutubeTrailerDownloads:
           type: boolean
           description: If true, skip YouTube trailer downloads and use hardcoded placeholder video only (speeds up sync)
