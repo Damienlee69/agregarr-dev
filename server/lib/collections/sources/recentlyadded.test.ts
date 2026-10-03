@@ -43,7 +43,8 @@ import { FilteredHubCollectionSync } from './recentlyadded';
 
 const metadataCall = async (
   overrides: Partial<CollectionConfig>,
-  existingLabels: string[] = []
+  existingLabels: string[] = [],
+  laterCollections: { ratingKey: string; labels: string[] }[] = []
 ) => {
   const sync = new FilteredHubCollectionSync();
   const metadata = vi
@@ -69,6 +70,11 @@ const metadataCall = async (
     }
   ).processConfiguration(cfg, {} as PlexAPI, [
     { ratingKey: '500', title: 'Hub', libraryKey: '4', labels: existingLabels },
+    ...laterCollections.map((c) => ({
+      ...c,
+      title: 'Hub',
+      libraryKey: '4',
+    })),
   ]);
 
   const [, ratingKey, options] = metadata.mock.calls[0] as [
@@ -117,6 +123,18 @@ describe('filtered hub label', () => {
     expect(call).toEqual({
       ratingKey: '500',
       label: 'Agregarr-filtered_hub-10',
+    });
+  });
+
+  it('prefers the collection with the current label over an older leftover', async () => {
+    const call = await metadataCall(
+      stale({ targetUserId: '1002' }),
+      ['AgregarrTargetUser_10_1001'],
+      [{ ratingKey: '600', labels: ['AgregarrTargetUser_10_1002'] }]
+    );
+    expect(call).toEqual({
+      ratingKey: '600',
+      label: 'AgregarrTargetUser_10_1002',
     });
   });
 });

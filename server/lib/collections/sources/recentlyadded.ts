@@ -338,16 +338,20 @@ export class FilteredHubCollectionSync extends BaseCollectionSync<'filtered_hub'
 
     // Fallback: search by label if ratingKey not found or not in config
     if (!existingCollection) {
-      existingCollection = libraryCollections.find((col) =>
-        col.labels?.some((label) => {
-          const tag = typeof label === 'string' ? label : label?.tag;
-          return (
-            tag === identityLabel ||
-            (!!tag?.startsWith('AgregarrTargetUser_') &&
-              parseConfigIdFromLabel(tag) === config.id)
-          );
-        })
-      );
+      const tagsOf = (col: PlexCollection) =>
+        (col.labels ?? []).map((label) =>
+          typeof label === 'string' ? label : label?.tag
+        );
+      existingCollection =
+        libraryCollections.find((col) => tagsOf(col).includes(customLabel)) ??
+        libraryCollections.find((col) =>
+          tagsOf(col).some(
+            (tag) =>
+              tag === identityLabel ||
+              (!!tag?.startsWith('AgregarrTargetUser_') &&
+                parseConfigIdFromLabel(tag) === config.id)
+          )
+        );
     }
 
     let result: SyncResult;
