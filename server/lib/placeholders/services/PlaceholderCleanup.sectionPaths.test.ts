@@ -20,17 +20,16 @@ async function setup() {
     plexToken: 'test-token',
     plexSettings: { name: 'test', ip: '127.0.0.1', port: 32400, libraries: [] },
   });
-  (api as unknown as { plexClient: unknown }).plexClient = {
-    query: vi.fn(async (url: string) => {
-      if (url === '/library/sections') return sections;
-      if (url === '/library/sections/2') return section2;
-      throw new Error(`unexpected ${url}`);
-    }),
-  };
+  const query = vi.fn(async (url: string) => {
+    if (url === '/library/sections') return sections;
+    if (url === '/library/sections/2') return section2;
+    throw new Error(`unexpected ${url}`);
+  });
+  (api as unknown as { plexClient: unknown }).plexClient = { query };
   const scanLibrary = vi.spyOn(api, 'scanLibrary').mockResolvedValue();
   const emptyTrash = vi.spyOn(api, 'emptyTrash').mockResolvedValue();
   vi.spyOn(api, 'getAutoEmptyTrashEnabled').mockResolvedValue(false);
-  return { api, scanLibrary, emptyTrash };
+  return { api, scanLibrary, emptyTrash, query };
 }
 
 describe('getLibrarySectionPaths', () => {
@@ -65,18 +64,30 @@ describe('removeGhostEntries section guard', () => {
 
   it('still scans a directory inside the section', async () => {
     const { removeGhostEntries } = await import('./PlaceholderCleanup');
-    const { api, scanLibrary, emptyTrash } = await setup();
+    const { api, scanLibrary, emptyTrash, query } = await setup();
 
     await removeGhostEntries(api, '2', [
       { directory: '/data/tv/Some Show (2026)' },
     ]);
 
+    expect(query).toHaveBeenCalledWith('/library/sections');
     expect(scanLibrary).toHaveBeenCalledWith('2', '/data/tv/Some Show (2026)');
     expect(emptyTrash).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('removeGhostEntries with a Windows-style section path', () => {
+  it('scans a Windows directory inside a Windows section', async () => {
+    const { removeGhostEntries } = await import('./PlaceholderCleanup');
+    const { api, scanLibrary, emptyTrash } = await setup();
+    const directory = String.raw`O:\Media\TV\Some Show (2026)`;
+
+    await removeGhostEntries(api, '3', [{ directory }]);
+
+    expect(scanLibrary).toHaveBeenCalledWith('3', directory);
+    expect(emptyTrash).toHaveBeenCalledTimes(1);
+  });
+
   it('never matches a POSIX directory, so nothing is scanned or purged', async () => {
     const { removeGhostEntries } = await import('./PlaceholderCleanup');
     const { api, scanLibrary, emptyTrash } = await setup();
