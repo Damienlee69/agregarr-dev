@@ -615,14 +615,16 @@ class PlexAPI {
     return response.MediaContainer.Metadata[0];
   }
 
-  public async findRatingKeyByGuid(
+  public async findItemByGuid(
     libraryId: string,
     guid: string
-  ): Promise<string | undefined> {
+  ): Promise<PlexLibraryItem | undefined> {
     const response = await this.plexClient.query<PlexLibraryResponse>(
-      `/library/sections/${libraryId}/all?guid=${encodeURIComponent(guid)}`
+      `/library/sections/${libraryId}/all?guid=${encodeURIComponent(
+        guid
+      )}&includeGuids=1`
     );
-    return response.MediaContainer.Metadata?.[0]?.ratingKey;
+    return response.MediaContainer.Metadata?.[0];
   }
 
   /**

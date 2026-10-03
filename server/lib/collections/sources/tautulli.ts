@@ -366,20 +366,22 @@ export class TautulliCollectionSync extends BaseCollectionSync<'tautulli'> {
             item.guid
           ) {
             try {
-              const currentKey = await plexClient.findRatingKeyByGuid(
+              const current = await plexClient.findItemByGuid(
                 config.libraryId,
                 item.guid
               );
-              if (currentKey) {
+              if (current) {
                 logger.info(
                   `Resolved stale Tautulli rating key for ${item.title}`,
                   {
                     label: 'Tautulli Collections',
                     staleRatingKey: item.ratingKey,
-                    ratingKey: currentKey,
+                    ratingKey: current.ratingKey,
                   }
                 );
-                item.ratingKey = currentKey;
+                item.ratingKey = current.ratingKey;
+                tmdbId = extractTmdbIdFromGuids(current.Guid);
+                tvdbId = extractTvdbIdFromGuids(current.Guid);
               }
             } catch (lookupError) {
               logger.debug(`Guid lookup failed for ${item.title}`, {

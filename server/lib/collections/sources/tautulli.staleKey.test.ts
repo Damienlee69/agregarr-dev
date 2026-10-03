@@ -25,9 +25,13 @@ vi.mock('@server/logger', () => ({
 }));
 vi.mock('@server/lib/settings', () => ({
   getSettings: () => ({
+    globalExclusions: { movies: [555], tv: [], tvdb: [] },
     plex: {
       collectionConfigs: [],
-      libraries: [{ key: '4', name: 'Movies', type: 'movie' }],
+      libraries: [
+        { key: '4', name: 'Movies', type: 'movie' },
+        { key: '5', name: 'Shows', type: 'show' },
+      ],
     },
   }),
 }));
@@ -42,7 +46,7 @@ const GUID = 'plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa';
 const run = async (
   row: Record<string, unknown>,
   getMetadata: ReturnType<typeof vi.fn>,
-  findRatingKeyByGuid: ReturnType<typeof vi.fn>
+  findItemByGuid: ReturnType<typeof vi.fn>
 ) => {
   const sync = new TautulliCollectionSync();
   const config = {
@@ -54,7 +58,7 @@ const run = async (
     mediaType: 'movie',
     minimumPlays: 1,
   } as unknown as CollectionConfig;
-  const plex = { getMetadata, findRatingKeyByGuid } as unknown as PlexAPI;
+  const plex = { getMetadata, findItemByGuid } as unknown as PlexAPI;
   const result = await sync.mapSourceDataToItems(
     [
       {
@@ -73,7 +77,10 @@ const run = async (
 
 describe('Tautulli stale rating key', () => {
   it('resolves a stale key through the row guid', async () => {
-    const find = vi.fn().mockResolvedValue('200');
+    const find = vi.fn().mockResolvedValue({
+      ratingKey: '200',
+      Guid: [{ id: 'tmdb://555' }, { id: 'tvdb://77' }],
+    });
     const items = await run(
       { rating_key: '100', guid: GUID },
       vi.fn().mockRejectedValue(notFound),
@@ -81,6 +88,8 @@ describe('Tautulli stale rating key', () => {
     );
     expect(find).toHaveBeenCalledWith('4', GUID);
     expect(items.map((i) => i.ratingKey)).toEqual(['200']);
+    expect(items[0].tmdbId).toBe(555);
+    expect(items[0].tvdbId).toBe(77);
   });
 
   it('keeps the stale key when the guid resolves nothing', async () => {
@@ -120,5 +129,60 @@ describe('Tautulli stale rating key', () => {
       find
     );
     expect(find).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve TV rows by guid', async () => {
+    const find = vi.fn();
+    const sync = new TautulliCollectionSync();
+    const plex = {
+      getMetadata: vi.fn().mockRejectedValue(notFound),
+      findItemByGuid: find,
+    } as unknown as PlexAPI;
+    const result = await sync.mapSourceDataToItems(
+      [
+        {
+          title: 'Some Show',
+          media_type: 'episode',
+          users_watched: 5,
+          total_plays: 5,
+          rating_key: '100',
+          guid: 'plex://episode/aaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      ],
+      {
+        id: '2',
+        name: 'Popular TV',
+        type: 'tautulli',
+        subtype: 'most_popular_shows',
+        libraryId: '5',
+        mediaType: 'tv',
+        minimumPlays: 1,
+      } as unknown as CollectionConfig,
+      plex
+    );
+    expect(find).not.toHaveBeenCalled();
+    expect(result.items.map((i) => i.ratingKey)).toEqual(['100']);
+  });
+
+  it('excludes a guid-resolved movie that is globally excluded', async () => {
+    const find = vi
+      .fn()
+      .mockResolvedValue({ ratingKey: '200', Guid: [{ id: 'tmdb://555' }] });
+    const items = await run(
+      { rating_key: '100', guid: GUID },
+      vi.fn().mockRejectedValue(notFound),
+      find
+    );
+    const sync = new TautulliCollectionSync() as unknown as {
+      applyCommonFiltering: (
+        i: unknown[],
+        c: unknown
+      ) => { filteredItems: unknown[] };
+    };
+    const { filteredItems } = sync.applyCommonFiltering(items, {
+      id: '1',
+      name: 'Popular',
+    });
+    expect(filteredItems).toEqual([]);
   });
 });
