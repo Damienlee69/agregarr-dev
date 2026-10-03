@@ -99,8 +99,12 @@ describe('multi-source lookup of a target-user collection', () => {
 
 describe('multi-source run with failing sources', () => {
   const sources = [
-    { id: 'a', type: 'trakt' },
-    { id: 'b', type: 'imdb' },
+    { id: 'source-1', type: 'trakt', resolvedTitle: 'Alpha List' },
+    {
+      id: 'source-2',
+      type: 'imdb',
+      customUrl: 'https://example.test/lists/beta',
+    },
   ];
   const item = { ratingKey: '1', title: 'One', type: 'movie', tmdbId: 1 };
 
@@ -129,14 +133,16 @@ describe('multi-source run with failing sources', () => {
     expect(write.mock.calls[0][0]).toEqual([
       expect.objectContaining({ ratingKey: '1' }),
     ]);
-    expect(result.error).toBe('1/2 source(s) failed (b): upstream 403');
+    expect(result.error).toBe('1/2 source(s) failed (beta): upstream 403');
   });
 
   it('reports the failure when every source fails', async () => {
     const { result, write } = await run(['fail', 'fail']);
 
     expect(write).not.toHaveBeenCalled();
-    expect(result.error).toBe('2/2 source(s) failed (a, b): upstream 403');
+    expect(result.error).toBe(
+      '2/2 source(s) failed (Alpha List, beta): upstream 403'
+    );
   });
 
   it('reports nothing when every source succeeds', async () => {
