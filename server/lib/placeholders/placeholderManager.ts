@@ -169,8 +169,14 @@ export async function wantsTmdbFolderHint(
   try {
     await fs.access(resolvePlaceholderPaths(options).destinationPath);
     return false;
-  } catch {
-    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+    logger.warn('Cannot check legacy placeholder folder, keeping it', {
+      label: 'PlaceholderManager',
+      tmdbId: options.tmdbId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
   }
 }
 
