@@ -559,6 +559,12 @@ const CollectionTypeSection = ({
             description:
               'Individual episodes sorted by date added (TV libraries only)',
           },
+          {
+            value: 'recently_aired_episodes',
+            label: 'Recently Released Episodes (Individual)',
+            description:
+              'Individual episodes sorted by air date, future episodes excluded (TV libraries only)',
+          },
         ];
       default:
         return [];

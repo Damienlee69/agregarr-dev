@@ -1,18 +1,12 @@
-import fs from 'fs';
 import path from 'path';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import { scrubSecrets } from './utils/logRedaction';
+import { removeOldLogFile } from './utils/removeOldLogFile';
 
 // Migrate away from old log
 const OLD_LOG_FILE = path.join(__dirname, '../config/logs/agregarr.log');
-if (fs.existsSync(OLD_LOG_FILE)) {
-  const file = fs.lstatSync(OLD_LOG_FILE);
-
-  if (!file.isSymbolicLink()) {
-    fs.unlinkSync(OLD_LOG_FILE);
-  }
-}
+removeOldLogFile(OLD_LOG_FILE);
 
 const hformat = winston.format.printf(
   ({ level, label, message, timestamp, ...metadata }) => {

@@ -296,6 +296,10 @@ components:
           example:
             '2': /data/media/tv
             '4': /data/media/anime
+        placeholderFolderTmdbId:
+          type: boolean
+          description: If true, new movie placeholder folders are named "Title (Year) {tmdb-ID}" so same-title movies get separate folders. Existing folders are not renamed.
+          example: false
         skipYoutubeTrailerDownloads:
           type: boolean
           description: If true, skip YouTube trailer downloads and use hardcoded placeholder video only (speeds up sync)
@@ -768,6 +772,11 @@ components:
           minimum: 0
           maximum: 10
           nullable: true
+        minimumImdbVotes:
+          type: integer
+          description: 'Only process movies/TV shows with at least this many IMDb votes (0 = no limit)'
+          example: 1000
+          minimum: 0
         minimumRottenTomatoesRating:
           type: number
           format: float
@@ -1502,6 +1511,11 @@ components:
           minimum: 0
           maximum: 10
           nullable: true
+        minimumImdbVotes:
+          type: integer
+          description: 'Only process movies/TV shows with at least this many IMDb votes (0 = no limit)'
+          example: 1000
+          minimum: 0
         minimumRottenTomatoesRating:
           type: number
           format: float
@@ -2411,6 +2425,11 @@ components:
           minimum: 0
           maximum: 10
           nullable: true
+        minimumImdbVotes:
+          type: integer
+          description: 'Only process movies/TV shows with at least this many IMDb votes (0 = no limit)'
+          example: 1000
+          minimum: 0
         minimumRottenTomatoesRating:
           type: number
           format: float
@@ -8516,6 +8535,10 @@ paths:
                   description: How to combine items from multiple sources
                   enum: [interleaved, list_order, randomised, cycle_lists]
                   example: 'interleaved'
+                sortOrder:
+                  type: string
+                  description: Item Order applied to the combined multi-source list
+                  example: 'date_added_desc'
                 cycleIndex:
                   type: number
                   description: For cycle_lists mode, which source to show (0-based index)

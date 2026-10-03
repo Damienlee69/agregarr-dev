@@ -22,6 +22,8 @@ export interface FilteredMissingItemsResult {
   yearFilteredItems: string[];
   /** Items filtered by low IMDb rating */
   lowRatedItems: string[];
+  /** Items filtered by too few IMDb votes */
+  lowVotedItems: string[];
   /** Items filtered by low Rotten Tomatoes critics rating */
   lowRatedRTItems: string[];
   /** Items filtered by low Rotten Tomatoes audience rating */
@@ -64,6 +66,7 @@ export function buildPlaceholderFilterConfig(
     searchMissingTV: true,
     minimumYear: config.placeholderMinimumYear ?? 0,
     minimumImdbRating: config.placeholderMinimumImdbRating ?? 0,
+    minimumImdbVotes: 0,
     minimumRottenTomatoesRating:
       config.placeholderMinimumRottenTomatoesRating ?? 0,
     minimumRottenTomatoesAudienceRating:
@@ -106,6 +109,7 @@ export class MissingItemFilterService {
     // Track filtered items for summary logging
     const yearFilteredItems: string[] = [];
     const lowRatedItems: string[] = [];
+    const lowVotedItems: string[] = [];
     const lowRatedRTItems: string[] = [];
     const lowRatedRTAudienceItems: string[] = [];
     const excludedGenreItems: string[] = [];
@@ -168,14 +172,16 @@ export class MissingItemFilterService {
 
     // Step 2: Bulk fetch IMDb ratings if filter is enabled
     const imdbRatingsMap = new Map<number, number | null>(); // tmdbId -> rating
-    if (
-      config.minimumImdbRating &&
-      config.minimumImdbRating > 0 &&
-      !options?.skipRatingFilters
-    ) {
+    const imdbVotesMap = new Map<number, number | null>(); // tmdbId -> votes
+    const minImdbRating = config.minimumImdbRating ?? 0;
+    const minImdbVotes = config.minimumImdbVotes ?? 0;
+    const imdbFilterActive =
+      (minImdbRating > 0 || minImdbVotes > 0) && !options?.skipRatingFilters;
+    if (imdbFilterActive) {
       await this.bulkFetchImdbRatings(
         yearFilteredMissingItems,
         imdbRatingsMap,
+        imdbVotesMap,
         config,
         serviceLabel
       );
@@ -205,16 +211,25 @@ export class MissingItemFilterService {
 
     for (const item of yearFilteredMissingItems) {
       // Check IMDb rating filter using cached ratings
-      if (
-        config.minimumImdbRating &&
-        config.minimumImdbRating > 0 &&
-        !options?.skipRatingFilters
-      ) {
+      if (imdbFilterActive) {
         if (imdbRatingsMap.has(item.tmdbId)) {
           const rating = imdbRatingsMap.get(item.tmdbId);
+          const votes = imdbVotesMap.get(item.tmdbId);
 
-          // If rating is null or undefined (no rating found), exclude the item
-          if (rating === null || rating === undefined) {
+          if (minImdbVotes > 0 && (votes ?? 0) < minImdbVotes) {
+            logger.debug(
+              `${item.title} has ${
+                votes ?? 'no'
+              } IMDb votes, below minimum ${minImdbVotes}`,
+              { label: serviceLabel, tmdbId: item.tmdbId, title: item.title }
+            );
+            lowVotedItems.push(item.title);
+            continue;
+          }
+
+          if (minImdbRating <= 0) {
+            // votes-only filter: rating not required
+          } else if (rating === null || rating === undefined) {
             logger.debug(
               `No IMDb rating found for ${item.title}, excluding item`,
               {
@@ -225,7 +240,7 @@ export class MissingItemFilterService {
             );
             lowRatedItems.push(item.title);
             continue;
-          } else if (rating < config.minimumImdbRating) {
+          } else if (rating < minImdbRating) {
             // Rating exists but below threshold
             logger.debug(
               `${item.title} rating ${rating} below minimum ${config.minimumImdbRating}`,
@@ -248,7 +263,7 @@ export class MissingItemFilterService {
             tmdbId: item.tmdbId,
             title: item.title,
           });
-          lowRatedItems.push(item.title);
+          (minImdbRating > 0 ? lowRatedItems : lowVotedItems).push(item.title);
           continue;
         }
       }
@@ -468,6 +483,9 @@ export class MissingItemFilterService {
       if (lowRatedItems.length > 0) {
         filterReasons.push(`${lowRatedItems.length} due to IMDb rating`);
       }
+      if (lowVotedItems.length > 0) {
+        filterReasons.push(`${lowVotedItems.length} due to IMDb votes`);
+      }
       if (lowRatedRTItems.length > 0) {
         filterReasons.push(
           `${lowRatedRTItems.length} due to RT critics rating`
@@ -539,6 +557,7 @@ export class MissingItemFilterService {
       rtAudienceRatingsMap,
       yearFilteredItems,
       lowRatedItems,
+      lowVotedItems,
       lowRatedRTItems,
       lowRatedRTAudienceItems,
       excludedGenreItems,
@@ -558,6 +577,7 @@ export class MissingItemFilterService {
   private async bulkFetchImdbRatings(
     items: MissingItem[],
     ratingsMap: Map<number, number | null>,
+    votesMap: Map<number, number | null>,
     config: CollectionConfig,
     serviceLabel: string
   ): Promise<void> {
@@ -609,14 +629,17 @@ export class MissingItemFilterService {
 
         // Map ratings back to TMDB IDs
         const imdbToRating = new Map<string, number | null>();
+        const imdbToVotes = new Map<string, number | null>();
         ratings.forEach((r) => {
           imdbToRating.set(r.imdbId, r.rating);
+          imdbToVotes.set(r.imdbId, r.votes ?? null);
         });
 
         // Create final TMDB ID -> rating map
         tmdbToImdbMap.forEach((imdbId, tmdbId) => {
           const rating = imdbToRating.get(imdbId) ?? null;
           ratingsMap.set(tmdbId, rating);
+          votesMap.set(tmdbId, imdbToVotes.get(imdbId) ?? null);
         });
 
         logger.debug(`Cached ${ratingsMap.size} IMDb ratings for filtering`, {
@@ -1190,6 +1213,22 @@ export class MissingItemFilterService {
           titles: result.lowRatedItems.slice(0, 10),
           ...(result.lowRatedItems.length > 10 && {
             additionalCount: result.lowRatedItems.length - 10,
+          }),
+        }
+      );
+    }
+
+    if (result.lowVotedItems.length > 0) {
+      logger.info(
+        `Items skipped due to fewer than ${config.minimumImdbVotes} IMDb votes`,
+        {
+          label: `${sourceLabel} Collections`,
+          collection: config.name,
+          minimumVotes: config.minimumImdbVotes,
+          count: result.lowVotedItems.length,
+          titles: result.lowVotedItems.slice(0, 10),
+          ...(result.lowVotedItems.length > 10 && {
+            additionalCount: result.lowVotedItems.length - 10,
           }),
         }
       );

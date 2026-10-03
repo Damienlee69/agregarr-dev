@@ -11,6 +11,7 @@ import type {
   MissingItem,
   PlaceholderSourceData,
 } from '@server/lib/collections/core/types';
+import { isInsideSectionPaths } from '@server/lib/placeholders/helpers/placeholderPathHelpers';
 import type { CollectionConfig, Library } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -481,7 +482,7 @@ function missingItemsToPlaceholderSourceData(
  * Returns the placeholder path, or null when refusing to manage an existing
  * unmarked file.
  */
-async function createPlaceholderFile(
+export async function createPlaceholderFile(
   sourceItem: ComingSoonSourceData,
   libraryKey: string,
   sonarrFolderName?: string
@@ -514,6 +515,7 @@ async function createPlaceholderFile(
   const {
     createPlaceholder,
     resolvePlaceholderPaths,
+    wantsTmdbFolderHint,
     readPlaceholderMarker,
     clearMarkerOrphaned,
   } = await import('@server/lib/placeholders/placeholderManager');
@@ -524,7 +526,7 @@ async function createPlaceholderFile(
 
   // Single source of truth for the computed destination (shared with the
   // creators), so "where we look" can never drift from "where we write".
-  const { destinationPath } = resolvePlaceholderPaths({
+  const pathOptions = {
     tmdbId: sourceItem.tmdbId,
     tvdbId: sourceItem.tvdbId,
     title: sourceItem.title,
@@ -532,6 +534,11 @@ async function createPlaceholderFile(
     mediaType: sourceItem.mediaType,
     libraryPath,
     sonarrFolderName,
+  };
+  const tmdbFolderHint = await wantsTmdbFolderHint(pathOptions);
+  const { destinationPath } = resolvePlaceholderPaths({
+    ...pathOptions,
+    tmdbFolderHint,
   });
   const markerDir = path.dirname(destinationPath);
   const relativePath = path.relative(libraryPath, destinationPath);
@@ -631,6 +638,7 @@ async function createPlaceholderFile(
     libraryPath,
     trailerPath,
     sonarrFolderName,
+    tmdbFolderHint,
   });
 
   markPlaceholderWanted(libraryKey, sourceItem.mediaType, relativePath);
@@ -1429,12 +1437,7 @@ async function scanNewPlaceholderDirectories(
   // Plex - the same assumption removeGhostEntries relies on.
   const sectionPaths = await plexClient.getLibrarySectionPaths(libraryId);
   const isInsideSection = (directory: string): boolean =>
-    sectionPaths.length === 0 ||
-    sectionPaths.some(
-      (root) =>
-        directory !== root &&
-        directory.startsWith(root.endsWith('/') ? root : `${root}/`)
-    );
+    isInsideSectionPaths(directory, sectionPaths);
 
   const scopedDirectories = uniqueDirectories.filter(isInsideSection);
   const outsideSection = uniqueDirectories.length - scopedDirectories.length;

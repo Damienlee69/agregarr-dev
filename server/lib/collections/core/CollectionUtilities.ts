@@ -587,6 +587,15 @@ export function createCollectionLabel(
   return baseParts.join('');
 }
 
+export function getTargetUserLabel(config: {
+  id: string;
+  targetUserId?: string;
+}): string | undefined {
+  return config.targetUserId
+    ? `AgregarrTargetUser_${config.id}_${config.targetUserId}`
+    : undefined;
+}
+
 /**
  * Parse collection config ID from Agregarr label
  * Returns the config ID if the label matches our pattern, otherwise null
@@ -595,6 +604,8 @@ export function parseConfigIdFromLabel(label: string): string | null {
   // Match pattern: Agregarr[Source][ConfigId] or Agregarr[Source][ConfigId]user[UserId]
   // Source can contain hyphens/underscores (e.g., multi-source, filtered_hub)
   // ConfigId starts with a digit (numeric ID or UUID)
+  const targetUser = label.match(/^AgregarrTargetUser_([0-9][a-f0-9-]*)_\d+$/i);
+  if (targetUser) return targetUser[1];
   const match = label.match(
     /^Agregarr([A-Za-z]+(?:[-_][A-Za-z]+)*)([0-9][a-f0-9-]*)(?:user\d+)?$/i
   );
@@ -800,6 +811,7 @@ export async function syncConfigsWithPlexCollections(
     source: string;
     type?: string;
     subtype?: string;
+    targetUserId?: string;
   }[],
   allCollections: {
     ratingKey: string;
@@ -997,10 +1009,9 @@ export async function syncConfigsWithPlexCollections(
       }
 
       // Generate the correct label for our config
-      const correctLabel = createCollectionLabel(
-        config.source as CollectionSource,
-        config.id
-      );
+      const correctLabel =
+        getTargetUserLabel(config) ??
+        createCollectionLabel(config.source as CollectionSource, config.id);
 
       // Update Plex collection with our config ID label
       // addLabelToCollection automatically cleans existing Agregarr labels and replaces with new one

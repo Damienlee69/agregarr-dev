@@ -36,6 +36,7 @@ describe('buildPlaceholderFilterConfig', () => {
     const config = makeConfig({
       minimumYear: 2020,
       minimumImdbRating: 7.0,
+      minimumImdbVotes: 1000,
       minimumRottenTomatoesRating: 80,
       minimumRottenTomatoesAudienceRating: 75,
       filterSettings: {
@@ -47,6 +48,7 @@ describe('buildPlaceholderFilterConfig', () => {
 
     expect(result.minimumYear).toBe(0);
     expect(result.minimumImdbRating).toBe(0);
+    expect(result.minimumImdbVotes).toBe(0);
     expect(result.minimumRottenTomatoesRating).toBe(0);
     expect(result.minimumRottenTomatoesAudienceRating).toBe(0);
     expect(result.filterSettings).toBeUndefined();
@@ -112,6 +114,7 @@ describe('buildPlaceholderFilterConfig', () => {
     const config = makeConfig({
       minimumYear: 2020,
       minimumImdbRating: 7.0,
+      minimumImdbVotes: 1000,
       minimumRottenTomatoesRating: 80,
       minimumRottenTomatoesAudienceRating: 75,
       // No placeholder filters set
@@ -121,6 +124,7 @@ describe('buildPlaceholderFilterConfig', () => {
 
     expect(result.minimumYear).toBe(0);
     expect(result.minimumImdbRating).toBe(0);
+    expect(result.minimumImdbVotes).toBe(0);
     expect(result.minimumRottenTomatoesRating).toBe(0);
     expect(result.minimumRottenTomatoesAudienceRating).toBe(0);
   });
