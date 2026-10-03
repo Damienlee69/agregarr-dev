@@ -96,29 +96,17 @@ export function getSortTitleOverride(config: {
 const BARE_PREFIX = /_$/;
 
 /**
- * The sortTitle to write to Plex for a collection with a manual override.
+ * The sortTitle to write for a collection with a manual override.
  *
- * The field serves two entry styles that have to agree. A bare prefix
- * ("!020_", "Kometa_") is completed with the collection's name, which is the
- * original behaviour of this field and what existing configs contain. A value
- * that is already a finished title ("!020_Apple TV Top 10", or just "Crow")
- * is written verbatim, because the form pre-fills the full effective sort
- * title and appending the name again would double it - "Crow" on a collection
- * named Crow would otherwise be written to Plex as "CrowCrow".
+ * A bare prefix ("!020_", "Kometa_") is completed with the collection's name,
+ * which is what existing configs hold. Anything else is already a finished
+ * title and is written verbatim - the form pre-fills the full value, so
+ * appending the name again would write "CrowCrow".
  *
- * Both styles parse to the same rank and produce the same final string, so
- * for positional values the distinction is invisible - it only decides who
- * supplies the name.
- *
- * Multi-collection configs (Essentials, Directors/Actors, Auto Franchise,
- * Overseerr users) hold one shared value standing in for the whole group, so
- * each generated collection appends its own name after it and still sorts
- * alphabetically within the group, directly after the separator - which takes
- * the same base value with nothing appended (see buildSeparatorSortTitle).
- * The join is an underscore, matching the separator Kometa uses between a
- * collection section and its title, and readable in Plex's own sort field:
- * "!040_Auto Genre Collections_Music" rather than running the two together.
- * A base that already ends in one is left as-is instead of doubling it.
+ * A multi-collection config holds one value for the whole group, so each
+ * generated collection appends its own name after an underscore
+ * ("!040_Auto Genre Collections_Music") while the separator takes the base
+ * alone - which is what sorts it directly ahead of its members.
  */
 export function buildSortTitleFromOverride(
   override: string,
@@ -410,22 +398,13 @@ export function getCollectionMediaType(
 export const PROMOTED_SORT_TITLE_RANK_WIDTH = 3;
 
 /**
- * Build the sortTitle Plex uses to place a promoted collection at its exact
- * intended position in a library's Collections/Library tab.
+ * The sortTitle that places a promoted collection at its exact position.
  *
- * Positional encoding (the same convention Kometa's own collection sorting
- * uses): a fixed-width, zero-padded rank number sorts collections in
- * ascending order exactly the way ascending sortOrderLibrary values already
- * do, so a lower sortOrderLibrary always sorts earlier. Unlike an
- * exclamation-mark count - which has to be computed relative to the
- * highest sortOrderLibrary among every other promoted collection in the
- * library, and therefore changes for everyone whenever anything is added,
- * removed, or reordered - a rank number is entirely self-contained: it
- * only depends on this collection's own position, never on any other
- * collection's.
- *
- * The leading '!' guarantees every promoted collection sorts before any
- * A-Z (non-promoted) collection, whose title carries no such prefix.
+ * A fixed-width zero-padded rank sorts the same way ascending
+ * sortOrderLibrary does, and depends only on this collection's own position -
+ * unlike an exclamation count, which is relative to the highest rank in the
+ * library and so changes for everyone whenever anything moves. The leading
+ * '!' keeps every promoted collection ahead of the A-Z ones.
  */
 export function buildPromotedSortTitle(
   name: string,
@@ -2820,14 +2799,3 @@ export function resolveMultiCollectionSortTitle(
   }
   return trimmed;
 }
-
-// Leading punctuation Plex itself drops when it generates a sort title, so
-// "... Cameras" files under C rather than at the very top.
-//
-// Spelled out as explicit ranges rather than \p{P} with the /u flag: the
-// client bundle's babel/webpack toolchain cannot parse Unicode property
-// escapes and fails the build outright. Listing the characters also keeps
-// this to ASCII punctuation plus a few common Unicode quotes and dashes, so
-// a name opening with an emoji keeps it - there is no evidence Plex strips
-// those, and guessing wrong would fight Plex on every emoji-prefixed
-// collection. Must stay identical to the copy in LibraryCollectionGroup.tsx.

@@ -150,21 +150,18 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
       return buildPromotedSortTitle(`!${baseTitle}`, sortOrderLibrary);
     }
 
-    // Non-promoted: the group's own name, which its members build from too
-    // (see resolveMultiCollectionBase), so the separator is a strict string
-    // prefix of every one of them and sorts immediately ahead of the block.
-    //
-    // This used to return `!${baseTitle}` - the separator's own title with a
-    // '!' in front - which parked it at the top of the entire library rather
-    // than ahead of its group, under a name its members shared nothing with.
-    // A demoted group had no cohesion at all as a result.
-    // Same gate as the members use (see BaseCollectionSync): a group that has
-    // never been promoted keeps what it wrote before, so an existing install
-    // is not re-sorted for a grouping the user never asked for.
+    // Never promoted: keep exactly what develop writes - a digit prefix, which
+    // sorts ahead of alpha names within the A-Z bucket. Same gate the members
+    // use (see BaseCollectionSync), so an existing install is not re-sorted
+    // for a grouping the user never asked for.
     if (matchingConfig?.everLibraryPromoted !== true) {
-      return `!${baseTitle}`;
+      return `0${baseTitle}`;
     }
 
+    // Demoted after being promoted: the group's own name, which its members
+    // build from too (see resolveMultiCollectionBase), so the separator is a
+    // strict string prefix of every one of them and sorts immediately ahead
+    // of the block rather than at the top of the library.
     return (
       resolveMultiCollectionBase(undefined, matchingConfig?.name) ?? baseTitle
     );
@@ -685,6 +682,8 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
           });
 
           await this.updateCollectionMetadata(plexClient, separatorRatingKey, {
+            // Written above - see the note on the first call.
+            skipSortTitle: true,
             collectionName: separatorTitle,
             mediaType,
             visibilityConfig,
@@ -698,6 +697,8 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
         }
       } else {
         await this.updateCollectionMetadata(plexClient, separatorRatingKey, {
+          // Written above - see the note on the first call.
+          skipSortTitle: true,
           collectionName: separatorTitle,
           mediaType,
           visibilityConfig,

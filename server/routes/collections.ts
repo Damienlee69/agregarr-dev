@@ -269,115 +269,6 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
 
     const existingConfig = configs[existingConfigIndex];
 
-    // Detect a typed-in reposition: the Sort Title field is pre-filled with
-    // this collection's current computed value (e.g. "!001_Name"), so if
-    // the user edited only the rank digits and left the name suffix
-    // matching, they mean "move this to rank N" - the same intent as
-    // dragging it there - not "give this a literal custom title". This
-    // reorders every other promoted peer in the library to make room -
-    // regular collections, pre-existing collections, and default hubs all
-    // share one sortOrderLibrary numbering space (see reorder.ts), so the
-    // peer search has to span all three, not just this route's own config
-    // array - instead of storing the typed text as a literal override.
-    //
-    // Only auto-repositions a collection that is ALREADY promoted - that's
-    // a pure move within the promoted section, with no promotion decision
-    // to make, so it applies immediately. A typed "!" rank on a collection
-    // still in A-Z is deliberately NOT acted on here: it's stored as a
-    // literal override so the client can ask first (see
-    // checkForPromotionMismatch), then replay the typed rank through
-    // PATCH /:id/promote's targetRank if the user confirms. Anything
-    // starting with "!" asks before changing which section a collection
-    // lives in.
-    let repositionTargetRank: number | undefined;
-    if (typeof req.body.sortTitleOverride === 'string') {
-      const {
-        parseTypedRepositionRank,
-        isMultiCollectionPattern,
-        resolveMultiCollectionSortTitle,
-      } = await import('@server/lib/collections/core/CollectionUtilities');
-
-      const parsedRank = parseTypedRepositionRank(req.body.sortTitleOverride);
-
-      if (
-        parsedRank !== undefined &&
-        existingConfig.isLibraryPromoted === true &&
-        parsedRank !== existingConfig.sortOrderLibrary
-      ) {
-        const targetLibraryId = Array.isArray(existingConfig.libraryId)
-          ? existingConfig.libraryId[0]
-          : existingConfig.libraryId;
-
-        const { computeAndApplyTypedReposition } = await import(
-          '@server/lib/collections/core/TypedRepositionService'
-        );
-        const { targetNewRank, sameTypePeerUpdates } =
-          await computeAndApplyTypedReposition(
-            existingConfig.id,
-            'collection',
-            targetLibraryId,
-            parsedRank
-          );
-        repositionTargetRank = targetNewRank;
-
-        for (const peerUpdate of sameTypePeerUpdates) {
-          const peerIndex = configs.findIndex((c) => c.id === peerUpdate.id);
-          if (peerIndex !== -1) {
-            configs[peerIndex] = {
-              ...configs[peerIndex],
-              sortOrderLibrary: peerUpdate.sortOrderLibrary,
-            };
-            settings.markCollectionModified(peerUpdate.id, 'collection');
-          }
-        }
-
-        logger.info(
-          `Typed Sort Title reposition: moving "${existingConfig.name}" to rank ${repositionTargetRank}`,
-          {
-            label: 'Collections API',
-            collectionId: existingConfig.id,
-            fromRank: existingConfig.sortOrderLibrary,
-            toRank: repositionTargetRank,
-            peersShifted: sameTypePeerUpdates.length,
-          }
-        );
-      } else if (
-        parsedRank !== undefined &&
-        existingConfig.isLibraryPromoted === true
-      ) {
-        // Typed rank equals the rank already held: nothing moves, but the
-        // value still means position, so clear the override and let the
-        // computed prefix apply. Storing it verbatim would keep whatever
-        // padding was typed, and "!0000005_" sorts ahead of every 3-digit
-        // rank rather than with them.
-        req.body.sortTitleOverride = '';
-      } else if (isMultiCollectionPattern(existingConfig)) {
-        // Not a rank-based reposition, but this config's Sort Title field
-        // can only ever mean a group value, never a literal title for one
-        // specific collection - the individual collections this config
-        // generates (Music, Western, per-director, per-franchise, ...)
-        // never appear as separate entries in Agregarr's own UI to give a
-        // literal title to. Stored verbatim and reused at write time (see
-        // updateCollectionMetadata / buildSeparatorSortTitle).
-        const resolved = resolveMultiCollectionSortTitle(
-          req.body.sortTitleOverride,
-          existingConfig.name,
-          existingConfig.isLibraryPromoted === true
-        );
-        req.body.sortTitleOverride = resolved;
-        if (resolved !== '') {
-          logger.info(
-            `Typed Sort Title for multi-collection config "${existingConfig.name}": "${resolved}"`,
-            {
-              label: 'Collections API',
-              collectionId: existingConfig.id,
-              value: resolved,
-            }
-          );
-        }
-      }
-    }
-
     // Debug logging for person settings payload (directors/actors)
     if (
       req.body?.type === 'plex' &&
@@ -727,6 +618,106 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
             error: `Collection "${processedName}" already exists in this library`,
             message: `A pre-existing collection with the name "${processedName}" already exists in library "${library?.name}". Please choose a different name or template.`,
           });
+        }
+      }
+
+      // A typed rank means "move this to rank N", so it reorders the promoted
+      // peers to make room. Peers span regular collections, pre-existing
+      // collections and default hubs - they share one numbering space (see
+      // reorder.ts) - so the search cannot be limited to this route's configs.
+      //
+      // Only for a collection that is ALREADY promoted. A typed "!" rank on an
+      // A-Z collection is stored verbatim instead, so the client can ask before
+      // changing which section it lives in (see checkForPromotionMismatch).
+      //
+      // Runs after the validation above because it SAVES the peers: earlier,
+      // a rejected edit left the library already reordered.
+      let repositionTargetRank: number | undefined;
+      if (typeof req.body.sortTitleOverride === 'string') {
+        const {
+          parseTypedRepositionRank,
+          isMultiCollectionPattern,
+          resolveMultiCollectionSortTitle,
+        } = await import('@server/lib/collections/core/CollectionUtilities');
+
+        const parsedRank = parseTypedRepositionRank(req.body.sortTitleOverride);
+
+        if (
+          parsedRank !== undefined &&
+          existingConfig.isLibraryPromoted === true &&
+          parsedRank !== existingConfig.sortOrderLibrary
+        ) {
+          const targetLibraryId = Array.isArray(existingConfig.libraryId)
+            ? existingConfig.libraryId[0]
+            : existingConfig.libraryId;
+
+          const { computeAndApplyTypedReposition } = await import(
+            '@server/lib/collections/core/TypedRepositionService'
+          );
+          const { targetNewRank, sameTypePeerUpdates } =
+            await computeAndApplyTypedReposition(
+              existingConfig.id,
+              'collection',
+              targetLibraryId,
+              parsedRank
+            );
+          repositionTargetRank = targetNewRank;
+
+          for (const peerUpdate of sameTypePeerUpdates) {
+            const peerIndex = configs.findIndex((c) => c.id === peerUpdate.id);
+            if (peerIndex !== -1) {
+              configs[peerIndex] = {
+                ...configs[peerIndex],
+                sortOrderLibrary: peerUpdate.sortOrderLibrary,
+              };
+              settings.markCollectionModified(peerUpdate.id, 'collection');
+            }
+          }
+
+          logger.info(
+            `Typed Sort Title reposition: moving "${existingConfig.name}" to rank ${repositionTargetRank}`,
+            {
+              label: 'Collections API',
+              collectionId: existingConfig.id,
+              fromRank: existingConfig.sortOrderLibrary,
+              toRank: repositionTargetRank,
+              peersShifted: sameTypePeerUpdates.length,
+            }
+          );
+        } else if (
+          parsedRank !== undefined &&
+          existingConfig.isLibraryPromoted === true
+        ) {
+          // Typed rank equals the rank already held: nothing moves, but the
+          // value still means position, so clear the override and let the
+          // computed prefix apply. Storing it verbatim would keep whatever
+          // padding was typed, and "!0000005_" sorts ahead of every 3-digit
+          // rank rather than with them.
+          req.body.sortTitleOverride = '';
+        } else if (isMultiCollectionPattern(existingConfig)) {
+          // Not a rank-based reposition, but this config's Sort Title field
+          // can only ever mean a group value, never a literal title for one
+          // specific collection - the individual collections this config
+          // generates (Music, Western, per-director, per-franchise, ...)
+          // never appear as separate entries in Agregarr's own UI to give a
+          // literal title to. Stored verbatim and reused at write time (see
+          // updateCollectionMetadata / buildSeparatorSortTitle).
+          const resolved = resolveMultiCollectionSortTitle(
+            req.body.sortTitleOverride,
+            existingConfig.name,
+            existingConfig.isLibraryPromoted === true
+          );
+          req.body.sortTitleOverride = resolved;
+          if (resolved !== '') {
+            logger.info(
+              `Typed Sort Title for multi-collection config "${existingConfig.name}": "${resolved}"`,
+              {
+                label: 'Collections API',
+                collectionId: existingConfig.id,
+                value: resolved,
+              }
+            );
+          }
         }
       }
 
