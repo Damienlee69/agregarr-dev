@@ -700,6 +700,7 @@ export interface MainSettings {
   placeholderMovieRootFolders?: Record<string, string>; // libraryKey -> movie placeholder path mapping
   placeholderTVRootFolders?: Record<string, string>; // libraryKey -> TV placeholder path mapping
   // Trailer download settings
+  placeholderFolderTmdbId?: boolean; // If true, new movie placeholder folders are named 'Title (Year) {tmdb-ID}'
   skipYoutubeTrailerDownloads?: boolean; // If true, skip YouTube trailer downloads and use hardcoded placeholder video only (speeds up sync)
   preferTmdbTrailers?: boolean; // If true (default), resolve trailers from TMDB /videos before falling back to YouTube search
   trailerExcludeWords?: string; // Comma-separated words — any match in title rejects the candidate

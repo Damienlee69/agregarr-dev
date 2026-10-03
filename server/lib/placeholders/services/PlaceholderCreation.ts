@@ -481,7 +481,7 @@ function missingItemsToPlaceholderSourceData(
  * Returns the placeholder path, or null when refusing to manage an existing
  * unmarked file.
  */
-async function createPlaceholderFile(
+export async function createPlaceholderFile(
   sourceItem: ComingSoonSourceData,
   libraryKey: string,
   sonarrFolderName?: string
@@ -514,6 +514,7 @@ async function createPlaceholderFile(
   const {
     createPlaceholder,
     resolvePlaceholderPaths,
+    wantsTmdbFolderHint,
     readPlaceholderMarker,
     clearMarkerOrphaned,
   } = await import('@server/lib/placeholders/placeholderManager');
@@ -524,7 +525,7 @@ async function createPlaceholderFile(
 
   // Single source of truth for the computed destination (shared with the
   // creators), so "where we look" can never drift from "where we write".
-  const { destinationPath } = resolvePlaceholderPaths({
+  const pathOptions = {
     tmdbId: sourceItem.tmdbId,
     tvdbId: sourceItem.tvdbId,
     title: sourceItem.title,
@@ -532,6 +533,11 @@ async function createPlaceholderFile(
     mediaType: sourceItem.mediaType,
     libraryPath,
     sonarrFolderName,
+  };
+  const tmdbFolderHint = await wantsTmdbFolderHint(pathOptions);
+  const { destinationPath } = resolvePlaceholderPaths({
+    ...pathOptions,
+    tmdbFolderHint,
   });
   const markerDir = path.dirname(destinationPath);
   const relativePath = path.relative(libraryPath, destinationPath);
@@ -631,6 +637,7 @@ async function createPlaceholderFile(
     libraryPath,
     trailerPath,
     sonarrFolderName,
+    tmdbFolderHint,
   });
 
   markPlaceholderWanted(libraryKey, sourceItem.mediaType, relativePath);

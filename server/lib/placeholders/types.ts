@@ -22,6 +22,8 @@ export interface PlaceholderOptions {
   trailerPath: string;
   /** Folder name from Sonarr (for TV shows to match Sonarr's naming convention) */
   sonarrFolderName?: string;
+  /** Movies only: append Plex's {tmdb-ID} hint to the folder name */
+  tmdbFolderHint?: boolean;
 }
 
 /**

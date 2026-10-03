@@ -64,6 +64,9 @@ const messages = defineMessages({
   libraryPlaceholderFolder: 'Placeholder Folder for {libraryName}',
   libraryPlaceholderFolderTip:
     'Path where placeholder files will be created for this library',
+  placeholderFolderTmdbId: 'Add TMDB ID to movie placeholder folders',
+  placeholderFolderTmdbIdDescription:
+    "Name new movie placeholder folders like Title (Year) '{'tmdb-12345'}' so different movies with the same title and year get separate folders. Existing folders are not renamed.",
   browse: 'Browse',
   toastPlaceholderSettingsSuccess: 'Placeholder settings saved successfully!',
   toastPlaceholderSettingsFailure:
@@ -662,6 +665,7 @@ const SettingsDownloads = ({ onComplete }: SettingsDownloadsProps) => {
             placeholderMovieRootFolders:
               dataMain?.placeholderMovieRootFolders || {},
             placeholderTVRootFolders: dataMain?.placeholderTVRootFolders || {},
+            placeholderFolderTmdbId: dataMain?.placeholderFolderTmdbId || false,
           }}
           enableReinitialize
           onSubmit={async (values) => {
@@ -688,6 +692,7 @@ const SettingsDownloads = ({ onComplete }: SettingsDownloadsProps) => {
                   'show',
                   values.placeholderTVRootFolders
                 ),
+                placeholderFolderTmdbId: values.placeholderFolderTmdbId,
               });
 
               addToast(
@@ -846,6 +851,36 @@ const SettingsDownloads = ({ onComplete }: SettingsDownloadsProps) => {
                   {intl.formatMessage(messages.noLibrariesFound)}
                 </div>
               )}
+
+              <div className="form-row">
+                <label
+                  htmlFor="placeholderFolderTmdbId"
+                  className="checkbox-label"
+                >
+                  <span className="mr-2">
+                    {intl.formatMessage(messages.placeholderFolderTmdbId)}
+                  </span>
+                  <span className="label-tip">
+                    {intl.formatMessage(
+                      messages.placeholderFolderTmdbIdDescription
+                    )}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    type="checkbox"
+                    id="placeholderFolderTmdbId"
+                    name="placeholderFolderTmdbId"
+                    checked={values.placeholderFolderTmdbId}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      setFieldValue(
+                        'placeholderFolderTmdbId',
+                        e.target.checked
+                      );
+                    }}
+                  />
+                </div>
+              </div>
 
               <div className="actions">
                 <div className="flex justify-end">

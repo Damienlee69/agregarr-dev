@@ -103,16 +103,26 @@ export interface ResolvedPlaceholderPaths {
 export function resolvePlaceholderPaths(
   options: Omit<PlaceholderOptions, 'trailerPath'>
 ): ResolvedPlaceholderPaths {
-  const { title, year, tmdbId, mediaType, libraryPath, sonarrFolderName } =
-    options;
+  const {
+    title,
+    year,
+    tmdbId,
+    mediaType,
+    libraryPath,
+    sonarrFolderName,
+    tmdbFolderHint,
+  } = options;
 
   let result: ResolvedPlaceholderPaths;
 
   if (mediaType === 'movie') {
     const yearStr = year ? ` (${year})` : '';
-    const folderName = `${sanitizeFilename(title)}${yearStr}`;
+    const baseName = `${sanitizeFilename(title)}${yearStr}`;
+    const folderName = tmdbFolderHint
+      ? `${baseName} {tmdb-${tmdbId}}`
+      : baseName;
     const movieFolder = path.join(libraryPath, folderName);
-    const filename = `${folderName} {tmdb-${tmdbId}} {edition-Trailer}.mp4`;
+    const filename = `${baseName} {tmdb-${tmdbId}} {edition-Trailer}.mp4`;
     result = {
       folderName,
       destinationPath: path.join(movieFolder, filename),
@@ -144,6 +154,24 @@ export function resolvePlaceholderPaths(
   }
 
   return result;
+}
+
+// Legacy-folder placeholders for the same tmdb id keep their folder.
+export async function wantsTmdbFolderHint(
+  options: Omit<PlaceholderOptions, 'trailerPath' | 'tmdbFolderHint'>
+): Promise<boolean> {
+  if (
+    options.mediaType !== 'movie' ||
+    !getSettings().main.placeholderFolderTmdbId
+  ) {
+    return false;
+  }
+  try {
+    await fs.access(resolvePlaceholderPaths(options).destinationPath);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -1007,11 +1035,14 @@ export async function scanForMoviePlaceholders(
           // Extract title and year from folder name
           // Format: "MovieTitle (Year)" or "MovieTitle"
           const folderName = item.name;
-          const yearMatch = folderName.match(/\((\d{4})\)$/);
+          const nameNoHint = folderName
+            .replace(/\s*\{tmdb[-=]\d+\}$/, '')
+            .trim();
+          const yearMatch = nameNoHint.match(/\((\d{4})\)$/);
           const year = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
           const title = yearMatch
-            ? folderName.substring(0, folderName.lastIndexOf('(')).trim()
-            : folderName;
+            ? nameNoHint.substring(0, nameNoHint.lastIndexOf('(')).trim()
+            : nameNoHint;
 
           const placeholderPath = path.join(movieFolder, file);
 
