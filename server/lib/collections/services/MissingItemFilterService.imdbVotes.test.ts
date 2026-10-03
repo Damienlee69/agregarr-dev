@@ -78,9 +78,47 @@ describe('minimumImdbVotes', () => {
     );
   });
 
-  it('unset makes no IMDb calls and passes everything', async () => {
-    expect(await run({})).toEqual([1, 2, 3, 4]);
+  it.each([
+    ['unset', {}],
+    ['explicit 0', { minimumImdbRating: 0, minimumImdbVotes: 0 }],
+  ])('%s makes no TMDB or IMDb calls and drops nothing', async (_n, cfg) => {
+    const res = await new MissingItemFilterService().filterMissingItems(
+      items,
+      makeConfig(cfg),
+      'test'
+    );
+    expect(res.filteredItems.map((i) => i.tmdbId)).toEqual([1, 2, 3, 4]);
+    expect(res.lowRatedItems).toEqual([]);
+    expect(res.lowVotedItems).toEqual([]);
+    expect(mocks.getMovie).not.toHaveBeenCalled();
     expect(mocks.getRatings).not.toHaveBeenCalled();
+  });
+
+  it('votes-only: item with no IMDb id is excluded and counted as votes', async () => {
+    mocks.getMovie.mockImplementation(async ({ movieId }) => ({
+      imdb_id: movieId === 4 ? undefined : `tt${movieId}`,
+    }));
+    const res = await new MissingItemFilterService().filterMissingItems(
+      items,
+      makeConfig({ minimumImdbVotes: 1000 }),
+      'test'
+    );
+    expect(res.filteredItems.map((i) => i.tmdbId)).toEqual([1]);
+    expect(res.lowVotedItems).toEqual(['Movie 2', 'Movie 3', 'Movie 4']);
+    expect(res.lowRatedItems).toEqual([]);
+  });
+
+  it('rating set: item with no IMDb id stays attributed to rating', async () => {
+    mocks.getMovie.mockImplementation(async ({ movieId }) => ({
+      imdb_id: movieId === 4 ? undefined : `tt${movieId}`,
+    }));
+    const res = await new MissingItemFilterService().filterMissingItems(
+      items,
+      makeConfig({ minimumImdbRating: 7 }),
+      'test'
+    );
+    expect(res.lowRatedItems).toEqual(['Movie 4']);
+    expect(res.lowVotedItems).toEqual([]);
   });
 
   it('rating-only behaviour is unchanged', async () => {
