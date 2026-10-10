@@ -658,8 +658,8 @@ class OverlayTemplateRendererService {
           // The unrotated buffer's centre is the element's anchor point
           // (matches the editor for fixed-size and auto-sized elements alike)
           const unrotatedMeta = await sharp(overlayBuffer).metadata();
-          let anchorWidth = unrotatedMeta.width ?? 0;
-          let anchorHeight = unrotatedMeta.height ?? 0;
+          const anchorWidth = unrotatedMeta.width ?? 0;
+          const anchorHeight = unrotatedMeta.height ?? 0;
           let overlayWidth = anchorWidth;
           let overlayHeight = anchorHeight;
 
@@ -676,43 +676,29 @@ class OverlayTemplateRendererService {
             overlayHeight = rotatedMeta.height ?? overlayHeight;
           }
 
-          // Ensure overlay dimensions never exceed the base poster size
-          if (
-            overlayWidth > posterWidth ||
-            overlayHeight > posterHeight ||
-            overlayWidth === 0 ||
-            overlayHeight === 0
-          ) {
-            safeOverlayBuffer = await sharp(safeOverlayBuffer)
-              .resize({
-                width: Math.min(overlayWidth || posterWidth, posterWidth),
-                height: Math.min(overlayHeight || posterHeight, posterHeight),
-                fit: 'inside',
-              })
-              .toBuffer();
-
-            const safeMeta = await sharp(safeOverlayBuffer).metadata();
-            const resizedWidth = safeMeta.width ?? overlayWidth;
-            const resizedHeight = safeMeta.height ?? overlayHeight;
-
-            // The clamp shrinks the content, so shrink the anchor with it
-            // (multiply before dividing: integer products are float-exact)
-            if (overlayWidth > 0) {
-              anchorWidth = (anchorWidth * resizedWidth) / overlayWidth;
-            }
-            if (overlayHeight > 0) {
-              anchorHeight = (anchorHeight * resizedHeight) / overlayHeight;
-            }
-            overlayWidth = resizedWidth;
-            overlayHeight = resizedHeight;
-          }
-
-          const left =
+          let left =
             Math.round(offsetX + element.x * scale + anchorWidth / 2) -
             Math.round(overlayWidth / 2);
-          const top =
+          let top =
             Math.round(offsetY + element.y * scale + anchorHeight / 2) -
             Math.round(overlayHeight / 2);
+
+          // sharp rejects overlays larger than the poster; crop the overflow like the editor does
+          if (overlayWidth > posterWidth || overlayHeight > posterHeight) {
+            const cropLeft = Math.max(0, -left);
+            const cropTop = Math.max(0, -top);
+            const width = Math.min(overlayWidth, posterWidth - left) - cropLeft;
+            const height =
+              Math.min(overlayHeight, posterHeight - top) - cropTop;
+            if (width <= 0 || height <= 0) {
+              continue;
+            }
+            safeOverlayBuffer = await sharp(safeOverlayBuffer)
+              .extract({ left: cropLeft, top: cropTop, width, height })
+              .toBuffer();
+            left += cropLeft;
+            top += cropTop;
+          }
 
           overlays.push({
             input: safeOverlayBuffer,
