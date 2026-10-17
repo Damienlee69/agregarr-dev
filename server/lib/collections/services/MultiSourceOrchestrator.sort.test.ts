@@ -45,7 +45,12 @@ class TestSync extends BaseCollectionSync<'tmdb'> {
   }
   mapSourceDataToItems(_d: unknown, c: { id: string }) {
     const dates = c.id.endsWith('s1') ? [10, 20, 100] : [30];
-    return { items: dates.map((d) => item(`${c.id}-${d}`, d)) };
+    return {
+      items: dates.map((d, i) => ({
+        ...item(`${c.id}-${d}`, d),
+        metadata: { originalPosition: i + 1 },
+      })),
+    };
   }
 }
 

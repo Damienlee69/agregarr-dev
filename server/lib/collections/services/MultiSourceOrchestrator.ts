@@ -825,13 +825,15 @@ export class MultiSourceOrchestrator {
       // This is essential for proper interleaving on subsequent syncs where some
       // items already exist in Plex (and may be returned in cache/Plex order)
       // while others are newly created placeholders (returned in source order)
-      items.sort((a, b) => {
-        const posA =
-          (a.metadata?.originalPosition as number | undefined) || Infinity;
-        const posB =
-          (b.metadata?.originalPosition as number | undefined) || Infinity;
-        return posA - posB;
-      });
+      if (parentConfig.sortOrder !== 'reverse') {
+        items.sort((a, b) => {
+          const posA =
+            (a.metadata?.originalPosition as number | undefined) || Infinity;
+          const posB =
+            (b.metadata?.originalPosition as number | undefined) || Infinity;
+          return posA - posB;
+        });
+      }
 
       logger.debug(
         `Successfully fetched ${items.length} items from ${source.type}`,
