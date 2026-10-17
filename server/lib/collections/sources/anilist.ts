@@ -529,8 +529,17 @@ export class AnilistCollectionSync extends BaseCollectionSync<'anilist'> {
       const customUrl = config.anilistCustomListUrl;
       if (typeof customUrl === 'string' && customUrl.length > 0) {
         // parse patterns like /user/{username}/animelist/{ListName} or /search/anime?params
+        let u: URL | null = null;
         try {
-          const u = new URL(customUrl);
+          u = new URL(customUrl);
+        } catch (e) {
+          logger.error('Failed to parse AniList custom URL', {
+            label: 'AniList Collections',
+            url: customUrl,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+        if (u) {
           const parts = u.pathname.split('/').filter(Boolean);
 
           // Handle search URLs: /search/anime?genres=Comedy&sort=TRENDING_DESC or /search/anime/top-100
@@ -708,13 +717,6 @@ export class AnilistCollectionSync extends BaseCollectionSync<'anilist'> {
                   );
             return adapt(medias.slice(0, perPage));
           }
-        } catch (e) {
-          logger.error('Failed to parse AniList custom URL', {
-            label: 'AniList Collections',
-            url: customUrl,
-            error: e instanceof Error ? e.message : String(e),
-            stack: e instanceof Error ? e.stack : undefined,
-          });
         }
       }
 

@@ -10,6 +10,14 @@ vi.mock('@server/api/animeIds', () => ({
   lookupByAniList: vi.fn(),
   lookupByMal: vi.fn(),
 }));
+vi.mock('@server/api/anilist', () => ({
+  getFeedsFirstPage: vi.fn(),
+  getPopularAnime: vi.fn(),
+  getTopRatedAnime: vi.fn(),
+  getTrendingAnime: vi.fn(),
+  getUserCustomLists: vi.fn(),
+  searchAnime: vi.fn(),
+}));
 vi.mock('@server/api/imdbRatings', () => ({ default: class {} }));
 vi.mock('@server/lib/cache', () => ({ default: { getCache: vi.fn() } }));
 vi.mock('@server/lib/posterStorage', () => ({ generatePoster: vi.fn() }));
@@ -30,6 +38,7 @@ vi.mock('@server/lib/settings', () => ({
   }),
 }));
 
+import { getUserCustomLists, searchAnime } from '@server/api/anilist';
 import { AnilistCollectionSync } from './anilist';
 import { MyAnimeListCollectionSync } from './myanimelist';
 
@@ -61,6 +70,44 @@ describe.each([
     );
 
     expect(result.error).toContain('upstream list unavailable');
+    expect(result.created + result.updated).toBe(0);
+  });
+});
+
+describe('anilist custom URL', () => {
+  const run = (url: string) => {
+    const sync = new AnilistCollectionSync();
+    const cfg = {
+      id: 'c1',
+      name: 'Test List',
+      type: 'anilist',
+      subtype: 'custom',
+      anilistCustomListUrl: url,
+      libraryId: '1',
+      isActive: true,
+    } as CollectionConfig;
+    return sync.processCollections(
+      [cfg],
+      { recordCollectionProcessingTime: vi.fn() } as unknown as PlexAPI,
+      []
+    );
+  };
+
+  it('reports a failed user-list fetch', async () => {
+    vi.mocked(getUserCustomLists).mockRejectedValue(new Error('anilist down'));
+    const result = await run('https://example.test/user/testuser/animelist');
+    expect(result.error).toContain('anilist down');
+  });
+
+  it('reports a failed search fetch', async () => {
+    vi.mocked(searchAnime).mockRejectedValue(new Error('search down'));
+    const result = await run('https://example.test/search/anime?genres=Comedy');
+    expect(result.error).toContain('search down');
+  });
+
+  it('treats a malformed URL as an empty list, not a failure', async () => {
+    const result = await run('not a url');
+    expect(result.error).toBeUndefined();
     expect(result.created + result.updated).toBe(0);
   });
 });
