@@ -162,7 +162,7 @@ export class AnilistCollectionSync extends BaseCollectionSync<'anilist'> {
               }
             : error,
       });
-      return { created: 0, updated: 0 };
+      throw error;
     }
   }
 
