@@ -69,6 +69,18 @@ FlixPatrol sits behind Cloudflare and blocks automated requests at the TLS layer
 
 Add your instances under **Settings > Sources > Cloudflare Solvers** (e.g. `http://flaresolverr:8191`). You can run more than one: fetches try them in priority order, and a failing instance gets backed off per domain instead of blocking the rest.
 
+If Cloudflare appears to be blocking your server's IP (FlareSolverr reports "Cloudflare has blocked this request", or the log shows `solver loaded flixpatrol.com but the site returned HTTP 403`), route a solver through a different connection.
+
+Both solvers read proxy settings from their own container environment:
+
+- FlareSolverr: `PROXY_URL`, including the scheme, for example `socks5://gluetun:1080`
+- Byparr: `PROXY_SERVER`
+- Authentication: `PROXY_USERNAME` and `PROXY_PASSWORD`
+
+Keep one solver on your normal connection and run a second through the proxy. Fetches fall through to the second solver when the first is refused.
+
+Running the solver inside a VPN container's network works too. Point Agregarr at the VPN container's address.
+
 ## Relationship to upstream
 
 This fork tracks upstream Agregarr and stays GPL-3.0. Changes that fit upstream go back as PRs (46 merged, 13 open). Fork-only features rely on behaviour or trade-offs upstream may not want to adopt.
