@@ -323,18 +323,12 @@ export class AnilistCollectionSync extends BaseCollectionSync<'anilist'> {
     try {
       // PlexAPI may have optional methods for GUID lookups
       const plexClientWithMethods = plexClient as PlexAPI & {
-        findItemByGuid?: (
-          guid: string,
-          mediaType: string
-        ) => Promise<{ ratingKey: string; title: string } | null>;
         findByGuid?: (
           guid: string,
           mediaType: string
         ) => Promise<{ ratingKey: string; title: string } | null>;
       };
-      const fn =
-        plexClientWithMethods?.findItemByGuid ||
-        plexClientWithMethods?.findByGuid;
+      const fn = plexClientWithMethods?.findByGuid;
       if (typeof fn === 'function') {
         const hit = await fn.call(plexClient, guid, mediaType);
         if (hit?.ratingKey) {
