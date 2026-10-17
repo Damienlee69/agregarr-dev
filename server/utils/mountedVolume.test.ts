@@ -39,12 +39,15 @@ describe('isOnContainerRootFs', () => {
     podman?: boolean;
     mountinfo?: string;
     existing?: string[];
+    statHook?: (p: string) => Promise<unknown> | undefined;
   }) => {
     vi.resetModules();
     const existing = new Set(['/', ...(opts.existing ?? [])]);
     vi.doMock('fs/promises', () => {
       const mocked = {
         stat: async (p: string) => {
+          const hooked = opts.statHook?.(p);
+          if (hooked) return hooked;
           const marker =
             p === '/.dockerenv'
               ? opts.container
@@ -116,5 +119,51 @@ describe('isOnContainerRootFs', () => {
   it('missing root whose only existing ancestor is / is flagged', async () => {
     const fn = await load({ container: true, mountinfo: CONTAINER });
     expect(await fn('/nope/new')).toBe(true);
+  });
+
+  describe('in-flight probe sharing', () => {
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+
+    it('keeps one stat in flight per target', async () => {
+      const target = '/hang/root';
+      let release: () => void = () => undefined;
+      const pending = new Promise<unknown>((r) => {
+        release = () => r({});
+      });
+      const statHook = vi.fn((p: string) =>
+        p === target ? pending : undefined
+      );
+      const fn = await load({
+        container: true,
+        mountinfo: CONTAINER,
+        statHook,
+      });
+      const a = fn(target);
+      const b = fn(target);
+      const c = fn(target);
+      await flush();
+      expect(statHook.mock.calls.filter(([p]) => p === target)).toHaveLength(1);
+      expect(b).toBe(a);
+      expect(c).toBe(a);
+      release();
+      await a;
+    });
+
+    it('probes fresh once the previous probe settled', async () => {
+      const target = '/movies';
+      const statHook = vi.fn(() => undefined);
+      const fn = await load({
+        container: true,
+        mountinfo: CONTAINER,
+        existing: [target],
+        statHook,
+      });
+      await fn(target);
+      const before = statHook.mock.calls.filter(([p]) => p === target).length;
+      expect(before).toBeGreaterThan(0);
+      await fn(target);
+      const after = statHook.mock.calls.filter(([p]) => p === target).length;
+      expect(after).toBe(before * 2);
+    });
   });
 });

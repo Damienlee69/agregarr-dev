@@ -26,7 +26,7 @@ const exists = (p: string) =>
   );
 
 // Unreadable mountinfo or a non-container host means "can't tell": no warning.
-export const isOnContainerRootFs = async (target: string): Promise<boolean> => {
+const probeContainerRootFs = async (target: string): Promise<boolean> => {
   if (!(await exists('/.dockerenv')) && !(await exists('/run/.containerenv')))
     return false;
   try {
@@ -39,4 +39,16 @@ export const isOnContainerRootFs = async (target: string): Promise<boolean> => {
   } catch {
     return false;
   }
+};
+
+const inflight = new Map<string, Promise<boolean>>();
+
+export const isOnContainerRootFs = (target: string): Promise<boolean> => {
+  const key = path.resolve(target);
+  let probe = inflight.get(key);
+  if (!probe) {
+    probe = probeContainerRootFs(target).finally(() => inflight.delete(key));
+    inflight.set(key, probe);
+  }
+  return probe;
 };
