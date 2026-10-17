@@ -1607,11 +1607,13 @@ export class MultiSourceOrchestrator {
 
       // Label all items (new and existing)
       let labelFailures = 0;
+      let lastLabelError: unknown;
       for (const itemKey of itemRatingKeys) {
         try {
           await plexClient.addLabelToItem(itemKey, labelName);
         } catch (error) {
           labelFailures++;
+          lastLabelError = error;
           logger.warn(
             `Failed to label item ${itemKey} for smart collection "${collectionName}" (skipping)`,
             {
@@ -1622,6 +1624,18 @@ export class MultiSourceOrchestrator {
             }
           );
         }
+      }
+      if (
+        itemRatingKeys.length > 0 &&
+        labelFailures === itemRatingKeys.length
+      ) {
+        throw new Error(
+          `All ${labelFailures} items failed labelling for "${collectionName}", leaving the collection as it was: ${
+            lastLabelError instanceof Error
+              ? lastLabelError.message
+              : String(lastLabelError)
+          }`
+        );
       }
       if (labelFailures > 0) {
         logger.info(
