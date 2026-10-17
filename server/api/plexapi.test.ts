@@ -206,3 +206,59 @@ describe('arrangeCollectionItemsInOrder duplicate ratingKeys', () => {
     ]);
   });
 });
+
+describe('arrangeCollectionItemsInOrder items missing from the collection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('never moves a requested item that is not in the collection', async () => {
+    const { api, logger } = await setupArrangeApi(['1003', '1001', '1002']);
+    const put = (api as unknown as { safePutQuery: ReturnType<typeof vi.fn> })
+      .safePutQuery;
+
+    await api.arrangeCollectionItemsInOrder('378965', [
+      { ratingKey: '1001', title: 'A' },
+      { ratingKey: '1002', title: 'B' },
+      { ratingKey: '9999', title: 'Missing' },
+      { ratingKey: '1003', title: 'C' },
+    ]);
+
+    const urls = put.mock.calls.map(([u]: [string]) => u);
+    expect(urls.some((u) => u.includes('/items/9999/'))).toBe(false);
+    expect(urls).toEqual([
+      '/library/collections/378965/items/1001/move',
+      '/library/collections/378965/items/1002/move?after=1001',
+    ]);
+    expect(findArrangeWarn(logger)).toBeUndefined();
+  });
+
+  it('still moves a lone surviving item into position', async () => {
+    const { api } = await setupArrangeApi(['1005', '1001']);
+    const put = (api as unknown as { safePutQuery: ReturnType<typeof vi.fn> })
+      .safePutQuery;
+
+    await api.arrangeCollectionItemsInOrder('378965', [
+      { ratingKey: '1001', title: 'A' },
+      { ratingKey: '9999', title: 'Missing' },
+    ]);
+
+    expect(put.mock.calls.map(([u]: [string]) => u)).toEqual([
+      '/library/collections/378965/items/1001/move',
+    ]);
+  });
+
+  it('issues no moves when the collection is empty', async () => {
+    const { api, logger } = await setupArrangeApi([]);
+    const put = (api as unknown as { safePutQuery: ReturnType<typeof vi.fn> })
+      .safePutQuery;
+
+    await api.arrangeCollectionItemsInOrder('378965', [
+      { ratingKey: '1001', title: 'A' },
+      { ratingKey: '1002', title: 'B' },
+    ]);
+
+    expect(put).not.toHaveBeenCalled();
+    expect(findArrangeWarn(logger)).toBeUndefined();
+  });
+});

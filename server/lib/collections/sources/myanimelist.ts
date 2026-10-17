@@ -160,7 +160,7 @@ export class MyAnimeListCollectionSync extends BaseCollectionSync<'myanimelist'>
               }
             : error,
       });
-      return { created: 0, updated: 0 };
+      throw error;
     }
   }
 

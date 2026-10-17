@@ -60,6 +60,22 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages({
   'overlay-quick-sync': 'Overlay Quick Sync',
   'watchlist-sync': 'Plex Watchlist Sync',
   'health-checks': 'Health Checks',
+  'plex-refresh-tokenDescription':
+    'Pings Plex for each signed-in user to keep their Plex token active.',
+  'plex-collections-syncDescription':
+    'Full pass: syncs every configured collection with its source list.',
+  'plex-collections-quick-syncDescription':
+    'Adds newly downloaded items to collections they were missing from, and removes their placeholders.',
+  'plex-randomize-home-orderDescription':
+    'Shuffles the home screen order of collections and hubs set to randomize.',
+  'overlay-applicationDescription':
+    'Full pass: re-checks every item in overlay-enabled libraries, skipping unchanged ones.',
+  'overlay-quick-syncDescription':
+    'Overlays only items added to Plex since its last run that have none yet.',
+  'watchlist-syncDescription':
+    "Adds Overseerr users' Plex watchlist items straight to Radarr and Sonarr, without creating requests.",
+  'health-checksDescription':
+    'Checks service connections and configuration, and reports any problems.',
   editJobSchedule: 'Modify Job',
   jobScheduleEditSaved: 'Job edited successfully!',
   jobScheduleEditFailed: 'Something went wrong while saving the job.',
@@ -635,6 +651,11 @@ const SettingsJobs = () => {
                     </span>
                     {job.running && <Spinner className="ml-2 h-5 w-5" />}
                   </div>
+                  {messages[`${job.id}Description`] && (
+                    <div className="mt-1 text-xs leading-4 text-gray-400">
+                      {intl.formatMessage(messages[`${job.id}Description`])}
+                    </div>
+                  )}
                 </Table.TD>
                 <Table.TD>
                   <Badge

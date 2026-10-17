@@ -2110,9 +2110,10 @@ class PlexAPI {
 
     // Fetch current order once
     const currentOrder = await this.getCollectionItems(collectionRatingKey);
+    const inCollection = new Set(currentOrder);
     const desiredOrder = [
       ...new Set(orderedItems.map((item) => item.ratingKey)),
-    ];
+    ].filter((ratingKey) => inCollection.has(ratingKey));
 
     // Early return optimization: Check if already in correct order
     if (

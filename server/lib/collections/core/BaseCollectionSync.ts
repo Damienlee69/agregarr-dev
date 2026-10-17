@@ -1283,14 +1283,18 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       );
 
       // Label all items (new and existing)
+      let labelledCount = 0;
+      let lastNotFound: unknown;
       for (const itemKey of itemRatingKeys) {
         try {
           await plexClient.addLabelToItem(itemKey, labelName);
+          labelledCount++;
         } catch (error) {
           const message = extractErrorMessage(error);
           if (!isPlexNotFoundError(message)) {
             throw error;
           }
+          lastNotFound = error;
           logger.warn(
             `Item ${itemKey} not found in Plex, skipping label for smart collection "${collectionName}"`,
             {
@@ -1300,6 +1304,10 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             }
           );
         }
+      }
+
+      if (itemRatingKeys.length > 0 && labelledCount === 0) {
+        throw lastNotFound;
       }
 
       // CLEANUP: Remove labels from items that are no longer in the collection
