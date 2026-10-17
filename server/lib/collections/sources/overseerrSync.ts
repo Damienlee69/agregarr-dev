@@ -632,6 +632,10 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
         {
           userId: userContext?.plexId || userContext?.id,
           customLabel,
+          // applyUserCollectionSortTitle is the single writer for these -
+          // the base pass wrote the group form and this one then wrote a
+          // different value over it, two PUTs disagreeing every sync.
+          skipSortTitle: true,
         },
         missingItems // Pass missing items for Quick Sync
       );
@@ -955,11 +959,19 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     config: CollectionConfig,
     plexClient: PlexAPI
   ): Promise<void> {
-    // Sort title override: prefix + collection name
+    // One config generates a collection per requesting user, so this is a
+    // multi-collection group and is written the same way the others are: a
+    // shared base with each member's own name appended, which keeps two
+    // users' collections distinct rather than sharing one sort title.
     if (config.sortTitleOverride) {
       await plexClient.updateCollectionSortTitle(
         collectionRatingKey,
-        buildSortTitleFromOverride(config.sortTitleOverride, collectionName)
+        buildSortTitleFromOverride(
+          config.sortTitleOverride,
+          collectionName,
+          true,
+          config.sortTitleOverrideIsFullTitle === true
+        )
       );
       return;
     }
@@ -1378,7 +1390,12 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
         if (config.sortTitleOverride) {
           await plexClient.updateCollectionSortTitle(
             smartCollectionRatingKey,
-            `${config.sortTitleOverride}${config.name}`
+            buildSortTitleFromOverride(
+              config.sortTitleOverride,
+              config.name,
+              true,
+              config.sortTitleOverrideIsFullTitle === true
+            )
           );
         } else if (config.sortOrderLibrary !== undefined) {
           const sortOrderLibrary = config.sortOrderLibrary;

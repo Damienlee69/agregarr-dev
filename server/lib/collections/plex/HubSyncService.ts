@@ -1678,25 +1678,10 @@ export class HubSyncService {
           continue;
         }
 
-        // A-Z only, same scoping as leading-article handling below -
-        // promoted collections are Agregarr's own positional ordering and
-        // are left alone here.
+        // Promoted means Agregarr owns the position, so the rank prefix
+        // below applies; A-Z collections fall through to their own name.
         const isCurrentlyPromoted =
           config.isLibraryPromoted && config.sortOrderLibrary > 0;
-
-        // Optionally rename the actual Plex collection to strip a trailing
-        // " Collection" suffix (e.g. TMDb collections named "The
-        // Accountant Collection") - a real title change, not just a
-        // sortTitle tweak, so it has to happen before the sortTitle logic
-        // below, which sorts off of whatever name is actually current.
-        //
-        // Deliberately NOT gated on a manual Sort Title override: the sort
-        // title is a hidden sorting key and the name is the front-facing
-        // label, so customizing one says nothing about the other. Gating
-        // on it meant a collection with any custom sort title silently
-        // opted out of a setting the user had explicitly turned on, with
-        // no feedback explaining why nothing happened.
-        const effectiveName = config.name;
 
         // A manual Sort Title override always wins and applies to every
         // collection, including the A-Z ones the computed logic below skips.
@@ -1704,14 +1689,16 @@ export class HubSyncService {
           try {
             const overrideSortTitle = buildSortTitleFromOverride(
               config.sortTitleOverride,
-              effectiveName
+              config.name,
+              false,
+              config.sortTitleOverrideIsFullTitle === true
             );
             // An override is always Agregarr imposing a value, so this
             // path always locks.
             await plexClient.updateCollectionSortTitle(
               config.collectionRatingKey,
               overrideSortTitle,
-              config.titleSort ?? effectiveName
+              config.titleSort ?? config.name
             );
             // Same reason as the computed branch below: the stored copy is
             // what the UI reads until discovery runs, so leaving it behind
@@ -1746,20 +1733,18 @@ export class HubSyncService {
           continue;
         }
 
-        const sortKeyName = effectiveName;
-
         let sortTitle: string;
         const updateConfig: Partial<PreExistingCollectionConfig> = {};
 
         if (isCurrentlyPromoted) {
           // Promoted: positional sortTitle (see buildPromotedSortTitle)
           sortTitle = buildPromotedSortTitle(
-            sortKeyName,
+            config.name,
             config.sortOrderLibrary
           );
         } else {
           // Demoted: Reset to natural title and mark as cleaned
-          sortTitle = sortKeyName;
+          sortTitle = config.name;
           // After reset, set everLibraryPromoted back to false
           updateConfig.everLibraryPromoted = false;
         }
@@ -1780,7 +1765,7 @@ export class HubSyncService {
           await plexClient.updateCollectionSortTitle(
             config.collectionRatingKey,
             sortTitle,
-            config.titleSort ?? effectiveName
+            config.titleSort ?? config.name
           );
 
           // Keep the stored copy in step with what was just written.

@@ -253,6 +253,16 @@ collectionsRoutes.get('/', (_req, res) => {
  */
 collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
   try {
+    // The Sort Title field accepts a complete title, so anything typed into
+    // it now is marked as one. Overrides saved before that are left unmarked
+    // and keep prepending the collection name, which is what they meant when
+    // they were written - see buildSortTitleFromOverride. Only a changed
+    // value is marked, because the client posts the whole config on save.
+    if (typeof req.body.sortTitleOverride === 'string') {
+      req.body.sortTitleOverrideIsFullTitle =
+        req.body.sortTitleOverride.trim() !== '';
+    }
+
     const { id } = req.params;
     const settings = getSettings();
 

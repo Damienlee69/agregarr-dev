@@ -1113,7 +1113,13 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
     plexClient: PlexAPI,
     allCollections: PlexCollection[],
     processedCollectionKeys?: Set<string>,
-    userInfo?: { userId?: number | string; customLabel?: string },
+    userInfo?: {
+      userId?: number | string;
+      customLabel?: string;
+      // Set by a source that writes this collection's sort title itself -
+      // see skipSortTitle on CollectionUpdateOptions.
+      skipSortTitle?: boolean;
+    },
     missingItems?: MissingItem[]
   ): Promise<CollectionOperationResult> {
     // Support user-specific collections for services like Overseerr
@@ -1150,6 +1156,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         customPoster: config.customPoster,
         processedCollectionKeys,
         libraryKey: config.libraryId,
+        skipSortTitle: userInfo?.skipSortTitle,
         config,
       }
     );
@@ -2354,7 +2361,8 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
           buildSortTitleFromOverride(
             groupBase,
             sortKeyName,
-            isMultiCollectionPattern(matchingConfig)
+            isMultiCollectionPattern(matchingConfig),
+            matchingConfig?.sortTitleOverrideIsFullTitle === true
           ),
           options.existingTitleSort
         );

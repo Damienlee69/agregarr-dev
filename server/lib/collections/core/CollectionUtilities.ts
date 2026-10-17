@@ -111,8 +111,18 @@ const BARE_PREFIX = /_$/;
 export function buildSortTitleFromOverride(
   override: string,
   collectionName: string,
-  isMultiCollection = false
+  isMultiCollection = false,
+  isFullTitle = false
 ): string {
+  // An override saved before this field accepted full titles always had the
+  // collection name appended, so "ZZZ" on "Films" wrote "ZZZFilms". Keeping
+  // that for anything without the marker means an existing install does not
+  // silently re-sort: only a value written through the new field, which sets
+  // the marker, gets the behaviour below.
+  if (!isFullTitle) {
+    return `${override}${collectionName}`;
+  }
+
   const isBarePrefix = BARE_PREFIX.test(override.trim());
 
   if (isMultiCollection) {
@@ -398,6 +408,14 @@ export function getCollectionMediaType(
 export const PROMOTED_SORT_TITLE_RANK_WIDTH = 3;
 
 /**
+ * The highest rank the fixed width can express - 999 at three digits.
+ * Beyond it every rank renders an identical prefix and ordering is decided
+ * by the name instead of the position.
+ */
+export const MAX_PROMOTED_RANK =
+  Math.pow(10, PROMOTED_SORT_TITLE_RANK_WIDTH) - 1;
+
+/**
  * The sortTitle that places a promoted collection at its exact position.
  *
  * A fixed-width zero-padded rank sorts the same way ascending
@@ -446,7 +464,12 @@ export function parseTypedRepositionRank(
   const match = /^!(\d+)_/.exec(submittedSortTitle.trim());
   if (!match) return undefined;
   const rank = parseInt(match[1], 10);
-  return Number.isFinite(rank) && rank > 0 ? rank : undefined;
+  if (!Number.isFinite(rank) || rank <= 0) return undefined;
+  // Past the padding width every rank renders the same prefix, so rank 1000
+  // named "A" would sort above rank 999 named "Z". Capped here rather than
+  // clamped silently at write time, so the position asked for is the
+  // position used.
+  return Math.min(rank, MAX_PROMOTED_RANK);
 }
 
 /**

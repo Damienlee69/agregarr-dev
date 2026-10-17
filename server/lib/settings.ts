@@ -120,6 +120,7 @@ export interface CollectionConfig {
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
   readonly isLibraryPromoted?: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section (defaults to true for Agregarr collections)
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto !-prefix)
+  readonly sortTitleOverrideIsFullTitle?: boolean; // Set when the override was written through the Sort Title field, which accepts a complete title. Absent on anything saved earlier, which always had the collection name appended - see buildSortTitleFromOverride
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly isLinked?: boolean; // True if collection is actively linked to other collections
   readonly linkId?: number; // Group ID for linked collections (preserved even when isLinked=false)
@@ -431,6 +432,7 @@ export interface PreExistingCollectionConfig {
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
   isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
   sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
+  sortTitleOverrideIsFullTitle?: boolean; // Set when the override was written through the Sort Title field, which accepts a complete title. Absent on anything saved earlier, which always had the collection name appended - see buildSortTitleFromOverride
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;
@@ -2423,6 +2425,7 @@ export interface MultiSourceCollectionConfig {
   readonly isLibraryPromoted?: boolean;
   readonly sortOrder?: CollectionSortOrder;
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
+  readonly sortTitleOverrideIsFullTitle?: boolean; // Set when the override was written through the Sort Title field, which accepts a complete title. Absent on anything saved earlier, which always had the collection name appended - see buildSortTitleFromOverride
   readonly timeRestriction?: {
     readonly alwaysActive: boolean;
     readonly removeFromPlexWhenInactive?: boolean;

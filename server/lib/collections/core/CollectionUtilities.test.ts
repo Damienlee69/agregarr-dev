@@ -302,19 +302,33 @@ describe('resolveMultiCollectionSortTitle', () => {
 });
 
 describe('buildSortTitleFromOverride', () => {
+  it('keeps an override saved before the marker prepending the name', () => {
+    // What this field meant on develop: "ZZZ" on "Films" wrote "ZZZFilms".
+    // Anything without the marker was saved under those rules, so it has to
+    // keep them or an existing install re-sorts on upgrade.
+    expect(buildSortTitleFromOverride('ZZZ', 'Films')).toBe('ZZZFilms');
+    expect(buildSortTitleFromOverride('!020_', 'Films')).toBe('!020_Films');
+    expect(buildSortTitleFromOverride('ZZZ', 'Action', true)).toBe('ZZZAction');
+  });
+
   it('completes a bare prefix with the collection name', () => {
     // bitr8's documented usage and what existing #50 configs contain.
-    expect(buildSortTitleFromOverride('!020_', 'Apple TV Top 10')).toBe(
-      '!020_Apple TV Top 10'
-    );
-    expect(buildSortTitleFromOverride('ZZZ_', 'Apple TV Top 10')).toBe(
-      'ZZZ_Apple TV Top 10'
-    );
+    expect(
+      buildSortTitleFromOverride('!020_', 'Apple TV Top 10', false, true)
+    ).toBe('!020_Apple TV Top 10');
+    expect(
+      buildSortTitleFromOverride('ZZZ_', 'Apple TV Top 10', false, true)
+    ).toBe('ZZZ_Apple TV Top 10');
   });
 
   it('writes an already-complete title verbatim', () => {
     expect(
-      buildSortTitleFromOverride('!020_Apple TV Top 10', 'Apple TV Top 10')
+      buildSortTitleFromOverride(
+        '!020_Apple TV Top 10',
+        'Apple TV Top 10',
+        false,
+        true
+      )
     ).toBe('!020_Apple TV Top 10');
   });
 
@@ -322,19 +336,23 @@ describe('buildSortTitleFromOverride', () => {
     // Stripping the "!003_" off the pre-filled value is how a user asks for
     // A-Z. Demote only clears "!"-prefixed overrides, so the bare name
     // survives - appending to it would write "CrowCrow" to Plex.
-    expect(buildSortTitleFromOverride('Crow', 'Crow')).toBe('Crow');
-    expect(buildSortTitleFromOverride('Crow', 'The Crow')).toBe('Crow');
+    expect(buildSortTitleFromOverride('Crow', 'Crow', false, true)).toBe(
+      'Crow'
+    );
+    expect(buildSortTitleFromOverride('Crow', 'The Crow', false, true)).toBe(
+      'Crow'
+    );
   });
 
   it('appends each name after a shared prefix for multi-collection configs', () => {
-    expect(buildSortTitleFromOverride('!010_', 'Action', true)).toBe(
+    expect(buildSortTitleFromOverride('!010_', 'Action', true, true)).toBe(
       '!010_Action'
     );
     // Joined with an underscore so the two read apart in Plex's sort field,
     // and the separator's own "!010_Genres" stays a strict prefix of it.
-    expect(buildSortTitleFromOverride('!010_Genres', 'Action', true)).toBe(
-      '!010_Genres_Action'
-    );
+    expect(
+      buildSortTitleFromOverride('!010_Genres', 'Action', true, true)
+    ).toBe('!010_Genres_Action');
   });
 });
 
@@ -768,7 +786,7 @@ describe('multi-collection group sort titles', () => {
   const GROUP = 'Auto Genre Collections';
 
   const memberTitle = (base: string | undefined, member: string) =>
-    base ? buildSortTitleFromOverride(base, member, true) : member;
+    base ? buildSortTitleFromOverride(base, member, true, true) : member;
 
   describe('base resolution', () => {
     it('prefers a typed override', () => {

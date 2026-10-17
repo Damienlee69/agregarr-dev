@@ -2997,7 +2997,12 @@ export class MultiSourceOrchestrator {
       try {
         await plexClient.updateCollectionSortTitle(
           collectionRatingKey,
-          buildSortTitleFromOverride(config.sortTitleOverride, collectionName),
+          buildSortTitleFromOverride(
+            config.sortTitleOverride,
+            collectionName,
+            false,
+            config.sortTitleOverrideIsFullTitle === true
+          ),
           currentTitleSort
         );
       } catch (error) {

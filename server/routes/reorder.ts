@@ -230,17 +230,19 @@ async function handleManualReordering(
 
     const updatedConfig = { ...originalConfig, [sortOrderField]: sortOrder };
 
-    // Dragging is only ever possible on a promoted collection - the A-Z
-    // section has no manual order to drag within - so a drag is always the
-    // instruction "put this at position N". That contradicts any Sort Title
-    // override outright, whichever form it takes, so the override gives way.
+    // A drag says "put this at position N", which contradicts a Sort Title
+    // override outright - without clearing it the row moves here and the next
+    // sync writes the override to Plex anyway, undoing the drag.
     //
-    // Without this the row moves here and the next sync writes the override
-    // to Plex regardless, leaving the drag silently undone. Clearing it hands
-    // the collection to the positional scheme at its new rank, which is what
-    // dragging it there asked for.
+    // Only the collection that actually moved. The client posts the whole
+    // library list on every drag, so testing the override alone cleared it on
+    // untouched neighbours too: dragging A past B wiped C's override.
+    const rankChanged =
+      (originalConfig as { sortOrderLibrary?: number }).sortOrderLibrary !==
+      sortOrder;
     if (
       sortOrderField === 'sortOrderLibrary' &&
+      rankChanged &&
       originalConfig.isLibraryPromoted === true &&
       (originalConfig as { sortTitleOverride?: string }).sortTitleOverride
     ) {

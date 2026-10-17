@@ -41,6 +41,16 @@ preExistingRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
   const { id } = req.params;
 
   try {
+    // The Sort Title field accepts a complete title, so anything typed into
+    // it now is marked as one. Overrides saved before that are left unmarked
+    // and keep prepending the collection name, which is what they meant when
+    // they were written - see buildSortTitleFromOverride. Only a changed
+    // value is marked, because the client posts the whole config on save.
+    if (typeof req.body.sortTitleOverride === 'string') {
+      req.body.sortTitleOverrideIsFullTitle =
+        req.body.sortTitleOverride.trim() !== '';
+    }
+
     // Detect a typed-in reposition: the Sort Title field is pre-filled with
     // this collection's current computed value (e.g. "!001_Name"), so if
     // the user edited only the rank digits and left the name suffix
