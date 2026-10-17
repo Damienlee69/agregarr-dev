@@ -738,6 +738,14 @@ export class MultiSourceOrchestrator {
         libraryCache
       );
 
+      const position = (item: CollectionItem) => {
+        const p = item.metadata?.originalPosition;
+        return typeof p === 'number' ? p : Infinity;
+      };
+      mappedResult.items = [...mappedResult.items].sort(
+        (a, b) => position(a) - position(b) || 0
+      );
+
       const { items, missingItems } =
         await syncService.applyFilteringToMappedItems(mappedResult, tempConfig);
 
@@ -820,20 +828,6 @@ export class MultiSourceOrchestrator {
       // Note: We no longer add "released" items for Coming Soon
       // When real content is detected, placeholder is deleted immediately
       // Real items appear naturally if still in the source list
-
-      // CRITICAL: Sort items by originalPosition to maintain source order
-      // This is essential for proper interleaving on subsequent syncs where some
-      // items already exist in Plex (and may be returned in cache/Plex order)
-      // while others are newly created placeholders (returned in source order)
-      if (parentConfig.sortOrder !== 'reverse') {
-        items.sort((a, b) => {
-          const posA =
-            (a.metadata?.originalPosition as number | undefined) || Infinity;
-          const posB =
-            (b.metadata?.originalPosition as number | undefined) || Infinity;
-          return posA - posB;
-        });
-      }
 
       logger.debug(
         `Successfully fetched ${items.length} items from ${source.type}`,
