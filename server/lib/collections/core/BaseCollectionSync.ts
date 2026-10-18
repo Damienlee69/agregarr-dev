@@ -2338,14 +2338,15 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
       // scattering to their own initials while the separator sits alone at the
       // top of the library. Promoted groups need no fallback - the rank prefix
       // they already share groups them.
-      // The parent-name fallback only applies to a group Agregarr has
-      // actually managed the position of - one that was promoted and then
-      // demoted. Applying it to a group that has never been promoted would
-      // rewrite the sort titles of every collection it generates on existing
-      // installs, for a grouping the user never asked for. Those keep their
-      // own names until the group is promoted at least once.
+      // The parent-name fallback is opt-in. everLibraryPromoted cannot gate
+      // it: that is set when a collection is created, so every group an
+      // existing install has ever demoted already reads as "was promoted"
+      // and would be re-sorted on upgrade. groupSortTitleOptIn is set only
+      // when the user promotes, demotes or drags the group themselves, and
+      // cleared when they empty its Sort Title - which is the way back to
+      // plain member names.
       const groupHasPromotionHistory =
-        matchingConfig?.everLibraryPromoted === true;
+        matchingConfig?.groupSortTitleOptIn === true;
       const groupBase = isMultiCollectionPattern(matchingConfig)
         ? resolveMultiCollectionBase(
             effectiveOverride,

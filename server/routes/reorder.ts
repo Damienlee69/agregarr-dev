@@ -159,6 +159,33 @@ reorderRoutes.post('/', isAuthenticated(), async (req, res) => {
  * Handle automatic sort order management for all collection types
  * Assigns sequential sort orders, handles new collections, fills gaps
  */
+/** Shape the override decision needs - see shouldClearSortTitleOverride. */
+export interface ReorderOverrideCandidate {
+  sortOrderLibrary?: number;
+  isLibraryPromoted?: boolean;
+  sortTitleOverride?: string;
+}
+
+/**
+ * Whether a drag should clear this collection's Sort Title override.
+ *
+ * A drag says "put this at position N", which contradicts an override - left
+ * in place, the next sync writes it to Plex and undoes the drag. But the
+ * client posts the whole library on every drag, so this has to be limited to
+ * the collection whose rank actually changed: without that, dragging A past B
+ * cleared C's override too.
+ */
+export function shouldClearSortTitleOverride(
+  config: ReorderOverrideCandidate,
+  sortOrderField: string,
+  newSortOrder: number
+): boolean {
+  if (sortOrderField !== 'sortOrderLibrary') return false;
+  if (config.isLibraryPromoted !== true) return false;
+  if (!config.sortTitleOverride) return false;
+  return config.sortOrderLibrary !== newSortOrder;
+}
+
 async function handleAutoReordering(
   libraryId: string,
   context: string,
@@ -230,21 +257,12 @@ async function handleManualReordering(
 
     const updatedConfig = { ...originalConfig, [sortOrderField]: sortOrder };
 
-    // A drag says "put this at position N", which contradicts a Sort Title
-    // override outright - without clearing it the row moves here and the next
-    // sync writes the override to Plex anyway, undoing the drag.
-    //
-    // Only the collection that actually moved. The client posts the whole
-    // library list on every drag, so testing the override alone cleared it on
-    // untouched neighbours too: dragging A past B wiped C's override.
-    const rankChanged =
-      (originalConfig as { sortOrderLibrary?: number }).sortOrderLibrary !==
-      sortOrder;
     if (
-      sortOrderField === 'sortOrderLibrary' &&
-      rankChanged &&
-      originalConfig.isLibraryPromoted === true &&
-      (originalConfig as { sortTitleOverride?: string }).sortTitleOverride
+      shouldClearSortTitleOverride(
+        originalConfig as ReorderOverrideCandidate,
+        sortOrderField,
+        sortOrder
+      )
     ) {
       (updatedConfig as { sortTitleOverride?: string }).sortTitleOverride = '';
       clearedSortTitleOverrides += 1;
@@ -258,6 +276,10 @@ async function handleManualReordering(
       configType === 'collection'
     ) {
       updatedConfig.everLibraryPromoted = true;
+      // Dragging into the promoted section is the same deliberate act as
+      // promoting - see groupSortTitleOptIn.
+      (updatedConfig as { groupSortTitleOptIn?: boolean }).groupSortTitleOptIn =
+        true;
     }
 
     // Use type guards to ensure config matches declared type

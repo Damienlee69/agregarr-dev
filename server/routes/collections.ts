@@ -261,6 +261,11 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
     if (typeof req.body.sortTitleOverride === 'string') {
       req.body.sortTitleOverrideIsFullTitle =
         req.body.sortTitleOverride.trim() !== '';
+      // Emptying the field is how a group goes back to plain member names:
+      // it clears the opt-in, so the shared base stops applying.
+      if (req.body.sortTitleOverride.trim() === '') {
+        req.body.groupSortTitleOptIn = false;
+      }
     }
 
     const { id } = req.params;
@@ -2624,6 +2629,11 @@ collectionsRoutes.patch('/:id/promote', isAuthenticated(), async (req, res) => {
       ...config,
       isLibraryPromoted: true,
       sortOrderLibrary: targetNewRank,
+      // Promoting is the deliberate act that opts a group into sorting its
+      // members under a shared base once demoted. Installs from before this
+      // have the flag absent, so their members keep their own names until
+      // the user touches the group.
+      groupSortTitleOptIn: true,
       ...(dropsPromotionMarker ? { sortTitleOverride: '' } : {}),
     };
 
@@ -2696,6 +2706,9 @@ collectionsRoutes.patch('/:id/demote', isAuthenticated(), async (req, res) => {
       ...config,
       isLibraryPromoted: false,
       sortOrderLibrary: 0, // A-Z collections have sortOrderLibrary: 0
+      // Same opt-in as promote: demoting a group deliberately is what makes
+      // its members sort under a shared base instead of scattering.
+      groupSortTitleOptIn: true,
       ...(keepsPromotionMarker ? { sortTitleOverride: '' } : {}),
     };
 

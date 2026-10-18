@@ -154,7 +154,7 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
     // sorts ahead of alpha names within the A-Z bucket. Same gate the members
     // use (see BaseCollectionSync), so an existing install is not re-sorted
     // for a grouping the user never asked for.
-    if (matchingConfig?.everLibraryPromoted !== true) {
+    if (matchingConfig?.groupSortTitleOptIn !== true) {
       return `0${baseTitle}`;
     }
 
