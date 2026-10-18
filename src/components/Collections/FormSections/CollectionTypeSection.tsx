@@ -451,7 +451,8 @@ const CollectionTypeSection = ({
           {
             value: 'monitored',
             label: 'Monitored in Radarr/Sonarr',
-            description: 'Items monitored but not yet released',
+            description:
+              'Unreleased monitored movies, and shows with an upcoming season premiere',
           },
           {
             value: 'trakt_anticipated',
