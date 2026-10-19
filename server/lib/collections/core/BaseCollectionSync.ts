@@ -2363,7 +2363,14 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
             groupBase,
             sortKeyName,
             isMultiCollectionPattern(matchingConfig),
-            matchingConfig?.sortTitleOverrideIsFullTitle === true
+            // The legacy prepend only applies to a value the user actually
+            // saved under the old rules. A base that came from the parent
+            // config's name is new behaviour with nothing to preserve, so it
+            // uses the current form - otherwise the group lost the separator
+            // between base and member and wrote "GroupMember".
+            effectiveOverride
+              ? matchingConfig?.sortTitleOverrideIsFullTitle === true
+              : true
           ),
           options.existingTitleSort
         );
