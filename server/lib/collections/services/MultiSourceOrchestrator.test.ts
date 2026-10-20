@@ -202,3 +202,66 @@ describe('multi-source run with failing sources', () => {
     ).rejects.toThrow('boom');
   });
 });
+
+describe('multi-source unwatched label cleanup', () => {
+  const items = ['1', '2', '3'].map((ratingKey) => ({
+    ratingKey,
+    title: `Item ${ratingKey}`,
+    type: 'movie',
+    tmdbId: Number(ratingKey),
+  }));
+
+  const run = (addLabelToItem: ReturnType<typeof vi.fn>) => {
+    const plexClient = {
+      addLabelToItem,
+      getItemsWithLabel: vi.fn().mockResolvedValue(['1', '9']),
+      removeLabelFromItem: vi.fn().mockResolvedValue(undefined),
+      createLabelBasedSmartCollection: vi
+        .fn()
+        .mockRejectedValue(new Error('stop after cleanup')),
+    };
+    const options = {
+      collectionName: 'Mix',
+      mediaType: 'movie',
+      libraryKey: '4',
+      config: config({ showUnwatchedOnly: true } as never),
+    };
+    const result = internals().createOrUpdateCollectionStandardized(
+      plexClient,
+      [],
+      items,
+      options
+    );
+    return { plexClient, result };
+  };
+
+  it('throws before cleanup when every label call fails', async () => {
+    const { plexClient, result } = run(
+      vi.fn().mockRejectedValue(new Error('item not found'))
+    );
+
+    await expect(result).rejects.toThrow(
+      'All 3 items failed labelling for "Mix", leaving the collection as it was: item not found'
+    );
+    expect(plexClient.addLabelToItem).toHaveBeenCalledTimes(3);
+    expect(plexClient.getItemsWithLabel).not.toHaveBeenCalled();
+    expect(plexClient.removeLabelFromItem).not.toHaveBeenCalled();
+  });
+
+  it('still cleans up when only some label calls fail', async () => {
+    const { plexClient, result } = run(
+      vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('item not found'))
+        .mockResolvedValueOnce(undefined)
+    );
+
+    await expect(result).rejects.toThrow('stop after cleanup');
+    expect(plexClient.removeLabelFromItem).toHaveBeenCalledTimes(1);
+    expect(plexClient.removeLabelFromItem).toHaveBeenCalledWith(
+      '9',
+      'agregarr-unwatched-10'
+    );
+  });
+});

@@ -71,17 +71,6 @@ export interface OverseerrMediaRequest {
   updatedAt: string;
 }
 
-export interface OverseerrMedia {
-  id: number;
-  tmdbId: number;
-  title: string;
-  mediaType: 'movie' | 'tv';
-  status: number;
-  ratingKey?: string;
-  ratingKey4k?: string;
-  seasonCount?: number;
-}
-
 export interface OverseerrWatchlistItem {
   ratingKey: string;
   title: string;
@@ -467,21 +456,6 @@ class OverseerrAPI {
   }
 
   /**
-   * Check if media exists in Plex by TMDB ID
-   */
-  async getMediaByTmdbId(tmdbId: number): Promise<OverseerrMedia | null> {
-    try {
-      const response = await this.axios.get(`/media/${tmdbId}`);
-      return response.data;
-    } catch (error) {
-      if (error.response?.status === 404) {
-        return null; // Media not found
-      }
-      throw error;
-    }
-  }
-
-  /**
    * Search for existing requests to avoid duplicates
    */
   async checkRequestExists(
@@ -514,14 +488,6 @@ class OverseerrAPI {
   async getRequestCount(): Promise<number> {
     const response = await this.axios.get('/request/count');
     return response.data;
-  }
-
-  /**
-   * Get media season count for TV shows
-   */
-  async getMediaSeasonCount(tmdbId: number): Promise<number> {
-    const media = await this.getMediaByTmdbId(tmdbId);
-    return media?.seasonCount || 0;
   }
 
   /**

@@ -395,7 +395,7 @@ export class CloudflareSolver {
     const solutionStatus = (response.data.solution.status as number) ?? 0;
     if (solutionStatus >= 400) {
       throw new Error(
-        `FlareSolverr upstream returned HTTP ${solutionStatus} for ${domain}`
+        `solver loaded ${domain} but the site returned HTTP ${solutionStatus}`
       );
     }
 

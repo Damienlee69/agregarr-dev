@@ -36,6 +36,8 @@ vi.mock('@server/lib/collections/core/CollectionUtilities', async () => {
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import { MultiSourceOrchestrator } from './MultiSourceOrchestrator';
 
+const POSITIONS = [2, 1, 3];
+
 class TestSync extends BaseCollectionSync<'tmdb'> {
   constructor() {
     super('tmdb');
@@ -45,7 +47,12 @@ class TestSync extends BaseCollectionSync<'tmdb'> {
   }
   mapSourceDataToItems(_d: unknown, c: { id: string }) {
     const dates = c.id.endsWith('s1') ? [10, 20, 100] : [30];
-    return { items: dates.map((d) => item(`${c.id}-${d}`, d)) };
+    return {
+      items: dates.map((d, i) => ({
+        ...item(`${c.id}-${d}`, d),
+        metadata: { originalPosition: POSITIONS[i] },
+      })),
+    };
   }
 }
 
@@ -107,7 +114,11 @@ describe('multi-source Item Order', () => {
   });
 
   it('reverse reverses each source then combines', async () => {
-    expect(await run('reverse', true)).toEqual(['ms1-s1-100', 'ms1-s1-20']);
+    expect(await run('reverse', true)).toEqual(['ms1-s1-100', 'ms1-s1-10']);
+  });
+
+  it('default keeps the first items by source position', async () => {
+    expect(await run('default', true)).toEqual(['ms1-s1-20', 'ms1-s1-10']);
   });
 
   it('sorts each source before the maxItems cut', async () => {

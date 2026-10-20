@@ -189,6 +189,9 @@ describe('createOrUpdateCollectionStandardized: stale item in a smart collection
     (
       plexClient as unknown as { removeLabelFromItem: unknown }
     ).removeLabelFromItem = removeMock;
+    (
+      plexClient.getItemsWithLabel as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(['189997', '197176', '555000']);
     labelMock.mockImplementation(async (key: string) => {
       if (key === '189997') {
         throw new Error('response code: 404');
@@ -210,7 +213,43 @@ describe('createOrUpdateCollectionStandardized: stale item in a smart collection
     ).rejects.toThrow('Plex went away mid-create');
 
     expect(labelMock).toHaveBeenCalledWith('197176', 'agregarr-unwatched-10');
+    expect(removeMock).toHaveBeenCalledWith('555000', 'agregarr-unwatched-10');
     expect(removeMock).not.toHaveBeenCalledWith('189997', expect.anything());
+  });
+
+  it('throws before cleanup when every item is stale, so nothing is unlabelled', async () => {
+    const cfg = config({ showUnwatchedOnly: true });
+    settings.plex.collectionConfigs = [cfg];
+    const plexClient = failAfterCreate('187613');
+    (plexClient as unknown as { recordPhaseTime: unknown }).recordPhaseTime =
+      vi.fn();
+    const removeMock = vi.fn();
+    (
+      plexClient as unknown as { removeLabelFromItem: unknown }
+    ).removeLabelFromItem = removeMock;
+    (
+      plexClient.getItemsWithLabel as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(['555000', '555001']);
+    (plexClient.addLabelToItem as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('response code: 404')
+    );
+
+    await expect(
+      new TestSync().createOrUpdateCollectionStandardized(
+        [
+          { ratingKey: '189997', title: 'Stale A', type: 'movie' },
+          { ratingKey: '197176', title: 'Stale B', type: 'movie' },
+        ],
+        cfg.name,
+        'movie',
+        cfg,
+        plexClient,
+        []
+      )
+    ).rejects.toThrow('response code: 404');
+
+    expect(plexClient.getItemsWithLabel).not.toHaveBeenCalled();
+    expect(removeMock).not.toHaveBeenCalled();
   });
 });
 

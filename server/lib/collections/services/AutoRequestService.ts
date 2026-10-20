@@ -636,7 +636,12 @@ export class AutoRequestService {
         .createQueryBuilder('missing_item')
         .leftJoinAndSelect('missing_item.requestedBy', 'user')
         .where('missing_item.requestStatus IN (:...statuses)', {
-          statuses: ['pending', 'approved', 'processing'],
+          statuses: [
+            'pending',
+            'approved',
+            'processing',
+            'partially_available',
+          ],
         })
         .andWhere('missing_item.createdAt >= :date', { date: thirtyDaysAgo })
         .getMany();
@@ -725,43 +730,31 @@ export class AutoRequestService {
             }
 
             // For completed/approved requests, also check media availability status
-            if (newStatus === 'processing' || newStatus === 'approved') {
-              try {
-                const media = await overseerrAPI.getMediaByTmdbId(
-                  missingItem.tmdbId
-                );
-                if (media) {
-                  // MediaStatus enum values
-                  switch (media.status) {
-                    case 5: // AVAILABLE
-                      newStatus = 'available';
-                      break;
-                    case 4: // PARTIALLY_AVAILABLE
-                      newStatus = 'partially_available';
-                      break;
-                    case 3: // PROCESSING
-                      newStatus = 'processing';
-                      break;
-                    case 2: // PENDING
-                      newStatus =
-                        newStatus === 'approved' ? 'approved' : 'pending';
-                      break;
-                    default:
-                      // Keep the request status if media status is unknown
-                      break;
-                  }
-                }
-              } catch (error) {
-                // If we can't get media status, keep the request status
-                logger.debug(
-                  `Could not get media status for ${missingItem.title}`,
-                  {
-                    label: 'Missing Item Status Sync',
-                    tmdbId: missingItem.tmdbId,
-                    error:
-                      error instanceof Error ? error.message : 'Unknown error',
-                  }
-                );
+            if (
+              (newStatus === 'processing' || newStatus === 'approved') &&
+              overseerrRequest.media
+            ) {
+              // MediaStatus enum values
+              switch (
+                overseerrRequest.is4k
+                  ? overseerrRequest.media.status4k
+                  : overseerrRequest.media.status
+              ) {
+                case 5: // AVAILABLE
+                  newStatus = 'available';
+                  break;
+                case 4: // PARTIALLY_AVAILABLE
+                  newStatus = 'partially_available';
+                  break;
+                case 3: // PROCESSING
+                  newStatus = 'processing';
+                  break;
+                case 2: // PENDING
+                  newStatus = newStatus === 'approved' ? 'approved' : 'pending';
+                  break;
+                default:
+                  // Keep the request status if media status is unknown
+                  break;
               }
             }
 

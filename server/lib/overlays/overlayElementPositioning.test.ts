@@ -204,23 +204,61 @@ describe('overlay element positioning', () => {
     expect(overlay.top).toBe(100);
   });
 
-  it('keeps an oversize-clamped element anchored at element.x/y', async () => {
+  it('crops an oversize element to the poster instead of shrinking it', async () => {
     const overlay = await renderOne(
       tile(undefined, { x: 0, y: 200, width: 1400, height: 100 })
     );
-    // 1400x100 buffer clamps to 1000x71; anchor shrinks with it
+    const meta = await sharp(overlay.input as Buffer).metadata();
     expect(overlay.left).toBe(0);
     expect(overlay.top).toBe(200);
+    expect(meta.width).toBe(1000);
+    expect(meta.height).toBe(100);
   });
 
-  it('clamps to an odd width without float drift at the .5 boundary', async () => {
+  it('crops an oversize element hanging off the left edge', async () => {
     const overlay = await renderOne(
-      tile(undefined, { x: 0, y: 200, width: 1400, height: 100 }),
-      999,
-      1500
+      tile(undefined, { x: -300, y: 200, width: 1400, height: 100 })
     );
-    // buffer 1399x100 clamps to 999-wide; anchor/2 lands exactly on 499.5
+    const meta = await sharp(overlay.input as Buffer).metadata();
     expect(overlay.left).toBe(0);
-    expect(overlay.top).toBe(200);
+    expect(meta.width).toBe(1000);
+    expect(meta.height).toBe(100);
+  });
+
+  it('skips an oversize element that lands entirely off the poster', async () => {
+    const overlays = await overlayTemplateRenderer.renderOverlayElements(
+      1000,
+      1500,
+      {
+        width: 1000,
+        height: 1500,
+        elements: [
+          tile(undefined, { x: 0, y: 1600, width: 1400, height: 100 }),
+        ],
+      },
+      createSampleOverlayContext('movie')
+    );
+    expect(overlays).toEqual([]);
+  });
+
+  it('keeps an oversize rotated corner banner at full thickness', async () => {
+    const poster = await sharp({
+      create: { width: 1000, height: 1500, channels: 3, background: '#000' },
+    })
+      .png()
+      .toBuffer();
+    const banner = await renderOne(
+      tile(-45, { x: -547, y: -44, width: 1280, height: 300 })
+    );
+    const output = await sharp(
+      await overlayTemplateRenderer.compositeOverlays(poster, [banner])
+    )
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    // Banner's inner edge sits on x + y = 411; (180, 180) is just inside it
+    const at = (x: number, y: number) =>
+      output.data[(y * output.info.width + x) * output.info.channels];
+    expect(at(180, 180)).toBeGreaterThan(200);
+    expect(at(240, 240)).toBeLessThan(50);
   });
 });
