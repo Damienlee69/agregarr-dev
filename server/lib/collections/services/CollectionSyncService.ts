@@ -78,6 +78,7 @@ export function buildMultiSourceSyncConfig(
  * Replaces the large switch statement in collectionsSync.ts with clean service calls
  */
 export class CollectionSyncService {
+  private static editionMigrationDone = false;
   private cancelled = false;
 
   public cancel(): void {
@@ -559,6 +560,31 @@ export class CollectionSyncService {
         label: 'Collection Sync Service',
       }
     );
+
+    // Auto-migrate legacy TV placeholders to edition folders (once per process)
+    if (
+      !CollectionSyncService.editionMigrationDone &&
+      settings.main.placeholderEditions !== false
+    ) {
+      CollectionSyncService.editionMigrationDone = true;
+      try {
+        const { migrateToEditionPlaceholders } = await import(
+          '@server/lib/placeholders/editionMigration'
+        );
+        const migResult = await migrateToEditionPlaceholders();
+        if (migResult.migrated > 0) {
+          logger.info(
+            `Auto-migrated ${migResult.migrated} TV placeholder(s) to edition folders`,
+            { label: 'Collection Sync Service' }
+          );
+        }
+      } catch (error) {
+        logger.warn('Edition auto-migration failed (non-fatal)', {
+          label: 'Collection Sync Service',
+          error: extractErrorMessage(error),
+        });
+      }
+    }
 
     // Check which specific Overseerr collection types are active
     const hasUsersConfig = collectionConfigs.some(

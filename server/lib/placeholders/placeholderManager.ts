@@ -136,7 +136,7 @@ export function resolvePlaceholderPaths(
       const yearStr = year ? ` (${year})` : '';
       baseFolderName = `${sanitizeFilename(title)}${yearStr}`;
     }
-    const useEditions = getSettings().main.placeholderEditions === true;
+    const useEditions = getSettings().main.placeholderEditions !== false;
     const folderName = useEditions
       ? `${baseFolderName} {edition-Trailer}`
       : baseFolderName;
