@@ -175,7 +175,12 @@ settingsRoutes.post('/main/migrate-editions', async (_req, res, next) => {
       '@server/lib/placeholders/editionMigration'
     );
     const result = await migrateToEditionPlaceholders();
-    return res.status(200).json(result);
+    return res.status(200).json({
+      ...result,
+      warning: result.migrated > 0
+        ? 'This migration is irreversible. Reverting to an older image will leave orphaned edition folders and may create duplicate placeholders.'
+        : undefined,
+    });
   } catch (error) {
     return next({ status: 500, message: `Migration failed: ${error}` });
   }
