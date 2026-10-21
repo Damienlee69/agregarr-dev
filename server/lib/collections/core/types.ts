@@ -268,6 +268,7 @@ export interface PlexLookupResult {
   addedAt?: number;
   releaseDate?: number;
   tvdbId?: number;
+  editionTitle?: string;
 }
 
 /**

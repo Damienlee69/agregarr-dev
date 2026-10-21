@@ -9586,6 +9586,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MainSettings'
+  /settings/main/migrate-editions:
+    post:
+      summary: Migrate legacy TV placeholders to Plex edition folders
+      description: One-shot migration that moves Season 00 content from regular show folders into {edition-Trailer} sibling folders.
+      tags:
+        - settings-general
+      responses:
+        '200':
+          description: Migration results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  migrated:
+                    type: integer
+                  skipped:
+                    type: integer
+                  errors:
+                    type: integer
   /settings/main/regenerate:
     post:
       summary: Get main settings with newly-generated API key

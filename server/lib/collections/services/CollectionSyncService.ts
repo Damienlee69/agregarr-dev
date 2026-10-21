@@ -2,6 +2,7 @@ import OverseerrAPI, {
   type OverseerrMediaRequest,
 } from '@server/api/overseerr';
 import type PlexAPI from '@server/api/plexapi';
+import { PlaceholderItem } from '@server/entity/PlaceholderItem';
 import collectionSyncProgress from '@server/lib/collections/CollectionSyncProgress';
 import type { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import type { LibraryItemsCache } from '@server/lib/collections/core/CollectionUtilities';
@@ -230,6 +231,29 @@ export class CollectionSyncService {
             // Cleanup triggers when needsTitleFix is false (real content detected via Plex OR *arr)
             // This works even without a plexItem (content downloaded to different library)
             if (!needsTitleFix && marker.tmdbId) {
+              // Edition placeholders: defer cleanup until collection re-point completes
+              const isEditionPlaceholder =
+                marker.placeholderPath.includes('{edition-');
+              if (isEditionPlaceholder && plexItem) {
+                const repository = (
+                  await import('@server/datasource')
+                ).getRepository(PlaceholderItem);
+                await repository.update(
+                  { placeholderPath: marker.placeholderPath, mediaType: 'tv' },
+                  { pendingRealRatingKey: plexItem.ratingKey }
+                );
+                logger.info(
+                  'Edition placeholder: real content detected, deferring cleanup for re-point',
+                  {
+                    label: 'Collection Sync Service',
+                    title: marker.title,
+                    tmdbId: marker.tmdbId,
+                    realRatingKey: plexItem.ratingKey,
+                  }
+                );
+                continue;
+              }
+
               const fileDeleted = await cleanupPlaceholderForRealContent(
                 marker.tmdbId,
                 marker.placeholderPath,
@@ -936,6 +960,16 @@ export class CollectionSyncService {
       RandomListManager.endSyncRun();
     }
 
+    // Post-sync: re-point collections for edition placeholders whose real content arrived
+    try {
+      await this.processEditionRepoints(plexClient);
+    } catch (error) {
+      logger.warn('Edition re-point pass failed', {
+        label: 'Collection Sync Service',
+        error: extractErrorMessage(error),
+      });
+    }
+
     // Post-sync: verify filtered hub labels to catch any placeholders that leaked through
     try {
       onProgress?.(processedCount, 'Verifying filtered hub labels...');
@@ -959,6 +993,148 @@ export class CollectionSyncService {
       updated: totalUpdated,
       processedCollectionKeys,
     };
+  }
+
+  /**
+   * Process edition placeholder re-points: remove Trailer edition ratingKeys
+   * from collections (the normal sync already added the real show), then
+   * clean up the edition files and DB rows.
+   */
+  private async processEditionRepoints(plexClient: PlexAPI): Promise<void> {
+    const repository = (await import('@server/datasource')).getRepository(
+      PlaceholderItem
+    );
+    const rows = await repository
+      .createQueryBuilder('item')
+      .where('item.pendingRealRatingKey IS NOT NULL')
+      .getMany();
+
+    if (rows.length === 0) return;
+
+    logger.info(`Processing ${rows.length} edition re-point(s)`, {
+      label: 'Edition Re-point',
+    });
+
+    const settings = getSettings();
+    const allConfigs = settings.plex.collectionConfigs || [];
+
+    for (const row of rows) {
+      const oldRk = row.plexRatingKey;
+      if (!oldRk) continue;
+
+      try {
+        // Find configs that own this placeholder — handle multi-source suffix
+        const baseConfigId = row.configId.replace(/-source-\d+$/, '');
+        const owningConfigs = allConfigs.filter(
+          (c) => c.id === baseConfigId || c.id === row.configId
+        );
+
+        if (owningConfigs.length === 0) {
+          logger.warn('Edition re-point: config deleted, skipping', {
+            label: 'Edition Re-point',
+            configId: row.configId,
+            title: row.title,
+          });
+          continue;
+        }
+
+        // Remove edition from collections, but only if real show is already in them
+        let allRepointed = true;
+        for (const config of owningConfigs) {
+          const collectionRks = config.collectionRatingKeys?.length
+            ? config.collectionRatingKeys
+            : config.collectionRatingKey
+            ? [config.collectionRatingKey]
+            : [];
+
+          for (const collRk of collectionRks) {
+            try {
+              const memberRks = await plexClient.getCollectionItems(collRk);
+              if (
+                !row.pendingRealRatingKey ||
+                !memberRks.includes(row.pendingRealRatingKey)
+              ) {
+                logger.warn('Real show not in collection yet, deferring', {
+                  label: 'Edition Re-point',
+                  collectionRk: collRk,
+                  realRk: row.pendingRealRatingKey,
+                });
+                allRepointed = false;
+                continue;
+              }
+              await plexClient.removeItemFromCollection(collRk, oldRk);
+              logger.info('Removed edition from collection', {
+                label: 'Edition Re-point',
+                title: row.title,
+                collectionRk: collRk,
+              });
+            } catch (error) {
+              allRepointed = false;
+              logger.warn('Failed to remove edition from collection', {
+                label: 'Edition Re-point',
+                collectionRk: collRk,
+                error: extractErrorMessage(error),
+              });
+            }
+          }
+        }
+
+        if (!allRepointed) {
+          logger.info(
+            'Edition re-point: not all collections updated, retrying next sync',
+            {
+              label: 'Edition Re-point',
+              title: row.title,
+            }
+          );
+          continue;
+        }
+
+        // All collections re-pointed — safe to clean up
+        try {
+          await plexClient.removeLabelFromItem(oldRk, 'trailer-placeholder');
+        } catch {
+          // Non-fatal
+        }
+
+        const { cleanupPlaceholderForRealContent } = await import(
+          '@server/lib/placeholders/services/PlaceholderCleanup'
+        );
+        const fileDeleted = await cleanupPlaceholderForRealContent(
+          row.tmdbId,
+          row.placeholderPath,
+          row.mediaType,
+          plexClient,
+          oldRk
+        );
+
+        if (!fileDeleted) {
+          logger.warn('Edition re-point: cleanup failed, retrying next sync', {
+            label: 'Edition Re-point',
+            title: row.title,
+          });
+          continue;
+        }
+
+        await repository.update(row.id, {
+          pendingRealRatingKey: null as unknown as string,
+          plexRatingKey: row.pendingRealRatingKey,
+        });
+
+        logger.info('Edition re-point completed', {
+          label: 'Edition Re-point',
+          title: row.title,
+          tmdbId: row.tmdbId,
+        });
+      } catch (error) {
+        logger.error('Edition re-point failed', {
+          label: 'Edition Re-point',
+          title: row.title,
+          tmdbId: row.tmdbId,
+          error: extractErrorMessage(error),
+        });
+      }
+    }
   }
 
   /**

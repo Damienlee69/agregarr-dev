@@ -45,6 +45,16 @@ export class PlaceholderItem {
   @Column({ type: 'varchar', nullable: true })
   public plexRatingKey?: string; // Plex item ID (once discovered)
 
+  @Column({ type: 'varchar', nullable: true })
+  public pendingRealRatingKey?: string; // Real show ratingKey awaiting collection re-point (edition placeholders)
+
+  @Column({ type: 'varchar', nullable: true })
+  public editionMigrationState?:
+    | 'pending'
+    | 'folder_moved'
+    | 'plex_discovered'
+    | 'completed';
+
   @CreateDateColumn()
   public createdAt: Date;
 

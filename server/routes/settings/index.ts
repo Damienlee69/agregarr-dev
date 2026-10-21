@@ -169,6 +169,18 @@ settingsRoutes.post('/main', (req, res, next) => {
   });
 });
 
+settingsRoutes.post('/main/migrate-editions', async (_req, res, next) => {
+  try {
+    const { migrateToEditionPlaceholders } = await import(
+      '@server/lib/placeholders/editionMigration'
+    );
+    const result = await migrateToEditionPlaceholders();
+    return res.status(200).json(result);
+  } catch (error) {
+    return next({ status: 500, message: `Migration failed: ${error}` });
+  }
+});
+
 settingsRoutes.post('/main/regenerate', (req, res, next) => {
   const settings = getSettings();
 
