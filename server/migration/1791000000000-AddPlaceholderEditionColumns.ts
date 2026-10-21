@@ -12,7 +12,7 @@ export class AddPlaceholderEditionColumns1791000000000
     );
   }
 
-  public async down(_queryRunner: QueryRunner): Promise<void> {
+  public async down(): Promise<void> {
     // SQLite does not support DROP COLUMN before 3.35.0; these columns are nullable and harmless to keep.
   }
 }
