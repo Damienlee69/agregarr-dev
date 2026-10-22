@@ -10,7 +10,7 @@ Active fork of [Agregarr](https://github.com/agregarr/agregarr) with performance
 
 > [!IMPORTANT]
 >
-> **Agregarr supports Plex Media Server 1.43.3 and newer.** Older versions contain actively exploited security vulnerabilities fixed in 1.43.3 (CISA KEV: CVE-2026-96652, CVE-2026-96654, CVE-2026-96655, CVE-2026-96656). On older servers, the Plex Version health check turns red and TV edition placeholders stay off. See [Plex's security notice](https://forums.plex.tv/t/important-security-update-for-plex-media-server-v1-43-2-and-earlier/942319).
+> **Agregarr supports Plex Media Server 1.43.3.10861 and newer.** Older builds contain actively exploited security vulnerabilities (CISA KEV: CVE-2026-96652, CVE-2026-96654, CVE-2026-96655, CVE-2026-96656), so the Plex Version health check turns red on them. TV edition placeholders need 1.43.3 or newer and stay off below it. See [Plex's security notice](https://forums.plex.tv/t/important-security-update-for-plex-media-server-v1-43-2-and-earlier/942319).
 
 ## Docker
 

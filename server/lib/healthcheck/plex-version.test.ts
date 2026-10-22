@@ -39,12 +39,34 @@ describe('plexVersionCheck', () => {
     const r = await plexVersionCheck.run();
     expect(r.status).toBe('error');
     expect(r.message).toContain('CVE-2026-96656');
-    expect(r.message).toContain('supports Plex Media Server 1.43.3 and newer');
+    expect(r.message).toContain(
+      'supports Plex Media Server 1.43.3.10861 and newer'
+    );
+    expect(r.message).not.toContain('CVE-2020-5741');
   });
 
-  it('is ok on a patched Plex version', async () => {
+  it('errors on an early 1.43.3 build that predates the fix', async () => {
+    state.version = '1.43.3.10700-abcdef123';
+    expect((await plexVersionCheck.run()).status).toBe('error');
+  });
+
+  it('lists every applicable CVE on a very old server', async () => {
+    state.version = '1.19.2.2737-b69929dab';
+    const r = await plexVersionCheck.run();
+    expect(r.message).toContain('CVE-2020-5741');
+    expect(r.message).toContain('CVE-2026-96652');
+  });
+
+  it('is ok from the fixed build onwards', async () => {
+    state.version = '1.43.3.10861-0000000';
+    expect((await plexVersionCheck.run()).status).toBe('ok');
     state.version = '1.43.5.11029-6bf8af3f0';
     expect((await plexVersionCheck.run()).status).toBe('ok');
+  });
+
+  it('skips a version it cannot parse', async () => {
+    state.version = 'beta';
+    expect((await plexVersionCheck.run()).status).toBe('skipped');
   });
 
   it('skips when Plex is unreachable or reports no version', async () => {

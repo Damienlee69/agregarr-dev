@@ -25,10 +25,11 @@ import type {
   DiscoveredPlaceholder,
 } from '@server/lib/placeholders/services/PlaceholderDiscovery';
 import {
+  exploitedCvesFor,
   fetchPlexVersion,
   plexUnsupportedMessage,
   plexVersionAtLeast,
-  PLEX_MIN_SUPPORTED_VERSION,
+  PLEX_TV_EDITIONS_MIN_VERSION,
 } from '@server/lib/plexVersion';
 import type {
   CollectionConfig,
@@ -630,10 +631,7 @@ export class CollectionSyncService {
     );
 
     const liveVersion = await fetchPlexVersion(plexClient);
-    if (
-      liveVersion &&
-      !plexVersionAtLeast(liveVersion, PLEX_MIN_SUPPORTED_VERSION)
-    ) {
+    if (liveVersion && exploitedCvesFor(liveVersion).length > 0) {
       logger.error(plexUnsupportedMessage(liveVersion), {
         label: 'Collection Sync Service',
       });
@@ -644,7 +642,7 @@ export class CollectionSyncService {
     if (
       !CollectionSyncService.editionMigrationDone &&
       settings.main.placeholderEditions !== false &&
-      plexVersionAtLeast(liveVersion, PLEX_MIN_SUPPORTED_VERSION)
+      plexVersionAtLeast(liveVersion, PLEX_TV_EDITIONS_MIN_VERSION)
     ) {
       CollectionSyncService.editionMigrationDone = true;
       try {

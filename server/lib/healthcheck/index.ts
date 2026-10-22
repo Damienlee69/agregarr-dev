@@ -11,9 +11,9 @@ import { CloudflareSolver } from '@server/lib/collections/utils/CloudflareSolver
 import { LetterboxdHttpClient } from '@server/lib/collections/utils/LetterboxdHttpClient';
 import { probeSeerrIgnorePatterns } from '@server/lib/placeholders/seerrIgnorePatterns';
 import {
+  exploitedCvesFor,
   plexUnsupportedMessage,
   plexVersionAtLeast,
-  PLEX_MIN_SUPPORTED_VERSION,
   setPlexServerVersion,
 } from '@server/lib/plexVersion';
 import { getSettings } from '@server/lib/settings';
@@ -161,7 +161,8 @@ export const plexVersionCheck: HealthCheck = {
     if (!version) return { status: 'skipped' };
 
     setPlexServerVersion(version);
-    if (plexVersionAtLeast(version, PLEX_MIN_SUPPORTED_VERSION)) {
+    if (!plexVersionAtLeast(version, '0.0.0')) return { status: 'skipped' };
+    if (exploitedCvesFor(version).length === 0) {
       return { status: 'ok', message: `Plex Media Server ${version}` };
     }
     return { status: 'error', message: plexUnsupportedMessage(version) };
