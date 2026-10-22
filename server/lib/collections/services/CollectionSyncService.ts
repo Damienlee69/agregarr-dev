@@ -1070,7 +1070,11 @@ export class CollectionSyncService {
     const settings = getSettings();
     const allConfigs = settings.plex.collectionConfigs || [];
 
+    const handledPaths = new Set<string>();
     for (const row of rows) {
+      // Rows sharing a placeholder file are re-pointed and cleaned up together
+      if (handledPaths.has(row.placeholderPath)) continue;
+      handledPaths.add(row.placeholderPath);
       const oldRk = row.plexRatingKey;
       if (!oldRk) {
         logger.info(
@@ -1085,10 +1089,12 @@ export class CollectionSyncService {
 
       try {
         // Find configs that own this placeholder — handle multi-source suffix
-        const baseConfigId = row.configId.replace(/-source-\d+$/, '');
-        const owningConfigs = allConfigs.filter(
-          (c) => c.id === baseConfigId || c.id === row.configId
+        const ownerIds = new Set(
+          rows
+            .filter((r) => r.placeholderPath === row.placeholderPath)
+            .map((r) => r.configId.replace(/-source-\d+$/, ''))
         );
+        const owningConfigs = allConfigs.filter((c) => ownerIds.has(c.id));
 
         if (owningConfigs.length === 0) {
           logger.warn('Edition re-point: config deleted, skipping', {
@@ -1178,9 +1184,17 @@ export class CollectionSyncService {
           continue;
         }
 
-        await removeGhostEntries(plexClient, owningConfigs[0].libraryId, [
-          { filePath: absPath, mediaType: 'tv' },
-        ]);
+        const { getPlaceholderRootFolder } = await import(
+          '@server/lib/placeholders/helpers/placeholderPathHelpers'
+        );
+        const ghostLibraryId = owningConfigs
+          .flatMap((c) => c.libraryId)
+          .find((id) => id && getPlaceholderRootFolder(id, 'tv') === root);
+        if (ghostLibraryId) {
+          await removeGhostEntries(plexClient, ghostLibraryId, [
+            { filePath: absPath, mediaType: 'tv' },
+          ]);
+        }
 
         logger.info('Edition re-point completed', {
           label: 'Edition Re-point',
