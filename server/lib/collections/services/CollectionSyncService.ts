@@ -24,6 +24,12 @@ import type {
   DiscoveredMoviePlaceholder,
   DiscoveredPlaceholder,
 } from '@server/lib/placeholders/services/PlaceholderDiscovery';
+import {
+  fetchPlexVersion,
+  plexUnsupportedMessage,
+  plexVersionAtLeast,
+  PLEX_MIN_SUPPORTED_VERSION,
+} from '@server/lib/plexVersion';
 import type {
   CollectionConfig,
   MultiSourceCollectionConfig,
@@ -623,10 +629,22 @@ export class CollectionSyncService {
       }
     );
 
-    // Auto-migrate legacy TV placeholders to edition folders (once per process)
+    const liveVersion = await fetchPlexVersion(plexClient);
+    if (
+      liveVersion &&
+      !plexVersionAtLeast(liveVersion, PLEX_MIN_SUPPORTED_VERSION)
+    ) {
+      logger.error(plexUnsupportedMessage(liveVersion), {
+        label: 'Collection Sync Service',
+      });
+    }
+
+    // Auto-migrate legacy TV placeholders to edition folders (once per process).
+    // Irreversible, so gate on the live version, never the cache.
     if (
       !CollectionSyncService.editionMigrationDone &&
-      settings.main.placeholderEditions !== false
+      settings.main.placeholderEditions !== false &&
+      plexVersionAtLeast(liveVersion, PLEX_MIN_SUPPORTED_VERSION)
     ) {
       CollectionSyncService.editionMigrationDone = true;
       try {

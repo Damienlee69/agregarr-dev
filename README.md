@@ -8,6 +8,10 @@ Active fork of [Agregarr](https://github.com/agregarr/agregarr) with performance
 >
 > **Latest release: [v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0).** Parallel overlay processing, conditional elements with colour scaling, an audio codec badge, a new sync dashboard and an opt-in Posterizarr integration from Marcus Isdahl, and around 30 fixes. Six weeks of develop in one go.
 
+> [!IMPORTANT]
+>
+> **Agregarr supports Plex Media Server 1.43.3 and newer.** Older versions contain actively exploited security vulnerabilities fixed in 1.43.3 (CISA KEV: CVE-2026-96652, CVE-2026-96654, CVE-2026-96655, CVE-2026-96656). On older servers, the Plex Version health check turns red and TV edition placeholders stay off. See [Plex's security notice](https://forums.plex.tv/t/important-security-update-for-plex-media-server-v1-43-2-and-earlier/942319).
+
 ## Docker
 
 Available on Docker Hub as [`bitr8/agregarr`](https://hub.docker.com/r/bitr8/agregarr).
@@ -142,7 +146,7 @@ Or let Agregarr do it. On `develop`, the Seerr settings modal has a **Keep place
 
 ### Health checks
 
-Fifteen diagnostic checks run on a schedule and surface results in **Settings > About**. Transient failures get a grace window, checks can be muted individually, and job runs are persisted with per-job detail. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
+Eighteen diagnostic checks run on a schedule and surface results in **Settings > About**. Transient failures get a grace window, checks can be muted individually, and job runs are persisted with per-job detail. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
 
 ### Security
 

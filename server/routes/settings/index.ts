@@ -171,6 +171,24 @@ settingsRoutes.post('/main', (req, res, next) => {
 
 settingsRoutes.post('/main/migrate-editions', async (_req, res, next) => {
   try {
+    const { fetchPlexVersion, plexVersionAtLeast, PLEX_MIN_SUPPORTED_VERSION } =
+      await import('@server/lib/plexVersion');
+    const { getAdminUser } = await import(
+      '@server/lib/collections/core/CollectionUtilities'
+    );
+    const admin = await getAdminUser();
+    const PlexAPI = (await import('@server/api/plexapi')).default;
+    const version = admin?.plexToken
+      ? await fetchPlexVersion(new PlexAPI({ plexToken: admin.plexToken }))
+      : undefined;
+    if (!plexVersionAtLeast(version, PLEX_MIN_SUPPORTED_VERSION)) {
+      return next({
+        status: 409,
+        message: `TV edition placeholders need Plex Media Server ${PLEX_MIN_SUPPORTED_VERSION} or newer (server reports ${
+          version ?? 'no readable version'
+        }).`,
+      });
+    }
     const { migrateToEditionPlaceholders } = await import(
       '@server/lib/placeholders/editionMigration'
     );

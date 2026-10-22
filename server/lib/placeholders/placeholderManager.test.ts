@@ -4,8 +4,9 @@
  * short-circuit consume. If this drifts, short-circuits and DB records point at
  * paths that never exist (silent data loss). Run: npx vitest run server/lib/placeholders
  */
+import { setPlexServerVersion } from '@server/lib/plexVersion';
 import path from 'path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { resolvePlaceholderPaths } from './placeholderManager';
 
@@ -68,6 +69,7 @@ describe('resolvePlaceholderPaths — movie naming', () => {
 
 describe('resolvePlaceholderPaths — TV naming', () => {
   // placeholderEditions defaults on: TV folders get the Trailer edition suffix
+  beforeAll(() => setPlexServerVersion('1.43.5.11029-6bf8af3f0'));
   const ED = ' {edition-Trailer}';
 
   it('TV with sonarrFolderName: folder used VERBATIM (unsanitised)', () => {
@@ -112,5 +114,20 @@ describe('resolvePlaceholderPaths — TV naming', () => {
     expect(r.markerPath).toBe(
       path.join(ROOT, 'Test Show' + ED, 'Season 00', '.comingsoon')
     );
+  });
+});
+
+describe('resolvePlaceholderPaths — TV naming on Plex without editions', () => {
+  beforeAll(() => setPlexServerVersion('1.43.2.10162-0a6f2d7a9'));
+
+  it('keeps the legacy folder name', () => {
+    const r = resolvePlaceholderPaths({
+      tmdbId: 444,
+      title: 'Test Show',
+      year: 2018,
+      mediaType: 'tv',
+      libraryPath: ROOT,
+    });
+    expect(r.folderName).toBe('Test Show (2018)');
   });
 });
