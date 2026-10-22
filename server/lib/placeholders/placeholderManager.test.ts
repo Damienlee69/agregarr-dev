@@ -67,6 +67,9 @@ describe('resolvePlaceholderPaths — movie naming', () => {
 });
 
 describe('resolvePlaceholderPaths — TV naming', () => {
+  // placeholderEditions defaults on: TV folders get the Trailer edition suffix
+  const ED = ' {edition-Trailer}';
+
   it('TV with sonarrFolderName: folder used VERBATIM (unsanitised)', () => {
     const sonarr = 'The Show (2019) {tvdb-12345}';
     const r = resolvePlaceholderPaths({
@@ -78,8 +81,8 @@ describe('resolvePlaceholderPaths — TV naming', () => {
       libraryPath: ROOT,
       sonarrFolderName: sonarr,
     });
-    const seasonDir = path.join(ROOT, sonarr, 'Season 00');
-    expect(r.folderName).toBe(sonarr);
+    const seasonDir = path.join(ROOT, sonarr + ED, 'Season 00');
+    expect(r.folderName).toBe(sonarr + ED);
     expect(r.destinationPath).toBe(path.join(seasonDir, 'S00E00.Trailer.mp4'));
     expect(r.markerPath).toBe(path.join(seasonDir, '.comingsoon'));
   });
@@ -92,8 +95,8 @@ describe('resolvePlaceholderPaths — TV naming', () => {
       mediaType: 'tv',
       libraryPath: ROOT,
     });
-    const seasonDir = path.join(ROOT, 'Test Show (2018)', 'Season 00');
-    expect(r.folderName).toBe('Test Show (2018)');
+    const seasonDir = path.join(ROOT, 'Test Show (2018)' + ED, 'Season 00');
+    expect(r.folderName).toBe('Test Show (2018)' + ED);
     expect(r.destinationPath).toBe(path.join(seasonDir, 'S00E00.Trailer.mp4'));
     expect(r.markerPath).toBe(path.join(seasonDir, '.comingsoon'));
   });
@@ -105,9 +108,9 @@ describe('resolvePlaceholderPaths — TV naming', () => {
       mediaType: 'tv',
       libraryPath: ROOT,
     });
-    expect(r.folderName).toBe('Test Show');
+    expect(r.folderName).toBe('Test Show' + ED);
     expect(r.markerPath).toBe(
-      path.join(ROOT, 'Test Show', 'Season 00', '.comingsoon')
+      path.join(ROOT, 'Test Show' + ED, 'Season 00', '.comingsoon')
     );
   });
 });

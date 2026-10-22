@@ -15,6 +15,7 @@ import type {
   SyncResult,
 } from '@server/lib/collections/core/types';
 import { RandomListManager } from '@server/lib/collections/utils/RandomListManager';
+import { resolveEditionRepoint } from '@server/lib/placeholders/editionRepoint';
 import type { GhostDeletion } from '@server/lib/placeholders/services/PlaceholderCleanup';
 import type {
   DiscoveredMoviePlaceholder,
@@ -189,7 +190,7 @@ export class CollectionSyncService {
     ];
 
     if (tvLibraryIds.length > 0) {
-      const { cleanupPlaceholderForRealContent, removeGhostEntries } =
+      const { cleanupPlaceholderForRealContent, removeGhostEntries, rootOf } =
         await import('@server/lib/placeholders/services/PlaceholderCleanup');
       const { ensurePlaceholderEpisodeTitle } = await import(
         '@server/lib/placeholders/services/PlaceholderTitleFixer'
@@ -232,27 +233,52 @@ export class CollectionSyncService {
             // Cleanup triggers when needsTitleFix is false (real content detected via Plex OR *arr)
             // This works even without a plexItem (content downloaded to different library)
             if (!needsTitleFix && marker.tmdbId) {
-              // Edition placeholders: defer cleanup until collection re-point completes
-              const isEditionPlaceholder =
-                marker.placeholderPath.includes('{edition-');
-              if (isEditionPlaceholder && plexItem) {
+              // Edition placeholders: defer cleanup until collection re-point
+              // completes. Edition-only matches and untracked paths fall
+              // through to normal cleanup.
+              const repoint = marker.placeholderPath.includes('{edition-')
+                ? plexItem &&
+                  resolveEditionRepoint(
+                    tvLibraryPath,
+                    marker.placeholderPath,
+                    marker.tmdbId,
+                    plexItem,
+                    libraryCache?.[tvLibraryId]
+                  )
+                : null;
+              if (repoint) {
                 const repository = (
                   await import('@server/datasource')
                 ).getRepository(PlaceholderItem);
-                await repository.update(
-                  { placeholderPath: marker.placeholderPath, mediaType: 'tv' },
-                  { pendingRealRatingKey: plexItem.ratingKey }
-                );
-                logger.info(
-                  'Edition placeholder: real content detected, deferring cleanup for re-point',
-                  {
-                    label: 'Collection Sync Service',
-                    title: marker.title,
-                    tmdbId: marker.tmdbId,
-                    realRatingKey: plexItem.ratingKey,
-                  }
-                );
-                continue;
+                const rows = (
+                  await repository.find({
+                    where: {
+                      placeholderPath: repoint.relativePath,
+                      mediaType: 'tv',
+                    },
+                  })
+                ).filter((r) => rootOf(r.configId, 'tv') === tvLibraryPath);
+                for (const row of rows) {
+                  await repository.update(row.id, {
+                    pendingRealRatingKey: repoint.pendingRealRatingKey,
+                    ...(!row.plexRatingKey &&
+                      repoint.editionRatingKey && {
+                        plexRatingKey: repoint.editionRatingKey,
+                      }),
+                  });
+                }
+                if (rows.length > 0) {
+                  logger.info(
+                    'Edition placeholder: real content detected, deferring cleanup for re-point',
+                    {
+                      label: 'Collection Sync Service',
+                      title: marker.title,
+                      tmdbId: marker.tmdbId,
+                      realRatingKey: repoint.pendingRealRatingKey,
+                    }
+                  );
+                  continue;
+                }
               }
 
               const fileDeleted = await cleanupPlaceholderForRealContent(
@@ -1046,7 +1072,16 @@ export class CollectionSyncService {
 
     for (const row of rows) {
       const oldRk = row.plexRatingKey;
-      if (!oldRk) continue;
+      if (!oldRk) {
+        logger.info(
+          'Edition re-point: edition ratingKey unknown, cleaning up without collection removal',
+          {
+            label: 'Edition Re-point',
+            title: row.title,
+            tmdbId: row.tmdbId,
+          }
+        );
+      }
 
       try {
         // Find configs that own this placeholder — handle multi-source suffix
@@ -1066,41 +1101,43 @@ export class CollectionSyncService {
 
         // Remove edition from collections, but only if real show is already in them
         let allRepointed = true;
-        for (const config of owningConfigs) {
-          const collectionRks = config.collectionRatingKeys?.length
-            ? config.collectionRatingKeys
-            : config.collectionRatingKey
-            ? [config.collectionRatingKey]
-            : [];
+        if (oldRk) {
+          for (const config of owningConfigs) {
+            const collectionRks = config.collectionRatingKeys?.length
+              ? config.collectionRatingKeys
+              : config.collectionRatingKey
+              ? [config.collectionRatingKey]
+              : [];
 
-          for (const collRk of collectionRks) {
-            try {
-              const memberRks = await plexClient.getCollectionItems(collRk);
-              if (
-                !row.pendingRealRatingKey ||
-                !memberRks.includes(row.pendingRealRatingKey)
-              ) {
-                logger.warn('Real show not in collection yet, deferring', {
+            for (const collRk of collectionRks) {
+              try {
+                const memberRks = await plexClient.getCollectionItems(collRk);
+                if (
+                  !row.pendingRealRatingKey ||
+                  !memberRks.includes(row.pendingRealRatingKey)
+                ) {
+                  logger.warn('Real show not in collection yet, deferring', {
+                    label: 'Edition Re-point',
+                    collectionRk: collRk,
+                    realRk: row.pendingRealRatingKey,
+                  });
+                  allRepointed = false;
+                  continue;
+                }
+                await plexClient.removeItemFromCollection(collRk, oldRk);
+                logger.info('Removed edition from collection', {
+                  label: 'Edition Re-point',
+                  title: row.title,
+                  collectionRk: collRk,
+                });
+              } catch (error) {
+                allRepointed = false;
+                logger.warn('Failed to remove edition from collection', {
                   label: 'Edition Re-point',
                   collectionRk: collRk,
-                  realRk: row.pendingRealRatingKey,
+                  error: extractErrorMessage(error),
                 });
-                allRepointed = false;
-                continue;
               }
-              await plexClient.removeItemFromCollection(collRk, oldRk);
-              logger.info('Removed edition from collection', {
-                label: 'Edition Re-point',
-                title: row.title,
-                collectionRk: collRk,
-              });
-            } catch (error) {
-              allRepointed = false;
-              logger.warn('Failed to remove edition from collection', {
-                label: 'Edition Re-point',
-                collectionRk: collRk,
-                error: extractErrorMessage(error),
-              });
             }
           }
         }
@@ -1117,18 +1154,17 @@ export class CollectionSyncService {
         }
 
         // All collections re-pointed — safe to clean up
-        try {
-          await plexClient.removeLabelFromItem(oldRk, 'trailer-placeholder');
-        } catch {
-          // Non-fatal
-        }
-
-        const { cleanupPlaceholderForRealContent } = await import(
-          '@server/lib/placeholders/services/PlaceholderCleanup'
+        const { cleanupPlaceholderForRealContent, rootOf, removeGhostEntries } =
+          await import('@server/lib/placeholders/services/PlaceholderCleanup');
+        const { resolveRecordPath } = await import(
+          '@server/lib/placeholders/placeholderManager'
         );
+        const root = rootOf(row.configId, 'tv');
+        if (!root) continue;
+        const absPath = resolveRecordPath(root, row.placeholderPath);
         const fileDeleted = await cleanupPlaceholderForRealContent(
           row.tmdbId,
-          row.placeholderPath,
+          absPath,
           row.mediaType,
           plexClient,
           oldRk
@@ -1142,10 +1178,9 @@ export class CollectionSyncService {
           continue;
         }
 
-        await repository.update(row.id, {
-          pendingRealRatingKey: null as unknown as string,
-          plexRatingKey: row.pendingRealRatingKey,
-        });
+        await removeGhostEntries(plexClient, owningConfigs[0].libraryId, [
+          { filePath: absPath, mediaType: 'tv' },
+        ]);
 
         logger.info('Edition re-point completed', {
           label: 'Edition Re-point',
