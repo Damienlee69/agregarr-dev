@@ -15,7 +15,10 @@ import type {
   SyncResult,
 } from '@server/lib/collections/core/types';
 import { RandomListManager } from '@server/lib/collections/utils/RandomListManager';
-import { resolveEditionRepoint } from '@server/lib/placeholders/editionRepoint';
+import {
+  findTrailerEditionRatingKey,
+  resolveEditionRepoint,
+} from '@server/lib/placeholders/editionRepoint';
 import type { GhostDeletion } from '@server/lib/placeholders/services/PlaceholderCleanup';
 import type {
   DiscoveredMoviePlaceholder,
@@ -29,6 +32,7 @@ import type {
 } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import path from 'path';
 import { syncCacheService } from './SyncCacheService';
 
 /**
@@ -317,6 +321,38 @@ export class CollectionSyncService {
                 // Skip title fix if label failed - no point fixing title
                 // on an item that won't be filtered from hubs
                 continue;
+              }
+
+              // Migrated edition rows lose their ratingKey; backfill it
+              const editionRk =
+                marker.tmdbId &&
+                findTrailerEditionRatingKey(
+                  libraryCache?.[tvLibraryId],
+                  marker.tmdbId
+                );
+              if (editionRk) {
+                const repository = (
+                  await import('@server/datasource')
+                ).getRepository(PlaceholderItem);
+                const rows = await repository.find({
+                  where: {
+                    placeholderPath: path.relative(
+                      tvLibraryPath,
+                      marker.placeholderPath
+                    ),
+                    mediaType: 'tv',
+                  },
+                });
+                for (const row of rows) {
+                  if (
+                    !row.plexRatingKey &&
+                    rootOf(row.configId, 'tv') === tvLibraryPath
+                  ) {
+                    await repository.update(row.id, {
+                      plexRatingKey: editionRk,
+                    });
+                  }
+                }
               }
 
               // Also fix episode title as secondary marker (overlay system)
