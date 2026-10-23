@@ -37,6 +37,7 @@ import {
   extractErrorMessage,
   hasAgregarrLabel,
   isMultiCollectionPattern,
+  MAX_PROMOTED_RANK,
   parseConfigIdFromLabel,
   parseTypedRepositionRank,
   PROMOTED_SORT_TITLE_RANK_WIDTH,
@@ -466,6 +467,16 @@ describe('buildPromotedSortTitle', () => {
 });
 
 describe('parseTypedRepositionRank', () => {
+  it('caps a typed rank at the widest the padding can express', () => {
+    // Uncapped, rank 1000 renders the same prefix as 999 and the two then
+    // sort by name against each other. Capping here rather than clamping at
+    // write time means the position acted on is the position stored.
+    expect(parseTypedRepositionRank('!1000_Name')).toBe(MAX_PROMOTED_RANK);
+    expect(parseTypedRepositionRank('!99999_Name')).toBe(MAX_PROMOTED_RANK);
+    expect(parseTypedRepositionRank('!999_Name')).toBe(MAX_PROMOTED_RANK);
+    expect(parseTypedRepositionRank('!007_Name')).toBe(7);
+  });
+
   it('parses a rank out of exactly what buildPromotedSortTitle would produce for that collection', () => {
     const sortTitle = buildPromotedSortTitle('IMDb Popular', 19);
     expect(parseTypedRepositionRank(sortTitle)).toBe(19);

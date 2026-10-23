@@ -1780,6 +1780,13 @@ collectionsRoutes.post('/create', isAuthenticated(), async (req, res) => {
         linkId: linkId,
         isLibraryPromoted: defaultIsLibraryPromoted,
         everLibraryPromoted: defaultIsLibraryPromoted,
+        // A Sort Title typed when creating the collection came from the
+        // field that accepts a complete title, so it is marked like any
+        // other value typed there - without this it would be read as a
+        // pre-existing prefix and get the collection name appended.
+        sortTitleOverrideIsFullTitle:
+          typeof req.body.sortTitleOverride === 'string' &&
+          req.body.sortTitleOverride.trim() !== '',
         // Remove multi-library fields that don't belong in individual configs
         libraryIds: undefined,
         libraryNames: undefined,

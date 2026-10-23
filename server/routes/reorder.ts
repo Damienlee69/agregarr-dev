@@ -275,11 +275,13 @@ async function handleManualReordering(
       sortOrder > 0 &&
       configType === 'collection'
     ) {
-      updatedConfig.everLibraryPromoted = true;
+      // Narrowed by the configType check above: only a collection config
+      // reaches here, and only it carries these two fields.
+      const promoted = updatedConfig as CollectionConfig;
+      promoted.everLibraryPromoted = true;
       // Dragging into the promoted section is the same deliberate act as
       // promoting - see groupSortTitleOptIn.
-      (updatedConfig as { groupSortTitleOptIn?: boolean }).groupSortTitleOptIn =
-        true;
+      promoted.groupSortTitleOptIn = true;
     }
 
     // Use type guards to ensure config matches declared type

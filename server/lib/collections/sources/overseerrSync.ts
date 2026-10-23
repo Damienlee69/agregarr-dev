@@ -928,10 +928,24 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       totalUpdated += result.updated;
       collectionRatingKey = result.collectionRatingKey;
 
-      // Apply sort title to user collection if needed (not handled by base class since no collectionRatingKey in config)
-      if (result.collectionRatingKey && !config.showUnwatchedOnly) {
+      // Apply sort title to user collection (not handled by the base class,
+      // which has no collectionRatingKey on the config for these).
+      //
+      // createCollection only reports a rating key when it created or changed
+      // something, so gating on that alone meant an unchanged collection got
+      // no sort title write from anywhere once the base pass started skipping
+      // it - a sort title edit would never reach Plex unless the contents
+      // happened to change in the same sync. Falls back to the collection
+      // already present under this name; the unchanged-write skip means that
+      // costs nothing when there is genuinely nothing to change.
+      const sortTitleRatingKey =
+        result.collectionRatingKey ||
+        allCollections.find((existing) => existing.title === collectionName)
+          ?.ratingKey;
+
+      if (sortTitleRatingKey && !config.showUnwatchedOnly) {
         await this.applyUserCollectionSortTitle(
-          result.collectionRatingKey,
+          sortTitleRatingKey,
           collectionName,
           config,
           plexClient

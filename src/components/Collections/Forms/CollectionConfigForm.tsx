@@ -86,7 +86,7 @@ const messages = defineMessages({
   sortTitleHelp:
     'Controls where this collection sorts in Plex. A padded prefix like !020_ places it at that position, and because Agregarr reads the number it keeps the collection in step - promote, demote and drag all still work. Anything Agregarr cannot read as a position is written through verbatim. Clear the field to return to its automatic position.',
   sortTitleGroupHelp:
-    "This creates many collections at once, so whatever you type here becomes the shared base for all of them, with each one's own name added after it - a separator, if used, gets this value exactly as typed. The same rules apply as a single collection's Sort Title.",
+    "This creates many collections at once, so whatever you type here becomes the shared base for all of them, with each one's own name added after it - a separator, if used, gets this value exactly as typed. The same rules apply as a single collection's Sort Title. Clear the field to drop the shared base, so each collection sorts under its own name again.",
   sortTitleEditedInPlex:
     'Edited in Plex as "{value}". Changes here will replace it on sync.',
   overlayConfigWarningTitle: 'No Overlay Templates Configured',
