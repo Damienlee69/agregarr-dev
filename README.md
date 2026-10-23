@@ -6,7 +6,13 @@ Active fork of [Agregarr](https://github.com/agregarr/agregarr) with performance
 
 > [!TIP]
 >
-> **Latest release: [v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0).** Parallel overlay processing, conditional elements with colour scaling, an audio codec badge, a new sync dashboard and an opt-in Posterizarr integration from Marcus Isdahl, and around 30 fixes. Six weeks of develop in one go.
+> **Latest release: [v2.12.1](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.1).** This security patch moves the image to Node 22.23.4, which should stop it trusting the compromised eMudhra certificates. A new health check also warns if your Plex Media Server has vulnerabilities under active exploitation.
+>
+> The previous release, [v2.12.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.0), was mostly fixes for collections that could fail quietly. It also added Item Order for multi-source collections, a Recently Released Episodes (Individual) hub, an optional TMDB ID in movie placeholder folder names, a Minimum IMDb votes filter, and a Placeholder Folders health check.
+
+> [!IMPORTANT]
+>
+> **Agregarr supports Plex Media Server 1.43.3.10861 and newer.** Older builds contain actively exploited security vulnerabilities (CISA KEV: CVE-2026-96652, CVE-2026-96654, CVE-2026-96655, CVE-2026-96656), so the Plex Version health check turns red on them. TV edition placeholders need 1.43.3 or newer and stay off below it. See [Plex's security notice](https://forums.plex.tv/t/important-security-update-for-plex-media-server-v1-43-2-and-earlier/942319).
 
 ## Docker
 
@@ -15,7 +21,7 @@ Available on Docker Hub as [`bitr8/agregarr`](https://hub.docker.com/r/bitr8/agr
 | Tag             | What it tracks                                             |
 | --------------- | ---------------------------------------------------------- |
 | `:latest`       | Stable releases. Recommended for most users.               |
-| `:2.10.0` (etc.) | Pinned to a specific release.                              |
+| `:2.12.1` (etc.) | Pinned to a specific release. |
 | `:develop`      | Bleeding edge. Builds on every push to develop, may break. |
 
 **Multi-arch** release tags ship amd64 and arm64 (Apple Silicon, RPi 4+). The `:develop` tag builds amd64 only.
@@ -103,6 +109,9 @@ Detail for each feature is in the [release notes](https://github.com/bitr8/agreg
 - **Episode-level filtered hubs**: a `recently_added_episodes` subtype that filters by episode rather than show, so a "New Episodes Today" row only shows what actually dropped today. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
 - **Sort title override**: per-collection sort title prefix that pins a collection's place in Plex's alphabetical order without touching hub ordering. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
 - **IMDb Bottom 100** as a collection source, same shape as the Top 250. ([v2.10.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.10.0))
+- **Item Order for multi-source collections**: sorts each source before Max Items cuts it, so the cut keeps the best of each list. It then sorts the combined list again. The default leaves the order as it was. ([v2.12.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.0))
+- **Recently Released Episodes (Individual) hub**: lists individual episodes by original air date, newest first, so an old episode imported today doesn't look new. TV libraries only. ([v2.12.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.0))
+- **Minimum IMDb votes**: auto-download skips titles with a high rating based on only a handful of votes. `0`, the default, turns it off. ([v2.12.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.0))
 - **Last Episode Added sort** for smart collections. ([v2.8.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.8.0))
 
 ### Overlays
@@ -127,6 +136,8 @@ Upstream makes individual API calls per item, per rating source, per cache miss.
 
 Retroactive filter application, self-healing for stuck DB records, direct Plex deletion for stale items, TV episode cleanup, Sonarr folder naming, `.plexmatch` for movies, download status awareness, post-sync hub verification, and TV label cleanup. Detail in the release notes for [v2.3.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.3.0) through [v2.7.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.7.0).
 
+An optional TMDB ID in movie placeholder folder names (`Title (Year) {tmdb-12345}`) stops two films with the same title and year from sharing a folder. It's off by default, and existing folders are never renamed. ([v2.12.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.0))
+
 ### Running Seerr with placeholders
 
 Seerr reads Plex for availability. A trailer placeholder looks like the real film, so Seerr marks requests for it as available.
@@ -138,11 +149,11 @@ Under **Settings > General > Ignored Path Patterns**, add:
 - Movies: `\{edition-(Trailer|Placeholder|Coming Soon)\}\.mp4$` (the last two are what older Agregarr builds wrote)
 - TV: `Season 00/S00E00\.Trailer\.mp4$`
 
-Or let Agregarr do it. On `develop`, the Seerr settings modal has a **Keep placeholder ignore patterns in Seerr** checkbox. Tick it and Agregarr adds those two patterns to Seerr through its API, straight away and again at the start of every collections sync if they go missing. Anything you already added by hand stays; ours go on the end. The Health panel warns when the patterns are missing, and, once the box is ticked, when the connected Seerr build has no such setting.
+Or let Agregarr do it. Since [v2.11.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.11.0), the Seerr settings modal has a **Keep placeholder ignore patterns in Seerr** checkbox. Tick it and Agregarr adds those two patterns to Seerr through its API, straight away and again at the start of every collections sync if they go missing. Anything added by hand stays, with Agregarr's patterns appended. The Health panel warns when the patterns are missing. Once the box is ticked, it also warns when the connected Seerr build has no such setting.
 
 ### Health checks
 
-Fifteen diagnostic checks run on a schedule and surface results in **Settings > About**. Transient failures get a grace window, checks can be muted individually, and job runs are persisted with per-job detail. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
+Eighteen diagnostic checks run on a schedule and surface results in **Settings > About**. Transient failures get a grace window, checks can be muted individually, and job runs are persisted with per-job detail. ([v2.9.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.9.0))
 
 ### Security
 

@@ -172,7 +172,17 @@ export class PlaceholderContextService {
 
       return false;
     } else if (plexMetadata.type === 'show') {
-      // TV shows: Check if only Season 00 exists (our trailer placeholder pattern)
+      // TV shows: edition-based placeholders use the exact edition titles Agregarr creates
+      const showEdition = plexMetadata.editionTitle?.toLowerCase().trim() || '';
+      if (
+        showEdition === 'trailer' ||
+        showEdition === 'placeholder' ||
+        showEdition === 'coming soon'
+      ) {
+        return true;
+      }
+
+      // Legacy: Check if only Season 00 exists (our trailer placeholder pattern)
       // Real shows will have Season 01+ when content arrives
 
       // Merge both child arrays (Plex may populate either or both)

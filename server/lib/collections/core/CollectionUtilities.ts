@@ -1984,6 +1984,7 @@ async function getAllLibraryItems(
     title: string;
     addedAt?: number;
     releaseDate?: number;
+    editionTitle?: string;
     Guid?: { id: string }[];
   }[]
 > {
@@ -1992,6 +1993,7 @@ async function getAllLibraryItems(
     title: string;
     addedAt?: number;
     releaseDate?: number;
+    editionTitle?: string;
     Guid?: { id: string }[];
   }[] = [];
   let offset = 0;
@@ -2018,6 +2020,7 @@ async function getAllLibraryItems(
         title: item.title,
         addedAt: item.addedAt,
         releaseDate,
+        editionTitle: item.editionTitle,
         Guid: item.Guid,
       };
     });
@@ -2042,6 +2045,7 @@ export interface LibraryItemsCache {
     title: string;
     addedAt?: number;
     releaseDate?: number; // Converted from originallyAvailableAt string to Unix timestamp
+    editionTitle?: string;
     Guid?: { id: string }[];
   }[];
 }
@@ -2242,6 +2246,7 @@ export async function findPlexItemsByTmdbIds(
           title: string;
           addedAt?: number;
           releaseDate?: number;
+          editionTitle?: string;
           Guid?: { id: string }[];
         }[];
 
@@ -2274,15 +2279,22 @@ export async function findPlexItemsByTmdbIds(
               const lookup = movieLookups.find((l) => l.tmdbId === tmdbId);
               if (lookup) {
                 const key = `${tmdbId}-movie`;
-                const tvdbId = extractTvdbIdFromGuids(item.Guid);
-                results.set(key, {
-                  ratingKey: item.ratingKey,
-                  title: item.title,
-                  libraryKey: library.key,
-                  addedAt: item.addedAt,
-                  releaseDate: item.releaseDate,
-                  tvdbId,
-                });
+                const existing = results.get(key);
+                if (
+                  !existing ||
+                  (existing.editionTitle && !item.editionTitle)
+                ) {
+                  const tvdbId = extractTvdbIdFromGuids(item.Guid);
+                  results.set(key, {
+                    ratingKey: item.ratingKey,
+                    title: item.title,
+                    libraryKey: library.key,
+                    addedAt: item.addedAt,
+                    releaseDate: item.releaseDate,
+                    tvdbId,
+                    editionTitle: item.editionTitle,
+                  });
+                }
               }
             }
           }
@@ -2344,6 +2356,7 @@ export async function findPlexItemsByTmdbIds(
           title: string;
           addedAt?: number;
           releaseDate?: number;
+          editionTitle?: string;
           Guid?: { id: string }[];
         }[];
 
@@ -2380,18 +2393,25 @@ export async function findPlexItemsByTmdbIds(
               );
 
               if (lookup) {
-                // Regular show found - add it directly
+                // Regular show found - prefer non-edition items
                 const key = `${tmdbId}-tv`;
-                const tvdbId = extractTvdbIdFromGuids(item.Guid);
+                const existing = results.get(key);
+                if (
+                  !existing ||
+                  (existing.editionTitle && !item.editionTitle)
+                ) {
+                  const tvdbId = extractTvdbIdFromGuids(item.Guid);
 
-                results.set(key, {
-                  ratingKey: item.ratingKey,
-                  title: item.title,
-                  libraryKey: library.key,
-                  addedAt: item.addedAt,
-                  releaseDate: item.releaseDate,
-                  tvdbId,
-                });
+                  results.set(key, {
+                    ratingKey: item.ratingKey,
+                    title: item.title,
+                    libraryKey: library.key,
+                    addedAt: item.addedAt,
+                    releaseDate: item.releaseDate,
+                    tvdbId,
+                    editionTitle: item.editionTitle,
+                  });
+                }
               } else {
                 // Check if this show has episodes we need to find
                 const episodeLookups = tvLookups.filter(
@@ -2550,6 +2570,7 @@ export async function findPlexItemsByTitle(
     year?: number;
     tmdbId?: number;
     tvdbId?: number;
+    editionTitle?: string;
     hasTmdbGuid: boolean;
     hasAnyGuid: boolean;
   }[]
@@ -2560,6 +2581,7 @@ export async function findPlexItemsByTitle(
     year?: number;
     tmdbId?: number;
     tvdbId?: number;
+    editionTitle?: string;
     hasTmdbGuid: boolean;
     hasAnyGuid: boolean;
   }[] = [];
@@ -2570,6 +2592,7 @@ export async function findPlexItemsByTitle(
       ratingKey: string;
       title: string;
       year?: number;
+      editionTitle?: string;
       Guid?: { id: string }[];
     }[];
 
@@ -2631,6 +2654,7 @@ export async function findPlexItemsByTitle(
           year: item.year,
           tmdbId: itemTmdbId,
           tvdbId: itemTvdbId,
+          editionTitle: item.editionTitle,
           hasTmdbGuid,
           hasAnyGuid,
         });

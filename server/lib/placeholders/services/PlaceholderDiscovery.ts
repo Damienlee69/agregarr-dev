@@ -23,6 +23,7 @@ export interface DiscoveredPlaceholder {
   plexItem?: {
     ratingKey: string;
     title: string;
+    editionTitle?: string;
   };
   needsTitleFix: boolean;
   discoveryMethod: 'tmdb-id' | 'database-lookup' | 'title-search' | 'not-found';
@@ -161,8 +162,9 @@ export async function discoverPlaceholdersFromMarkers(
         continue;
       }
 
-      let plexItem: { ratingKey: string; title: string } | undefined =
-        plexMatches.get(`${marker.tmdbId}-tv`);
+      let plexItem:
+        | { ratingKey: string; title: string; editionTitle?: string }
+        | undefined = plexMatches.get(`${marker.tmdbId}-tv`);
 
       // Title fallback for items without TMDB GUID in Plex
       if (!plexItem) {
@@ -181,6 +183,7 @@ export async function discoverPlaceholdersFromMarkers(
           plexItem = {
             ratingKey: candidate.ratingKey,
             title: candidate.title,
+            editionTitle: candidate.editionTitle,
           };
           logger.info('Tier 1: Found Plex item by title fallback', {
             label: 'PlaceholderService',
@@ -309,7 +312,11 @@ export async function discoverPlaceholdersFromMarkers(
       discovered.push({
         marker,
         plexItem: plexItem
-          ? { ratingKey: plexItem.ratingKey, title: plexItem.title }
+          ? {
+              ratingKey: plexItem.ratingKey,
+              title: plexItem.title,
+              editionTitle: plexItem.editionTitle,
+            }
           : undefined,
         needsTitleFix,
         discoveryMethod: 'tmdb-id',
@@ -347,8 +354,9 @@ export async function discoverPlaceholdersFromMarkers(
           libraryCache
         );
 
-        let plexItem: { ratingKey: string; title: string } | undefined =
-          plexMatches.get(`${dbRecord.tmdbId}-tv`);
+        let plexItem:
+          | { ratingKey: string; title: string; editionTitle?: string }
+          | undefined = plexMatches.get(`${dbRecord.tmdbId}-tv`);
 
         // Title fallback for items without TMDB GUID in Plex
         if (!plexItem) {
@@ -366,6 +374,7 @@ export async function discoverPlaceholdersFromMarkers(
             plexItem = {
               ratingKey: candidate.ratingKey,
               title: candidate.title,
+              editionTitle: candidate.editionTitle,
             };
             logger.info('Tier 2: Found Plex item by title fallback', {
               label: 'PlaceholderService',
@@ -456,7 +465,11 @@ export async function discoverPlaceholdersFromMarkers(
             tvdbId: dbRecord.tvdbId,
           },
           plexItem: plexItem
-            ? { ratingKey: plexItem.ratingKey, title: plexItem.title }
+            ? {
+                ratingKey: plexItem.ratingKey,
+                title: plexItem.title,
+                editionTitle: plexItem.editionTitle,
+              }
             : undefined,
           needsTitleFix,
           discoveryMethod: 'database-lookup',

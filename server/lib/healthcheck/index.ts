@@ -10,6 +10,12 @@ import { getAdminUser } from '@server/lib/collections/core/CollectionUtilities';
 import { CloudflareSolver } from '@server/lib/collections/utils/CloudflareSolver';
 import { LetterboxdHttpClient } from '@server/lib/collections/utils/LetterboxdHttpClient';
 import { probeSeerrIgnorePatterns } from '@server/lib/placeholders/seerrIgnorePatterns';
+import {
+  exploitedCvesFor,
+  plexUnsupportedMessage,
+  plexVersionAtLeast,
+  setPlexServerVersion,
+} from '@server/lib/plexVersion';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { appDataPath } from '@server/utils/appDataVolume';
@@ -108,6 +114,7 @@ const connectionPlexCheck: HealthCheck = {
       const mc = status?.MediaContainer;
       const name = mc?.friendlyName;
       const version = mc?.version;
+      setPlexServerVersion(version);
       return {
         status: 'ok',
         message: name
@@ -130,6 +137,35 @@ const connectionPlexCheck: HealthCheck = {
         message: sanitize(`Plex unreachable${hint}: ${msg}`),
       };
     }
+  },
+};
+
+export const plexVersionCheck: HealthCheck = {
+  id: 'plex-version',
+  name: 'Plex Version',
+
+  run: async () => {
+    if (!getSettings().plex.ip) return { status: 'skipped' };
+    const admin = await getAdminUser();
+    if (!admin?.plexToken) return { status: 'skipped' };
+
+    let version: string | undefined;
+    try {
+      const status = await new PlexAPI({
+        plexToken: admin.plexToken,
+      }).getStatus();
+      version = status?.MediaContainer?.version;
+    } catch {
+      return { status: 'skipped' }; // connection:plex reports reachability
+    }
+    if (!version) return { status: 'skipped' };
+
+    setPlexServerVersion(version);
+    if (!plexVersionAtLeast(version, '0.0.0')) return { status: 'skipped' };
+    if (exploitedCvesFor(version).length === 0) {
+      return { status: 'ok', message: `Plex Media Server ${version}` };
+    }
+    return { status: 'error', message: plexUnsupportedMessage(version) };
   },
 };
 
@@ -815,6 +851,7 @@ export const placeholderRootVolumeCheck: HealthCheck = {
 
 const checks: HealthCheck[] = [
   connectionPlexCheck,
+  plexVersionCheck,
   buildConnectionArrCheck('sonarr'),
   buildConnectionArrCheck('radarr'),
   connectionTmdbCheck,
