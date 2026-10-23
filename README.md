@@ -6,7 +6,9 @@ Active fork of [Agregarr](https://github.com/agregarr/agregarr) with performance
 
 > [!TIP]
 >
-> **Latest release: [v2.12.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.0).** Mostly fixes for collections that fail quietly. A failed sync should now show red instead of a green tick. It also adds Item Order for multi-source collections, a Recently Released Episodes (Individual) hub, an optional TMDB ID in movie placeholder folder names, a Minimum IMDb votes filter, and a Placeholder Folders health check.
+> **Latest release: [v2.12.1](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.1).** This security patch moves the image to Node 22.23.4, which should stop it trusting the compromised eMudhra certificates. A new health check also warns if your Plex Media Server has vulnerabilities under active exploitation.
+>
+> The previous release, [v2.12.0](https://github.com/bitr8/agregarr-dev/releases/tag/v2.12.0), was mostly fixes for collections that could fail quietly. It also added Item Order for multi-source collections, a Recently Released Episodes (Individual) hub, an optional TMDB ID in movie placeholder folder names, a Minimum IMDb votes filter, and a Placeholder Folders health check.
 
 > [!IMPORTANT]
 >
@@ -19,7 +21,7 @@ Available on Docker Hub as [`bitr8/agregarr`](https://hub.docker.com/r/bitr8/agr
 | Tag             | What it tracks                                             |
 | --------------- | ---------------------------------------------------------- |
 | `:latest`       | Stable releases. Recommended for most users.               |
-| `:2.12.0` (etc.) | Pinned to a specific release. |
+| `:2.12.1` (etc.) | Pinned to a specific release. |
 | `:develop`      | Bleeding edge. Builds on every push to develop, may break. |
 
 **Multi-arch** release tags ship amd64 and arm64 (Apple Silicon, RPi 4+). The `:develop` tag builds amd64 only.
