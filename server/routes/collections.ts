@@ -842,7 +842,10 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
       settings.markCollectionModified(configToUpdate.id, 'collection');
     }
 
-    if (pendingRepositionRank !== undefined) {
+    if (
+      pendingRepositionRank !== undefined &&
+      configs.some((c) => c.id === existingConfig.id)
+    ) {
       const targetLibraryId = Array.isArray(existingConfig.libraryId)
         ? existingConfig.libraryId[0]
         : existingConfig.libraryId;
@@ -868,12 +871,13 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
         }
       }
 
+      const movedIndex = configs.findIndex((c) => c.id === existingConfig.id);
       const moved = {
-        ...configs[existingConfigIndex],
+        ...configs[movedIndex],
         sortOrderLibrary: targetNewRank,
         isLibraryPromoted: true,
       };
-      configs[existingConfigIndex] = moved;
+      configs[movedIndex] = moved;
       const updatedIndex = updatedConfigs.findIndex((c) => c.id === moved.id);
       if (updatedIndex !== -1) updatedConfigs[updatedIndex] = moved;
 

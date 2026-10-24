@@ -2606,15 +2606,17 @@ const CollectionFormConfigForm = ({
             // storing it would freeze the collection at its current position
             // and silently disable the automatic ordering it still expects.
             sortTitleOverride:
+              !(config as CollectionFormConfig).sortTitleOverride &&
               values.sortTitleOverride?.trim() === agregarrSortTitle.trim()
                 ? ''
                 : values.sortTitleOverride?.trim() || '',
             // An untouched field also submits '', so clearing travels as its own flag.
-            ...(((config as CollectionFormConfig).sortTitleOverride ||
-              agregarrSortTitle) &&
-              !values.sortTitleOverride?.trim() && {
-                groupSortTitleOptIn: false,
-              }),
+            groupSortTitleOptIn:
+              ((config as CollectionFormConfig).sortTitleOverride ||
+                agregarrSortTitle) &&
+              !values.sortTitleOverride?.trim()
+                ? false
+                : undefined,
             customTheme: values.customTheme,
             enableCustomWallpaper: values.enableCustomWallpaper,
             enableCustomSummary: values.enableCustomSummary,
