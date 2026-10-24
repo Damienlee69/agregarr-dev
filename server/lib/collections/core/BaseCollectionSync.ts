@@ -2415,7 +2415,12 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         );
 
         // Update config if everLibraryPromoted needs to be reset
-        if (updateConfig.everLibraryPromoted !== undefined && matchingConfig) {
+        // ponytail: a group never flips, so every member resets; the unchanged-write skip keeps later syncs quiet
+        if (
+          updateConfig.everLibraryPromoted !== undefined &&
+          matchingConfig &&
+          !isMultiCollectionPattern(matchingConfig)
+        ) {
           this.updateCollectionConfigField(matchingConfig.id, updateConfig);
         }
       }

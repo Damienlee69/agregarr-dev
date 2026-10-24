@@ -41,35 +41,26 @@ preExistingRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
   const { id } = req.params;
 
   try {
-    // The Sort Title field accepts a complete title, so anything typed into
-    // it now is marked as one. Overrides saved before that are left unmarked
-    // and keep prepending the collection name, which is what they meant when
-    // they were written - see buildSortTitleFromOverride. Only a changed
-    // value is marked, because the client posts the whole config on save.
-    if (typeof req.body.sortTitleOverride === 'string') {
+    // The client posts the stored override on every save, so only a changed
+    // value counts as typed: unchanged legacy overrides keep their meaning.
+    const existingConfig = preExistingCollectionConfigService
+      .getConfigs()
+      .find((c) => c.id === id);
+    delete req.body.sortTitleOverrideIsFullTitle;
+    const { isSortTitleOverrideEdit } = await import(
+      '@server/lib/collections/core/CollectionUtilities'
+    );
+    const sortTitleOverrideChanged = isSortTitleOverrideEdit(
+      req.body.sortTitleOverride,
+      existingConfig?.sortTitleOverride
+    );
+
+    // A typed rank on an already-promoted collection moves it and its peers
+    // (see TypedRepositionService); an A-Z one is stored verbatim so the
+    // client can ask first.
+    if (sortTitleOverrideChanged) {
       req.body.sortTitleOverrideIsFullTitle =
         req.body.sortTitleOverride.trim() !== '';
-    }
-
-    // Detect a typed-in reposition: the Sort Title field is pre-filled with
-    // this collection's current computed value (e.g. "!001_Name"), so if
-    // the user edited only the rank digits and left the name suffix
-    // matching, they mean "move this to rank N" - the same intent as
-    // dragging it there - not "give this a literal custom title". Mirrors
-    // the identical block in collectionsRoutes' PUT /:id/settings - see
-    // TypedRepositionService for why the peer search has to span regular
-    // collections, pre-existing collections, and default hubs together.
-    //
-    // Only auto-repositions a collection that is ALREADY promoted - a pure
-    // move within the promoted section, no promotion decision to make. A
-    // typed "!" rank on a collection still in A-Z is deliberately NOT acted
-    // on here: it's stored as a literal override so the client can ask
-    // first, then replay the rank through PATCH /:id/promote's targetRank
-    // if confirmed. Mirrors the identical gate in collectionsRoutes.
-    if (typeof req.body.sortTitleOverride === 'string') {
-      const existingConfig = preExistingCollectionConfigService
-        .getConfigs()
-        .find((c) => c.id === id);
 
       if (existingConfig?.isLibraryPromoted === true) {
         const { parseTypedRepositionRank } = await import(

@@ -632,10 +632,8 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
         {
           userId: userContext?.plexId || userContext?.id,
           customLabel,
-          // applyUserCollectionSortTitle is the single writer for these -
-          // the base pass wrote the group form and this one then wrote a
-          // different value over it, two PUTs disagreeing every sync.
-          skipSortTitle: true,
+          // Per-user collections get their sort title from applyUserCollectionSortTitle.
+          skipSortTitle: config.subtype === 'users',
         },
         missingItems // Pass missing items for Quick Sync
       );
@@ -928,27 +926,22 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       totalUpdated += result.updated;
       collectionRatingKey = result.collectionRatingKey;
 
-      // Apply sort title to user collection (not handled by the base class,
-      // which has no collectionRatingKey on the config for these).
-      //
-      // createCollection only reports a rating key when it created or changed
-      // something, so gating on that alone meant an unchanged collection got
-      // no sort title write from anywhere once the base pass started skipping
-      // it - a sort title edit would never reach Plex unless the contents
-      // happened to change in the same sync. Falls back to the collection
-      // already present under this name; the unchanged-write skip means that
-      // costs nothing when there is genuinely nothing to change.
+      // An unchanged collection reports no rating key, so fall back to the existing one.
+      const existing = allCollections.find(
+        (collection) => collection.title === collectionName
+      );
       const sortTitleRatingKey =
-        result.collectionRatingKey ||
-        allCollections.find((existing) => existing.title === collectionName)
-          ?.ratingKey;
+        result.collectionRatingKey || existing?.ratingKey;
 
       if (sortTitleRatingKey && !config.showUnwatchedOnly) {
         await this.applyUserCollectionSortTitle(
           sortTitleRatingKey,
           collectionName,
           config,
-          plexClient
+          plexClient,
+          existing?.ratingKey === sortTitleRatingKey
+            ? existing.titleSort
+            : undefined
         );
       }
     }
@@ -971,7 +964,8 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
     collectionRatingKey: string,
     collectionName: string,
     config: CollectionConfig,
-    plexClient: PlexAPI
+    plexClient: PlexAPI,
+    currentTitleSort?: string
   ): Promise<void> {
     // One config generates a collection per requesting user, so this is a
     // multi-collection group and is written the same way the others are: a
@@ -985,7 +979,8 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
           collectionName,
           true,
           config.sortTitleOverrideIsFullTitle === true
-        )
+        ),
+        currentTitleSort
       );
       return;
     }
@@ -1008,7 +1003,11 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
       sortTitle = collectionName;
     }
 
-    await plexClient.updateCollectionSortTitle(collectionRatingKey, sortTitle);
+    await plexClient.updateCollectionSortTitle(
+      collectionRatingKey,
+      sortTitle,
+      currentTitleSort
+    );
 
     logger.debug(`Applied sort title to user collection: ${sortTitle}`, {
       label: 'Overseerr User Collection',
@@ -1404,9 +1403,12 @@ export class OverseerrCollectionSync extends BaseCollectionSync<'overseerr'> {
         if (config.sortTitleOverride) {
           await plexClient.updateCollectionSortTitle(
             smartCollectionRatingKey,
+            // Legacy overrides keep develop's config.name join.
             buildSortTitleFromOverride(
               config.sortTitleOverride,
-              config.name,
+              config.sortTitleOverrideIsFullTitle === true
+                ? collectionName
+                : config.name,
               true,
               config.sortTitleOverrideIsFullTitle === true
             )

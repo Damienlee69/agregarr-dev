@@ -18,6 +18,7 @@ type MixedCollectionItem = (
 ) & {
   configType: FormConfigType;
   position: number;
+  wasDragged?: boolean;
 };
 
 export interface UseCollectionReorderingProps {

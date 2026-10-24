@@ -37,6 +37,7 @@ import {
   extractErrorMessage,
   hasAgregarrLabel,
   isMultiCollectionPattern,
+  isSortTitleOverrideEdit,
   MAX_PROMOTED_RANK,
   parseConfigIdFromLabel,
   parseTypedRepositionRank,
@@ -299,6 +300,24 @@ describe('resolveMultiCollectionSortTitle', () => {
         false
       )
     ).toBe('NotAuto Genre Collections');
+  });
+});
+
+describe('isSortTitleOverrideEdit', () => {
+  it('treats a re-posted stored override as untouched', () => {
+    expect(isSortTitleOverrideEdit('ZZZ', 'ZZZ')).toBe(false);
+    expect(isSortTitleOverrideEdit(' !010_ ', '!010_')).toBe(false);
+    expect(isSortTitleOverrideEdit('', undefined)).toBe(false);
+  });
+
+  it('flags a typed, cleared or first value as an edit', () => {
+    expect(isSortTitleOverrideEdit('ZZZ', 'YYY')).toBe(true);
+    expect(isSortTitleOverrideEdit('', 'ZZZ')).toBe(true);
+    expect(isSortTitleOverrideEdit('ZZZ', undefined)).toBe(true);
+  });
+
+  it('ignores a save that omits the field', () => {
+    expect(isSortTitleOverrideEdit(undefined, 'ZZZ')).toBe(false);
   });
 });
 

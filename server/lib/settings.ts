@@ -120,7 +120,7 @@ export interface CollectionConfig {
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
   readonly isLibraryPromoted?: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section (defaults to true for Agregarr collections)
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto !-prefix)
-  groupSortTitleOptIn?: boolean; // A multi-collection group whose members sort under a shared base when demoted. Set the next time the group is promoted or demoted, cleared when its Sort Title is cleared - absent means members keep their own names, which is what installs before this did
+  readonly groupSortTitleOptIn?: boolean; // A multi-collection group whose members sort under a shared base when demoted. Set the next time the group is promoted or demoted, cleared when its Sort Title is cleared - absent means members keep their own names, which is what installs before this did
   readonly sortTitleOverrideIsFullTitle?: boolean; // Set when the override was written through the Sort Title field, which accepts a complete title. Absent on anything saved earlier, which always had the collection name appended - see buildSortTitleFromOverride
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly isLinked?: boolean; // True if collection is actively linked to other collections

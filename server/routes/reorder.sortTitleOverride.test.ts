@@ -22,9 +22,21 @@ describe('shouldClearSortTitleOverride', () => {
       shouldClearSortTitleOverride(
         promotedWithOverride(3),
         'sortOrderLibrary',
-        7
+        7,
+        true
       )
     ).toBe(true);
+  });
+
+  it('leaves a displaced peer inside the shifted window alone', () => {
+    expect(
+      shouldClearSortTitleOverride(
+        promotedWithOverride(4),
+        'sortOrderLibrary',
+        5,
+        false
+      )
+    ).toBe(false);
   });
 
   it('leaves an untouched overridden neighbour alone', () => {
@@ -34,7 +46,8 @@ describe('shouldClearSortTitleOverride', () => {
       shouldClearSortTitleOverride(
         promotedWithOverride(5),
         'sortOrderLibrary',
-        5
+        5,
+        true
       )
     ).toBe(false);
   });
@@ -44,7 +57,8 @@ describe('shouldClearSortTitleOverride', () => {
       shouldClearSortTitleOverride(
         { sortOrderLibrary: 3, isLibraryPromoted: true },
         'sortOrderLibrary',
-        7
+        7,
+        true
       )
     ).toBe(false);
   });
@@ -58,14 +72,20 @@ describe('shouldClearSortTitleOverride', () => {
           sortTitleOverride: 'ZZZ',
         },
         'sortOrderLibrary',
-        4
+        4,
+        true
       )
     ).toBe(false);
   });
 
   it('ignores a home-screen reorder, which is a different ordering', () => {
     expect(
-      shouldClearSortTitleOverride(promotedWithOverride(3), 'sortOrderHome', 7)
+      shouldClearSortTitleOverride(
+        promotedWithOverride(3),
+        'sortOrderHome',
+        7,
+        true
+      )
     ).toBe(false);
   });
 });

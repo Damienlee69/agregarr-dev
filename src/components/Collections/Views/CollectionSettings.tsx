@@ -664,6 +664,9 @@ const CollectionSettings = ({
           customWallpaper: config.customWallpaper,
           customSummary: config.customSummary,
           sortTitleOverride: config.sortTitleOverride,
+          ...(config.groupSortTitleOptIn === false && {
+            groupSortTitleOptIn: false,
+          }),
           customTheme: config.customTheme,
           enableCustomWallpaper: config.enableCustomWallpaper,
           enableCustomSummary: config.enableCustomSummary,

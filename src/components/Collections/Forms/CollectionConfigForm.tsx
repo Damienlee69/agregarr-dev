@@ -2609,12 +2609,12 @@ const CollectionFormConfigForm = ({
               values.sortTitleOverride?.trim() === agregarrSortTitle.trim()
                 ? ''
                 : values.sortTitleOverride?.trim() || '',
-            // Emptying a field that had something in it is the documented way
-            // to hand the sort title back ("Clear the field to return to its
-            // automatic position"). An empty sortTitleOverride cannot say that
-            // on its own - a collection that never had one submits the same
-            // empty string - so the intent travels as its own flag, and only
-            // when the field genuinely went from filled to empty.
+            // An untouched field also submits '', so clearing travels as its own flag.
+            ...(((config as CollectionFormConfig).sortTitleOverride ||
+              agregarrSortTitle) &&
+              !values.sortTitleOverride?.trim() && {
+                groupSortTitleOptIn: false,
+              }),
             customTheme: values.customTheme,
             enableCustomWallpaper: values.enableCustomWallpaper,
             enableCustomSummary: values.enableCustomSummary,

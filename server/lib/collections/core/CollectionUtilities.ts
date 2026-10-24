@@ -108,6 +108,16 @@ const BARE_PREFIX = /_$/;
  * ("!040_Auto Genre Collections_Music") while the separator takes the base
  * alone - which is what sorts it directly ahead of its members.
  */
+/** The client re-posts the stored override on every save; only a different value was typed. */
+export function isSortTitleOverrideEdit(
+  submitted: unknown,
+  stored: string | undefined
+): submitted is string {
+  return (
+    typeof submitted === 'string' && submitted.trim() !== (stored ?? '').trim()
+  );
+}
+
 export function buildSortTitleFromOverride(
   override: string,
   collectionName: string,

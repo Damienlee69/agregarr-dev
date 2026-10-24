@@ -471,6 +471,7 @@ export interface CollectionFormConfig {
   readonly enableCustomSummary?: boolean; // Enable custom summary sync to Plex
   readonly enableCustomTheme?: boolean; // Enable custom theme sync to Plex
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
+  readonly groupSortTitleOptIn?: boolean;
   // Time restriction settings
   readonly timeRestriction?: {
     readonly alwaysActive: boolean; // If true, collection is always active (default)

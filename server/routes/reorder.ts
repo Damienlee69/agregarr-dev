@@ -22,6 +22,7 @@ type MixedCollectionItem = (
   | PreExistingCollectionConfig
 ) & {
   configType: 'collection' | 'hub' | 'preExisting';
+  wasDragged?: boolean;
 };
 
 // Type guards to validate config structure matches declared type
@@ -166,21 +167,14 @@ export interface ReorderOverrideCandidate {
   sortTitleOverride?: string;
 }
 
-/**
- * Whether a drag should clear this collection's Sort Title override.
- *
- * A drag says "put this at position N", which contradicts an override - left
- * in place, the next sync writes it to Plex and undoes the drag. But the
- * client posts the whole library on every drag, so this has to be limited to
- * the collection whose rank actually changed: without that, dragging A past B
- * cleared C's override too.
- */
+/** A drag clears the dragged row's override only; displaced peers keep theirs. */
 export function shouldClearSortTitleOverride(
   config: ReorderOverrideCandidate,
   sortOrderField: string,
-  newSortOrder: number
+  newSortOrder: number,
+  wasDragged: boolean
 ): boolean {
-  if (sortOrderField !== 'sortOrderLibrary') return false;
+  if (!wasDragged || sortOrderField !== 'sortOrderLibrary') return false;
   if (config.isLibraryPromoted !== true) return false;
   if (!config.sortTitleOverride) return false;
   return config.sortOrderLibrary !== newSortOrder;
@@ -238,7 +232,7 @@ async function handleManualReordering(
 
   mixedItems.forEach((item: MixedCollectionItem, index) => {
     // Strip metadata and add sort order
-    const { configType, ...originalConfig } = item;
+    const { configType, wasDragged, ...originalConfig } = item;
 
     // Apply correct sort order logic based on context and collection type
     let sortOrder = index;
@@ -261,7 +255,8 @@ async function handleManualReordering(
       shouldClearSortTitleOverride(
         originalConfig as ReorderOverrideCandidate,
         sortOrderField,
-        sortOrder
+        sortOrder,
+        wasDragged === true
       )
     ) {
       (updatedConfig as { sortTitleOverride?: string }).sortTitleOverride = '';
@@ -275,13 +270,7 @@ async function handleManualReordering(
       sortOrder > 0 &&
       configType === 'collection'
     ) {
-      // Narrowed by the configType check above: only a collection config
-      // reaches here, and only it carries these two fields.
-      const promoted = updatedConfig as CollectionConfig;
-      promoted.everLibraryPromoted = true;
-      // Dragging into the promoted section is the same deliberate act as
-      // promoting - see groupSortTitleOptIn.
-      promoted.groupSortTitleOptIn = true;
+      updatedConfig.everLibraryPromoted = true;
     }
 
     // Use type guards to ensure config matches declared type

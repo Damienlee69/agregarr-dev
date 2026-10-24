@@ -253,21 +253,6 @@ collectionsRoutes.get('/', (_req, res) => {
  */
 collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
   try {
-    // The Sort Title field accepts a complete title, so anything typed into
-    // it now is marked as one. Overrides saved before that are left unmarked
-    // and keep prepending the collection name, which is what they meant when
-    // they were written - see buildSortTitleFromOverride. Only a changed
-    // value is marked, because the client posts the whole config on save.
-    if (typeof req.body.sortTitleOverride === 'string') {
-      req.body.sortTitleOverrideIsFullTitle =
-        req.body.sortTitleOverride.trim() !== '';
-      // Emptying the field is how a group goes back to plain member names:
-      // it clears the opt-in, so the shared base stops applying.
-      if (req.body.sortTitleOverride.trim() === '') {
-        req.body.groupSortTitleOptIn = false;
-      }
-    }
-
     const { id } = req.params;
     const settings = getSettings();
 
@@ -283,6 +268,21 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
     }
 
     const existingConfig = configs[existingConfigIndex];
+
+    // The client posts the stored override on every save, so only a changed
+    // value counts as typed: unchanged legacy overrides keep their meaning.
+    delete req.body.sortTitleOverrideIsFullTitle;
+    const { isSortTitleOverrideEdit } = await import(
+      '@server/lib/collections/core/CollectionUtilities'
+    );
+    const sortTitleOverrideChanged = isSortTitleOverrideEdit(
+      req.body.sortTitleOverride,
+      existingConfig.sortTitleOverride
+    );
+    if (sortTitleOverrideChanged) {
+      req.body.sortTitleOverrideIsFullTitle =
+        req.body.sortTitleOverride.trim() !== '';
+    }
 
     // Debug logging for person settings payload (directors/actors)
     if (
@@ -546,6 +546,8 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
     const preExistingService = new PreExistingCollectionConfigService();
     const preExistingConfigs = preExistingService.getConfigs();
 
+    let pendingRepositionRank: number | undefined;
+
     // Process each config (could be just one, or multiple if linked)
     for (const configToUpdate of configsToUpdate) {
       const configIndex = configs.findIndex((c) => c.id === configToUpdate.id);
@@ -636,19 +638,10 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
         }
       }
 
-      // A typed rank means "move this to rank N", so it reorders the promoted
-      // peers to make room. Peers span regular collections, pre-existing
-      // collections and default hubs - they share one numbering space (see
-      // reorder.ts) - so the search cannot be limited to this route's configs.
-      //
-      // Only for a collection that is ALREADY promoted. A typed "!" rank on an
-      // A-Z collection is stored verbatim instead, so the client can ask before
-      // changing which section it lives in (see checkForPromotionMismatch).
-      //
-      // Runs after the validation above because it SAVES the peers: earlier,
-      // a rejected edit left the library already reordered.
-      let repositionTargetRank: number | undefined;
-      if (typeof req.body.sortTitleOverride === 'string') {
+      // A typed rank on an already-promoted collection moves it and its
+      // peers; an A-Z one is stored verbatim so the client can ask first.
+      // The move is saved after the loop, once every linked config validated.
+      if (sortTitleOverrideChanged && configToUpdate.id === existingConfig.id) {
         const {
           parseTypedRepositionRank,
           isMultiCollectionPattern,
@@ -662,43 +655,7 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
           existingConfig.isLibraryPromoted === true &&
           parsedRank !== existingConfig.sortOrderLibrary
         ) {
-          const targetLibraryId = Array.isArray(existingConfig.libraryId)
-            ? existingConfig.libraryId[0]
-            : existingConfig.libraryId;
-
-          const { computeAndApplyTypedReposition } = await import(
-            '@server/lib/collections/core/TypedRepositionService'
-          );
-          const { targetNewRank, sameTypePeerUpdates } =
-            await computeAndApplyTypedReposition(
-              existingConfig.id,
-              'collection',
-              targetLibraryId,
-              parsedRank
-            );
-          repositionTargetRank = targetNewRank;
-
-          for (const peerUpdate of sameTypePeerUpdates) {
-            const peerIndex = configs.findIndex((c) => c.id === peerUpdate.id);
-            if (peerIndex !== -1) {
-              configs[peerIndex] = {
-                ...configs[peerIndex],
-                sortOrderLibrary: peerUpdate.sortOrderLibrary,
-              };
-              settings.markCollectionModified(peerUpdate.id, 'collection');
-            }
-          }
-
-          logger.info(
-            `Typed Sort Title reposition: moving "${existingConfig.name}" to rank ${repositionTargetRank}`,
-            {
-              label: 'Collections API',
-              collectionId: existingConfig.id,
-              fromRank: existingConfig.sortOrderLibrary,
-              toRank: repositionTargetRank,
-              peersShifted: sameTypePeerUpdates.length,
-            }
-          );
+          pendingRepositionRank = parsedRank;
         } else if (
           parsedRank !== undefined &&
           existingConfig.isLibraryPromoted === true
@@ -832,21 +789,19 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
         missing: configToUpdate.missing, // Missing status is per-library (can exist in one library but not another)
       };
 
-      // Apply the typed-in reposition computed above, for the specific
-      // config that was actually edited (not any other linked sibling).
-      // Only reached for a config that was already promoted (see the gate
-      // above), so this is purely a move within the promoted section - the
-      // positional scheme takes over, making the typed literal redundant.
       if (
-        repositionTargetRank !== undefined &&
+        pendingRepositionRank !== undefined &&
         configToUpdate.id === existingConfig.id
       ) {
-        updatedConfig = {
-          ...updatedConfig,
-          sortOrderLibrary: repositionTargetRank,
-          isLibraryPromoted: true,
-          sortTitleOverride: '',
-        };
+        updatedConfig = { ...updatedConfig, sortTitleOverride: '' };
+      }
+
+      // Leaving a group's shared base needs one reset pass over its members.
+      if (
+        req.body.groupSortTitleOptIn === false &&
+        configToUpdate.groupSortTitleOptIn === true
+      ) {
+        updatedConfig = { ...updatedConfig, everLibraryPromoted: true };
       }
 
       // Handle firstSyncAt for custom sync schedules
@@ -885,6 +840,53 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
 
       // Mark collection as needing sync due to modification
       settings.markCollectionModified(configToUpdate.id, 'collection');
+    }
+
+    if (pendingRepositionRank !== undefined) {
+      const targetLibraryId = Array.isArray(existingConfig.libraryId)
+        ? existingConfig.libraryId[0]
+        : existingConfig.libraryId;
+      const { computeAndApplyTypedReposition } = await import(
+        '@server/lib/collections/core/TypedRepositionService'
+      );
+      const { targetNewRank, sameTypePeerUpdates } =
+        await computeAndApplyTypedReposition(
+          existingConfig.id,
+          'collection',
+          targetLibraryId,
+          pendingRepositionRank
+        );
+
+      for (const peerUpdate of sameTypePeerUpdates) {
+        const peerIndex = configs.findIndex((c) => c.id === peerUpdate.id);
+        if (peerIndex !== -1) {
+          configs[peerIndex] = {
+            ...configs[peerIndex],
+            sortOrderLibrary: peerUpdate.sortOrderLibrary,
+          };
+          settings.markCollectionModified(peerUpdate.id, 'collection');
+        }
+      }
+
+      const moved = {
+        ...configs[existingConfigIndex],
+        sortOrderLibrary: targetNewRank,
+        isLibraryPromoted: true,
+      };
+      configs[existingConfigIndex] = moved;
+      const updatedIndex = updatedConfigs.findIndex((c) => c.id === moved.id);
+      if (updatedIndex !== -1) updatedConfigs[updatedIndex] = moved;
+
+      logger.info(
+        `Typed Sort Title reposition: moving "${existingConfig.name}" to rank ${targetNewRank}`,
+        {
+          label: 'Collections API',
+          collectionId: existingConfig.id,
+          fromRank: existingConfig.sortOrderLibrary,
+          toRank: targetNewRank,
+          peersShifted: sameTypePeerUpdates.length,
+        }
+      );
     }
 
     settings.plex.collectionConfigs = configs;

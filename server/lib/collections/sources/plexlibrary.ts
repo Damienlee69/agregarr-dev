@@ -125,13 +125,10 @@ export class PlexLibraryCollectionSync extends BaseCollectionSync<'plex'> {
       ? getSortTitleOverride(matchingConfig)
       : undefined;
     if (sortTitleOverride) {
-      // Stored verbatim (see resolveMultiCollectionSortTitle) - the
-      // separator's own sortTitle IS the override, exactly as typed, not
-      // combined with anything else. Sub-collections get this same value
-      // plus their own name appended (see updateCollectionMetadata) - the
-      // separator sorts immediately before all of them because its
-      // sortTitle is a strict string prefix of theirs.
-      return sortTitleOverride;
+      // Verbatim, so it is a strict prefix of its members; legacy overrides prepend.
+      return matchingConfig?.sortTitleOverrideIsFullTitle === true
+        ? sortTitleOverride
+        : `${sortTitleOverride}${baseTitle}`;
     }
 
     const sortOrderLibrary =

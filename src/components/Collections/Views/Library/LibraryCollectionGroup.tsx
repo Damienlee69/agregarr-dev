@@ -179,7 +179,11 @@ interface LibraryCollectionGroupProps {
       | CollectionFormConfig
       | PlexHubConfig
       | PreExistingCollectionConfig
-    ) & { configType: FormConfigType; position: number })[],
+    ) & {
+      configType: FormConfigType;
+      position: number;
+      wasDragged?: boolean;
+    })[],
     itemTypeName: string
   ) => Promise<void>;
   activeTab: 'home' | 'recommended' | 'library' | 'inactive' | 'unmanaged';
@@ -900,6 +904,7 @@ const LibraryCollectionGroup = ({
               ? ('hub' as FormConfigType)
               : ('preExisting' as FormConfigType),
           position: index,
+          ...(index === newIndex && { wasDragged: true }),
         }));
 
         // Single API call for entire mixed list
