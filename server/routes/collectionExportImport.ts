@@ -115,6 +115,7 @@ const portableFields = [
   'excludeValues',
   'includeValues',
   'sortTitleOverride',
+  'sortTitleOverrideIsFullTitle',
 ] as const satisfies readonly (keyof CollectionConfig)[];
 
 const strippedFields = [
@@ -175,6 +176,7 @@ const strippedFields = [
   'missing',
   'isActive',
   'everLibraryPromoted',
+  'groupSortTitleOptIn',
   'isPromotedToHub',
 ] as const satisfies readonly (keyof CollectionConfig)[];
 

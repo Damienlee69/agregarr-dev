@@ -18,6 +18,7 @@ type MixedCollectionItem = (
 ) & {
   configType: FormConfigType;
   position: number;
+  wasDragged?: boolean;
 };
 
 export interface UseCollectionReorderingProps {
@@ -125,7 +126,9 @@ export const useCollectionReordering = ({
     ) => {
       try {
         // Call TRUE unified reorder API
-        await axios.post('/api/v1/reorder', {
+        const { data: reorderResult } = await axios.post<{
+          clearedSortTitleOverrides?: number;
+        }>('/api/v1/reorder', {
           libraryId,
           mixedItems,
           context,
@@ -142,6 +145,20 @@ export const useCollectionReordering = ({
           autoDismiss: true,
           appearance: 'success',
         });
+
+        // A drag contradicts a Sort Title override outright, so the server
+        // clears it - say so rather than leaving the user to notice the field
+        // emptied on its own. The typed path asks first; this one cannot,
+        // because the drag has already happened.
+        const cleared = reorderResult?.clearedSortTitleOverrides ?? 0;
+        if (cleared > 0) {
+          addToast(
+            cleared === 1
+              ? 'Sort Title override cleared - the collection now uses its dragged position.'
+              : `${cleared} Sort Title overrides cleared - those collections now use their dragged positions.`,
+            { autoDismiss: true, appearance: 'info' }
+          );
+        }
       } catch (error) {
         // Restore original state on error
         setLocalCollectionConfigs(collectionConfigs);

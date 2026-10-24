@@ -269,6 +269,21 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
 
     const existingConfig = configs[existingConfigIndex];
 
+    // The client posts the stored override on every save, so only a changed
+    // value counts as typed: unchanged legacy overrides keep their meaning.
+    delete req.body.sortTitleOverrideIsFullTitle;
+    const { isSortTitleOverrideEdit } = await import(
+      '@server/lib/collections/core/CollectionUtilities'
+    );
+    const sortTitleOverrideChanged = isSortTitleOverrideEdit(
+      req.body.sortTitleOverride,
+      existingConfig.sortTitleOverride
+    );
+    if (sortTitleOverrideChanged) {
+      req.body.sortTitleOverrideIsFullTitle =
+        req.body.sortTitleOverride.trim() !== '';
+    }
+
     // Debug logging for person settings payload (directors/actors)
     if (
       req.body?.type === 'plex' &&
@@ -531,6 +546,8 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
     const preExistingService = new PreExistingCollectionConfigService();
     const preExistingConfigs = preExistingService.getConfigs();
 
+    let pendingRepositionRank: number | undefined;
+
     // Process each config (could be just one, or multiple if linked)
     for (const configToUpdate of configsToUpdate) {
       const configIndex = configs.findIndex((c) => c.id === configToUpdate.id);
@@ -621,6 +638,61 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
         }
       }
 
+      // A typed rank on an already-promoted collection moves it and its
+      // peers; an A-Z one is stored verbatim so the client can ask first.
+      // The move is saved after the loop, once every linked config validated.
+      if (sortTitleOverrideChanged && configToUpdate.id === existingConfig.id) {
+        const {
+          parseTypedRepositionRank,
+          isMultiCollectionPattern,
+          resolveMultiCollectionSortTitle,
+        } = await import('@server/lib/collections/core/CollectionUtilities');
+
+        const parsedRank = parseTypedRepositionRank(req.body.sortTitleOverride);
+
+        if (
+          parsedRank !== undefined &&
+          existingConfig.isLibraryPromoted === true &&
+          parsedRank !== existingConfig.sortOrderLibrary
+        ) {
+          pendingRepositionRank = parsedRank;
+        } else if (
+          parsedRank !== undefined &&
+          existingConfig.isLibraryPromoted === true
+        ) {
+          // Typed rank equals the rank already held: nothing moves, but the
+          // value still means position, so clear the override and let the
+          // computed prefix apply. Storing it verbatim would keep whatever
+          // padding was typed, and "!0000005_" sorts ahead of every 3-digit
+          // rank rather than with them.
+          req.body.sortTitleOverride = '';
+        } else if (isMultiCollectionPattern(existingConfig)) {
+          // Not a rank-based reposition, but this config's Sort Title field
+          // can only ever mean a group value, never a literal title for one
+          // specific collection - the individual collections this config
+          // generates (Music, Western, per-director, per-franchise, ...)
+          // never appear as separate entries in Agregarr's own UI to give a
+          // literal title to. Stored verbatim and reused at write time (see
+          // updateCollectionMetadata / buildSeparatorSortTitle).
+          const resolved = resolveMultiCollectionSortTitle(
+            req.body.sortTitleOverride,
+            existingConfig.name,
+            existingConfig.isLibraryPromoted === true
+          );
+          req.body.sortTitleOverride = resolved;
+          if (resolved !== '') {
+            logger.info(
+              `Typed Sort Title for multi-collection config "${existingConfig.name}": "${resolved}"`,
+              {
+                label: 'Collections API',
+                collectionId: existingConfig.id,
+                value: resolved,
+              }
+            );
+          }
+        }
+      }
+
       // For Overseerr user collections, keep {username} and {nickname} as literals
       if (
         (req.body.type || configToUpdate.type) === 'overseerr' &&
@@ -677,7 +749,7 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
       }
 
       // Merge settings while preserving computed fields and library-specific fields
-      const updatedConfig: CollectionConfig = {
+      let updatedConfig: CollectionConfig = {
         ...configToUpdate, // Preserve all existing fields including computed ones
         ...req.body, // Apply user changes
         name: processedName, // Use processed template name
@@ -717,6 +789,21 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
         missing: configToUpdate.missing, // Missing status is per-library (can exist in one library but not another)
       };
 
+      if (
+        pendingRepositionRank !== undefined &&
+        configToUpdate.id === existingConfig.id
+      ) {
+        updatedConfig = { ...updatedConfig, sortTitleOverride: '' };
+      }
+
+      // Leaving a group's shared base needs one reset pass over its members.
+      if (
+        req.body.groupSortTitleOptIn === false &&
+        configToUpdate.groupSortTitleOptIn === true
+      ) {
+        updatedConfig = { ...updatedConfig, everLibraryPromoted: true };
+      }
+
       // Handle firstSyncAt for custom sync schedules
       if (updatedConfig.customSyncSchedule?.enabled) {
         const oldSchedule = configToUpdate.customSyncSchedule;
@@ -753,6 +840,57 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
 
       // Mark collection as needing sync due to modification
       settings.markCollectionModified(configToUpdate.id, 'collection');
+    }
+
+    if (
+      pendingRepositionRank !== undefined &&
+      configs.some((c) => c.id === existingConfig.id)
+    ) {
+      const targetLibraryId = Array.isArray(existingConfig.libraryId)
+        ? existingConfig.libraryId[0]
+        : existingConfig.libraryId;
+      const { computeAndApplyTypedReposition } = await import(
+        '@server/lib/collections/core/TypedRepositionService'
+      );
+      const { targetNewRank, sameTypePeerUpdates } =
+        await computeAndApplyTypedReposition(
+          existingConfig.id,
+          'collection',
+          targetLibraryId,
+          pendingRepositionRank
+        );
+
+      for (const peerUpdate of sameTypePeerUpdates) {
+        const peerIndex = configs.findIndex((c) => c.id === peerUpdate.id);
+        if (peerIndex !== -1) {
+          configs[peerIndex] = {
+            ...configs[peerIndex],
+            sortOrderLibrary: peerUpdate.sortOrderLibrary,
+          };
+          settings.markCollectionModified(peerUpdate.id, 'collection');
+        }
+      }
+
+      const movedIndex = configs.findIndex((c) => c.id === existingConfig.id);
+      const moved = {
+        ...configs[movedIndex],
+        sortOrderLibrary: targetNewRank,
+        isLibraryPromoted: true,
+      };
+      configs[movedIndex] = moved;
+      const updatedIndex = updatedConfigs.findIndex((c) => c.id === moved.id);
+      if (updatedIndex !== -1) updatedConfigs[updatedIndex] = moved;
+
+      logger.info(
+        `Typed Sort Title reposition: moving "${existingConfig.name}" to rank ${targetNewRank}`,
+        {
+          label: 'Collections API',
+          collectionId: existingConfig.id,
+          fromRank: existingConfig.sortOrderLibrary,
+          toRank: targetNewRank,
+          peersShifted: sameTypePeerUpdates.length,
+        }
+      );
     }
 
     settings.plex.collectionConfigs = configs;
@@ -1216,6 +1354,29 @@ collectionsRoutes.delete('/:id', isAuthenticated(), async (req, res) => {
     settings.plex.collectionConfigs = remainingConfigs;
     settings.save();
 
+    // Deleting a promoted collection leaves a hole in the rank sequence the
+    // same way demoting one does - ordering still holds, but the sequence
+    // drifts from a clean 1..N and the gap is visible in the sort titles.
+    // Close it here for the same reason the demote routes do.
+    if (configsToDelete.some((c) => c.isLibraryPromoted === true)) {
+      const promotedLibraryIds = new Set(
+        configsToDelete
+          .filter((c) => c.isLibraryPromoted === true)
+          .map((c) =>
+            Array.isArray(c.libraryId) ? c.libraryId[0] : c.libraryId
+          )
+          .filter(
+            (libraryId): libraryId is string => typeof libraryId === 'string'
+          )
+      );
+      const { compactAndApplyPromotedRanks } = await import(
+        '@server/lib/collections/core/TypedRepositionService'
+      );
+      for (const libraryId of promotedLibraryIds) {
+        await compactAndApplyPromotedRanks(libraryId);
+      }
+    }
+
     // Clean up placeholder records for deleted collections
     try {
       const { getRepository } = await import('@server/datasource');
@@ -1625,6 +1786,13 @@ collectionsRoutes.post('/create', isAuthenticated(), async (req, res) => {
         linkId: linkId,
         isLibraryPromoted: defaultIsLibraryPromoted,
         everLibraryPromoted: defaultIsLibraryPromoted,
+        // A Sort Title typed when creating the collection came from the
+        // field that accepts a complete title, so it is marked like any
+        // other value typed there - without this it would be read as a
+        // pre-existing prefix and get the collection name appended.
+        sortTitleOverrideIsFullTitle:
+          typeof req.body.sortTitleOverride === 'string' &&
+          req.body.sortTitleOverride.trim() !== '',
         // Remove multi-library fields that don't belong in individual configs
         libraryIds: undefined,
         libraryNames: undefined,
@@ -2423,30 +2591,82 @@ collectionsRoutes.patch('/:id/promote', isAuthenticated(), async (req, res) => {
         .json({ error: 'Collection is already in promoted section' });
     }
 
-    // Find the next available sortOrderLibrary for this library
-    const sameLibraryConfigs = collectionConfigs.filter(
-      (c) => c.libraryId === config.libraryId && c.isLibraryPromoted === true
+    // Land at targetRank when the caller asked for one - that's the typed
+    // "!005_Name" rank being replayed after the user confirmed the
+    // promotion prompt (see checkForPromotionMismatch client-side).
+    // Without one, append to the bottom. Either way "bottom" has to be
+    // computed across ALL three config types sharing this library's rank
+    // space (regular collections, pre-existing collections, default hubs),
+    // not just this route's own array, or it can collide with a rank a
+    // pre-existing or hub collection already holds. Requesting an
+    // out-of-range rank makes computeReposition clamp to the true bottom
+    // of the full unified peer list.
+    const requestedRank =
+      typeof req.body?.targetRank === 'number' && req.body.targetRank > 0
+        ? req.body.targetRank
+        : Number.MAX_SAFE_INTEGER;
+    const targetLibraryId = Array.isArray(config.libraryId)
+      ? config.libraryId[0]
+      : config.libraryId;
+    const { computeAndApplyTypedReposition } = await import(
+      '@server/lib/collections/core/TypedRepositionService'
     );
-    const maxSortOrder =
-      sameLibraryConfigs.length > 0
-        ? Math.max(...sameLibraryConfigs.map((c) => c.sortOrderLibrary || 0))
-        : 0;
+    const { targetNewRank, sameTypePeerUpdates } =
+      await computeAndApplyTypedReposition(
+        id,
+        'collection',
+        targetLibraryId,
+        requestedRank
+      );
 
-    // Update the collection to promoted status
+    for (const peerUpdate of sameTypePeerUpdates) {
+      const peerIndex = collectionConfigs.findIndex(
+        (c) => c.id === peerUpdate.id
+      );
+      if (peerIndex !== -1) {
+        collectionConfigs[peerIndex] = {
+          ...collectionConfigs[peerIndex],
+          sortOrderLibrary: peerUpdate.sortOrderLibrary,
+        };
+      }
+    }
+
+    // Update the collection to promoted status. Any Sort Title override is
+    // dropped, not just a "!"-prefixed one: promoting says "put this at rank
+    // N", and the positional scheme is the only thing that can express that.
+    // Leaving any override behind would pin the collection to a literal value
+    // that no longer tracks its real position, and the next sync would write
+    // it to Plex - undoing the promotion the user just asked for.
+    const dropsPromotionMarker = !!config.sortTitleOverride;
     collectionConfigs[configIndex] = {
       ...config,
       isLibraryPromoted: true,
-      sortOrderLibrary: maxSortOrder + 1,
+      sortOrderLibrary: targetNewRank,
+      // Promoting is the deliberate act that opts a group into sorting its
+      // members under a shared base once demoted. Installs from before this
+      // have the flag absent, so their members keep their own names until
+      // the user touches the group.
+      groupSortTitleOptIn: true,
+      ...(dropsPromotionMarker ? { sortTitleOverride: '' } : {}),
     };
 
     // Save settings
     settings.plex.collectionConfigs = collectionConfigs;
     settings.save();
+    // The collection itself, not only the peers it displaced: its rank is what
+    // just changed, and Plex has not been told. Without this the row shows no
+    // pending state, so there is nothing to click to apply it - the promotion
+    // sits in config until some later full sync happens to carry it.
+    settings.markCollectionModified(id, 'collection');
+    for (const peerUpdate of sameTypePeerUpdates) {
+      settings.markCollectionModified(peerUpdate.id, 'collection');
+    }
 
     logger.info(`Promoted collection ${config.name} to promoted section`, {
       label: 'Collections API',
       collectionId: id,
-      newSortOrderLibrary: maxSortOrder + 1,
+      newSortOrderLibrary: targetNewRank,
+      peersShifted: sameTypePeerUpdates.length,
     });
 
     return res.json({ success: true, config: collectionConfigs[configIndex] });
@@ -2487,16 +2707,44 @@ collectionsRoutes.patch('/:id/demote', isAuthenticated(), async (req, res) => {
         .json({ error: 'Collection is already in A-Z section' });
     }
 
-    // Update the collection to A-Z status
+    // Update the collection to A-Z status. A "!"-prefixed override has to
+    // go with it: Plex decides which section a collection displays in
+    // purely from whether its sortTitle starts with "!", so keeping one
+    // here would leave Agregarr showing A-Z while Plex puts it back in the
+    // promoted section on the next sync - a silent contradiction. Any
+    // other override is a deliberate A-Z sort choice and survives.
+    const keepsPromotionMarker =
+      config.sortTitleOverride?.startsWith('!') === true;
     collectionConfigs[configIndex] = {
       ...config,
       isLibraryPromoted: false,
       sortOrderLibrary: 0, // A-Z collections have sortOrderLibrary: 0
+      // Same opt-in as promote: demoting a group deliberately is what makes
+      // its members sort under a shared base instead of scattering.
+      groupSortTitleOptIn: true,
+      ...(keepsPromotionMarker ? { sortTitleOverride: '' } : {}),
     };
 
     // Save settings
     settings.plex.collectionConfigs = collectionConfigs;
     settings.save();
+    // Same as promote: the demotion is a change Plex has not been told about,
+    // so the row needs to show it as pending or there is no way to apply it
+    // short of a full sync.
+    settings.markCollectionModified(id, 'collection');
+
+    // Demoting only ever clears this one collection's own rank - nothing
+    // else shifts down to fill the hole it leaves behind, so the promoted
+    // sequence can drift away from a clean 1..N over repeated demotes (see
+    // compactPromotedRanks). Close that gap now, across all three config
+    // types sharing this library's rank space.
+    const targetLibraryId = Array.isArray(config.libraryId)
+      ? config.libraryId[0]
+      : config.libraryId;
+    const { compactAndApplyPromotedRanks } = await import(
+      '@server/lib/collections/core/TypedRepositionService'
+    );
+    await compactAndApplyPromotedRanks(targetLibraryId);
 
     logger.info(`Demoted collection ${config.name} to A-Z section`, {
       label: 'Collections API',

@@ -169,6 +169,45 @@ settingsRoutes.post('/main', (req, res, next) => {
   });
 });
 
+settingsRoutes.post('/main/migrate-editions', async (_req, res, next) => {
+  try {
+    const {
+      fetchPlexVersion,
+      plexVersionAtLeast,
+      PLEX_TV_EDITIONS_MIN_VERSION,
+    } = await import('@server/lib/plexVersion');
+    const { getAdminUser } = await import(
+      '@server/lib/collections/core/CollectionUtilities'
+    );
+    const admin = await getAdminUser();
+    const PlexAPI = (await import('@server/api/plexapi')).default;
+    const version = admin?.plexToken
+      ? await fetchPlexVersion(new PlexAPI({ plexToken: admin.plexToken }))
+      : undefined;
+    if (!plexVersionAtLeast(version, PLEX_TV_EDITIONS_MIN_VERSION)) {
+      return next({
+        status: 409,
+        message: `TV edition placeholders need Plex Media Server ${PLEX_TV_EDITIONS_MIN_VERSION} or newer (server reports ${
+          version ?? 'no readable version'
+        }).`,
+      });
+    }
+    const { migrateToEditionPlaceholders } = await import(
+      '@server/lib/placeholders/editionMigration'
+    );
+    const result = await migrateToEditionPlaceholders();
+    return res.status(200).json({
+      ...result,
+      warning:
+        result.migrated > 0
+          ? 'This migration is irreversible. Reverting to an older image will leave orphaned edition folders and may create duplicate placeholders.'
+          : undefined,
+    });
+  } catch (error) {
+    return next({ status: 500, message: `Migration failed: ${error}` });
+  }
+});
+
 settingsRoutes.post('/main/regenerate', (req, res, next) => {
   const settings = getSettings();
 

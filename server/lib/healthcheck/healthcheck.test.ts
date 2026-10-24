@@ -163,7 +163,9 @@ describe('jobFreshnessCheck', () => {
 
     const result = await jobFreshnessCheck.run();
     expect(result.status).toBe('warning');
-    expect(result.message).toContain('Collections Sync: last run failed: boom');
+    expect(result.message).toContain(
+      'Collections Sync: last run failed. Full error in Settings > Logs: boom'
+    );
 
     resolveJob?.();
     await runPromise;
@@ -250,7 +252,9 @@ describe('jobFreshnessCheck', () => {
 
     const result = await jobFreshnessCheck.run();
     expect(result.status).toBe('warning');
-    expect(result.message).toContain('Collections Sync: last success 49h ago');
+    expect(result.message).toContain(
+      'Collections Sync: last succeeded 49h ago'
+    );
   });
 
   it("matches the reporter's case: a long-running sync with a fresh prior success is ok", async () => {
@@ -306,7 +310,7 @@ describe('jobFreshnessCheck', () => {
 
     const result = await jobFreshnessCheck.run();
     expect(result.status).toBe('warning');
-    expect(result.message).toContain('Collections Sync: last success');
+    expect(result.message).toContain('Collections Sync: last succeeded');
 
     resolveJob?.();
     await runPromise;
@@ -334,6 +338,7 @@ describe('getHealthStatus aggregation', () => {
     const { getCheckIds } = await import('@server/lib/healthcheck');
     const ids = getCheckIds();
     expect(ids).toContain('connection:plex');
+    expect(ids).toContain('plex-version');
     expect(ids).toContain('connection:sonarr');
     expect(ids).toContain('connection:radarr');
     expect(ids).toContain('connection:tmdb');
@@ -350,6 +355,6 @@ describe('getHealthStatus aggregation', () => {
     expect(ids).toContain('placeholder-root-volume');
     expect(ids).toContain('timezone-configuration');
     expect(ids).toContain('job-freshness');
-    expect(ids).toHaveLength(17);
+    expect(ids).toHaveLength(18);
   });
 });

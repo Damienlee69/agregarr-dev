@@ -1,4 +1,5 @@
 import type { PlaceholderItem } from '@server/entity/PlaceholderItem';
+import { plexSupportsTvEditions } from '@server/lib/plexVersion';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isContainedPath } from '@server/utils/fileSystemHelpers';
@@ -129,13 +130,19 @@ export function resolvePlaceholderPaths(
       markerPath: path.join(movieFolder, '.comingsoon'),
     };
   } else {
-    let folderName: string;
+    let baseFolderName: string;
     if (sonarrFolderName) {
-      folderName = sonarrFolderName;
+      baseFolderName = sonarrFolderName;
     } else {
       const yearStr = year ? ` (${year})` : '';
-      folderName = `${sanitizeFilename(title)}${yearStr}`;
+      baseFolderName = `${sanitizeFilename(title)}${yearStr}`;
     }
+    const useEditions =
+      getSettings().main.placeholderEditions !== false &&
+      plexSupportsTvEditions();
+    const folderName = useEditions
+      ? `${baseFolderName} {edition-Trailer}`
+      : baseFolderName;
     const seasonDir = path.join(libraryPath, folderName, 'Season 00');
     result = {
       folderName,

@@ -1519,6 +1519,21 @@ class PlexAPI {
     }
   }
 
+  public async removeItemFromCollection(
+    collectionRatingKey: string,
+    itemRatingKey: string
+  ): Promise<void> {
+    const smartStatus = await this.isSmartCollection(collectionRatingKey);
+    if (smartStatus !== 'not_smart') {
+      throw new Error(
+        `Cannot remove items from smart collection ${collectionRatingKey}`
+      );
+    }
+    await this.safeDeleteQuery(
+      `/library/collections/${collectionRatingKey}/items/${itemRatingKey}`
+    );
+  }
+
   public async addLabelToCollection(
     collectionRatingKey: string,
     label: string

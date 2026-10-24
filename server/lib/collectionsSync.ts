@@ -606,11 +606,22 @@ class CollectionsSync {
         label: 'Collections Sync',
       });
 
-      logger.info('Collections sync completed successfully', {
+      const failedCount = collectionSyncProgress.getStatus()?.errorCount ?? 0;
+      const summaryMeta = {
         label: 'Collections Sync',
         duration: `${Math.round(duration / 1000)}s`,
         durationMs: duration,
-      });
+      };
+      if (failedCount > 0) {
+        logger.warn(
+          `Collections sync completed with ${failedCount} error${
+            failedCount === 1 ? '' : 's'
+          }`,
+          summaryMeta
+        );
+      } else {
+        logger.info('Collections sync completed successfully', summaryMeta);
+      }
 
       if (this.cancelled) {
         this.setStage('Sync cancelled');

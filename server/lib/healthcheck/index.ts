@@ -10,6 +10,12 @@ import { getAdminUser } from '@server/lib/collections/core/CollectionUtilities';
 import { CloudflareSolver } from '@server/lib/collections/utils/CloudflareSolver';
 import { LetterboxdHttpClient } from '@server/lib/collections/utils/LetterboxdHttpClient';
 import { probeSeerrIgnorePatterns } from '@server/lib/placeholders/seerrIgnorePatterns';
+import {
+  exploitedCvesFor,
+  plexUnsupportedMessage,
+  plexVersionAtLeast,
+  setPlexServerVersion,
+} from '@server/lib/plexVersion';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { appDataPath } from '@server/utils/appDataVolume';
@@ -81,6 +87,41 @@ const isTimeoutError = (e: unknown): boolean => {
 
 const sanitize = (msg: string): string => scrubSecrets(msg).slice(0, 200);
 
+// axios on Node 22 leaves .message empty for a refused localhost; the reason is in .code
+export const errorText = (err: unknown): string => {
+  if (!(err instanceof Error)) return String(err);
+  const codes = [
+    (err as { code?: string }).code,
+    (err.cause as { code?: string } | undefined)?.code,
+  ].filter((c): c is string => !!c && !err.message.includes(c));
+  return [err.message, ...new Set(codes)].filter(Boolean).join(' ');
+};
+
+// Hint goes before the raw error: sanitize() truncates at 200 chars
+export const connectionHint = (msg: string, host: string): string => {
+  if (/status code 40[13]/.test(msg))
+    return 'Access denied. Check the API key or any reverse proxy in front of the service';
+  if (/status code 404/.test(msg)) return 'Got a 404. Check the URL base';
+  if (/status code 5\d\d/.test(msg))
+    return 'The service returned an error. Check its logs';
+  if (/certificate|SSL|EPROTO/i.test(msg))
+    return 'SSL error. Check "Use SSL" and the service\'s certificate';
+  if (/^(localhost|127\.0\.0\.1|::1|\[::1\])$/i.test(host))
+    return `If Agregarr runs in Docker, ${host} points back to the Agregarr container. Use the server IP or container name`;
+  if (msg.includes('ECONNREFUSED'))
+    return 'Nothing answered at that address. Check the host, port, and that the service is running';
+  if (msg.includes('ENOTFOUND') || msg.includes('EAI_AGAIN'))
+    return "Hostname won't resolve. Use the IP, or put both containers on the same Docker network";
+  if (/ETIMEDOUT|EHOSTUNREACH|timeout/i.test(msg))
+    return 'No reply in time. Check the network or firewall between Agregarr and the service';
+  return "Couldn't connect";
+};
+
+const outageHint = (msg: string): string =>
+  /timeout|aborted|returned 5\d\d/i.test(msg)
+    ? "Looks like a short outage there; if it keeps happening, check the container's internet access and DNS."
+    : "Check the container's internet access and DNS.";
+
 // Capture native DateTimeFormat before the SSR polyfill replaces global Intl
 const NativeDateTimeFormat = Intl.DateTimeFormat;
 
@@ -108,6 +149,7 @@ const connectionPlexCheck: HealthCheck = {
       const mc = status?.MediaContainer;
       const name = mc?.friendlyName;
       const version = mc?.version;
+      setPlexServerVersion(version);
       return {
         status: 'ok',
         message: name
@@ -130,6 +172,35 @@ const connectionPlexCheck: HealthCheck = {
         message: sanitize(`Plex unreachable${hint}: ${msg}`),
       };
     }
+  },
+};
+
+export const plexVersionCheck: HealthCheck = {
+  id: 'plex-version',
+  name: 'Plex Version',
+
+  run: async () => {
+    if (!getSettings().plex.ip) return { status: 'skipped' };
+    const admin = await getAdminUser();
+    if (!admin?.plexToken) return { status: 'skipped' };
+
+    let version: string | undefined;
+    try {
+      const status = await new PlexAPI({
+        plexToken: admin.plexToken,
+      }).getStatus();
+      version = status?.MediaContainer?.version;
+    } catch {
+      return { status: 'skipped' }; // connection:plex reports reachability
+    }
+    if (!version) return { status: 'skipped' };
+
+    setPlexServerVersion(version);
+    if (!plexVersionAtLeast(version, '0.0.0')) return { status: 'skipped' };
+    if (exploitedCvesFor(version).length === 0) {
+      return { status: 'ok', message: `Plex Media Server ${version}` };
+    }
+    return { status: 'error', message: plexUnsupportedMessage(version) };
   },
 };
 
@@ -160,11 +231,13 @@ const buildConnectionArrCheck = (
         const baseUrl = `${inst.useSsl ? 'https' : 'http'}://${inst.hostname}:${
           inst.port
         }`;
+        const msg = errorText(err);
         failures.push(
           sanitize(
-            `'${inst.name}' (${baseUrl}) unreachable: ${
-              err instanceof Error ? err.message : String(err)
-            }`
+            `'${inst.name}' (${baseUrl}): ${connectionHint(
+              msg,
+              inst.hostname
+            )}. ${msg}`
           )
         );
       }
@@ -203,9 +276,7 @@ const connectionTmdbCheck: HealthCheck = {
       return {
         status: 'warning',
         message: sanitize(
-          `TMDB unreachable: ${
-            err instanceof Error ? err.message : String(err)
-          }`
+          `TMDB didn't reply. ${outageHint(errorText(err))} ${errorText(err)}`
         ),
       };
     }
@@ -229,9 +300,9 @@ const connectionRatingsProxyCheck: HealthCheck = {
       return {
         status: 'warning',
         message: sanitize(
-          `Ratings proxy unreachable: ${
-            err instanceof Error ? err.message : String(err)
-          }`
+          `The ratings service didn't reply. ${outageHint(
+            errorText(err)
+          )} ${errorText(err)}`
         ),
       };
     }
@@ -269,11 +340,19 @@ export const connectionFlareSolverrCheck: HealthCheck = {
       if (probe.status === 'rejected') {
         const solver = solvers[i];
         const err = probe.reason;
+        const msg = errorText(err);
+        let host = '';
+        try {
+          host = new URL(solver.url).hostname;
+        } catch {
+          // Malformed URL: the raw error says so
+        }
         failures.push(
           sanitize(
-            `'${solver.name || solver.url}' (${solver.url}) unreachable: ${
-              err instanceof Error ? err.message : String(err)
-            }`
+            `'${solver.name || solver.url}' (${solver.url}): ${connectionHint(
+              msg,
+              host
+            )}. ${msg}`
           )
         );
       }
@@ -314,6 +393,19 @@ export const flareSolverrRequiredCheck: HealthCheck = {
         status: 'error',
         message:
           'Networks Top 10 collections fetch from FlixPatrol, which sits behind a Cloudflare challenge the built-in browser cannot reliably pass. Install FlareSolverr, Byparr, or Trawl and add it as a Cloudflare solver in Settings > Sources.',
+      };
+    }
+
+    const blockedAt = CloudflareSolver.getLastBlocked('flixpatrol.com');
+    const hoursAgo = blockedAt ? (Date.now() - blockedAt) / 3600000 : Infinity;
+    if (hoursAgo < 24) {
+      return {
+        status: 'error',
+        message: `The solver reached FlixPatrol, but Cloudflare still blocked it ${
+          hoursAgo < 1
+            ? `${Math.round(hoursAgo * 60)}m`
+            : `${Math.round(hoursAgo)}h`
+        } ago. FlixPatrol may be challenging your server's IP address, even if the site opens fine in your browser. Route the solver through a VPN and run a sync. If that works, your IP is likely the cause, and you can keep the solver on the VPN. If it still fails, check the solver's logs. MDBList lists are an alternative to Networks Top 10.`,
       };
     }
 
@@ -433,19 +525,18 @@ const connectionMaintainerrCheck: HealthCheck = {
       }
       return { status: 'ok' };
     } catch (err) {
+      const msg = errorText(err);
       return {
         status: 'error',
         message: sanitize(
-          `Maintainerr unreachable: ${
-            err instanceof Error ? err.message : String(err)
-          }`
+          `${connectionHint(msg, maintainerr.hostname)}. ${msg}`
         ),
       };
     }
   },
 };
 
-const orphanedCollectionKeysCheck: HealthCheck = {
+export const orphanedCollectionKeysCheck: HealthCheck = {
   id: 'orphaned-collection-keys',
   name: 'Orphaned Collection Keys',
 
@@ -517,14 +608,16 @@ const orphanedCollectionKeysCheck: HealthCheck = {
     const suffix = unique.length > 5 ? ` and ${unique.length - 5} more` : '';
     return {
       status: 'warning',
-      message: `${unique.length} config${unique.length === 1 ? '' : 's'} point${
-        unique.length === 1 ? 's' : ''
-      } at deleted Plex collections: ${names.join(', ')}${suffix}`,
+      message: `Deleted in Plex: ${names.join(', ')}${suffix}. Next sync puts ${
+        unique.length === 1 ? 'it' : 'them'
+      } back. If that was on purpose, delete ${
+        unique.length === 1 ? 'it' : 'them'
+      } in All Collections too.`,
     };
   },
 };
 
-const plexLibrariesCheck: HealthCheck = {
+export const plexLibrariesCheck: HealthCheck = {
   id: 'plex-libraries',
   name: 'Plex Libraries',
 
@@ -536,13 +629,15 @@ const plexLibrariesCheck: HealthCheck = {
     if (!admin?.plexToken) return { status: 'skipped' };
 
     let configuredLibIds: string[];
+    let collectionLibIds: string[];
+    let overlayLibIds: string[];
     try {
       const repo = getRepository(OverlayLibraryConfig);
       const configs = await repo.find();
-      const collectionLibIds = (settings.plex.collectionConfigs ?? [])
+      collectionLibIds = (settings.plex.collectionConfigs ?? [])
         .filter((c) => !c.missing)
         .map((c) => String(c.libraryId));
-      const overlayLibIds = configs.map((c) => String(c.libraryId));
+      overlayLibIds = configs.map((c) => String(c.libraryId));
       configuredLibIds = [...new Set([...collectionLibIds, ...overlayLibIds])];
     } catch (err) {
       return {
@@ -564,15 +659,21 @@ const plexLibrariesCheck: HealthCheck = {
       const missing = configuredLibIds.filter((id) => !plexIds.has(id));
 
       if (!missing.length) return { status: 'ok' };
+      const fixes = [
+        missing.some((id) => overlayLibIds.includes(id)) &&
+          'remove the overlay settings in Posters > Poster Overlays > Library Configuration',
+        missing.some((id) => collectionLibIds.includes(id)) &&
+          'delete the collections in All Collections',
+      ].filter(Boolean);
       return {
         status: 'warning',
-        message: sanitize(
-          `${missing.length} configured library ID${
-            missing.length === 1 ? '' : 's'
-          } not found in Plex: ${missing.join(
-            ', '
-          )}. Libraries may have been deleted.`
-        ),
+        message: `Library ID${missing.length === 1 ? '' : 's'} ${missing.join(
+          ', '
+        )} ${
+          missing.length === 1 ? 'is' : 'are'
+        } gone from Plex. If you deleted ${
+          missing.length === 1 ? 'it' : 'them'
+        }, ${fixes.join(' and ')}.`,
       };
     } catch (err) {
       return {
@@ -756,8 +857,10 @@ export const jobFreshnessCheck: HealthCheck = {
       if (!last) continue;
 
       if (last.outcome === 'error') {
-        const err = last.error ? `: ${last.error.slice(0, 40)}` : '';
-        issues.push(`${job.label}: last run failed${err}`);
+        const err = last.error ? `: ${last.error.slice(0, 80)}` : '';
+        issues.push(
+          `${job.label}: last run failed. Full error in Settings > Logs${err}`
+        );
         continue;
       }
       if (last.outcome === 'success' && last.finishedAt) {
@@ -765,9 +868,11 @@ export const jobFreshnessCheck: HealthCheck = {
         const ageHours = ageMs / (1000 * 60 * 60);
         if (ageHours > job.maxAgeHours) {
           issues.push(
-            `${job.label}: last success ${Math.round(
+            `${job.label}: last succeeded ${Math.round(
               ageHours
-            )}h ago (expected every ${job.maxAgeHours}h)`
+            )}h ago, expected every ${
+              job.maxAgeHours
+            }h. Check the schedule in Settings > Jobs`
           );
         }
       }
@@ -815,6 +920,7 @@ export const placeholderRootVolumeCheck: HealthCheck = {
 
 const checks: HealthCheck[] = [
   connectionPlexCheck,
+  plexVersionCheck,
   buildConnectionArrCheck('sonarr'),
   buildConnectionArrCheck('radarr'),
   connectionTmdbCheck,

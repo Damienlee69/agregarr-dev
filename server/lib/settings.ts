@@ -118,8 +118,10 @@ export interface CollectionConfig {
   readonly libraryName: string; // Library name for display
   readonly sortOrderHome?: number; // Order for Plex home screen (1+ for positioned items, 0 for void/unpositioned)
   readonly sortOrderLibrary?: number; // Order for Plex library tab (0 for A-Z section, 1+ for promoted section)
-  readonly isLibraryPromoted?: boolean; // true = promoted section (uses exclamation marks), false = A-Z section (defaults to true for Agregarr collections)
+  readonly isLibraryPromoted?: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section (defaults to true for Agregarr collections)
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto !-prefix)
+  readonly groupSortTitleOptIn?: boolean; // A multi-collection group whose members sort under a shared base when demoted. Set the next time the group is promoted or demoted, cleared when its Sort Title is cleared - absent means members keep their own names, which is what installs before this did
+  readonly sortTitleOverrideIsFullTitle?: boolean; // Set when the override was written through the Sort Title field, which accepts a complete title. Absent on anything saved earlier, which always had the collection name appended - see buildSortTitleFromOverride
   readonly randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   readonly isLinked?: boolean; // True if collection is actively linked to other collections
   readonly linkId?: number; // Group ID for linked collections (preserved even when isLinked=false)
@@ -371,7 +373,7 @@ export interface PlexHubConfig {
   mediaType: 'movie' | 'tv'; // Media type (hubs are always single type)
   sortOrderHome: number; // Position on Plex home screen (1+ for positioned items, 0 for void)
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
-  isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;
@@ -429,8 +431,9 @@ export interface PreExistingCollectionConfig {
   titleSort?: string; // Plex sortTitle field for alphabetical ordering
   sortOrderHome: number; // Position on Plex home screen (1+ for positioned items, 0 for void)
   sortOrderLibrary: number; // Position in library (0 for A-Z section, 1+ for promoted section)
-  isLibraryPromoted: boolean; // true = promoted section (uses exclamation marks), false = A-Z section
+  isLibraryPromoted: boolean; // true = promoted section (rank-prefixed sort title), false = A-Z section
   sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
+  sortTitleOverrideIsFullTitle?: boolean; // Set when the override was written through the Sort Title field, which accepts a complete title. Absent on anything saved earlier, which always had the collection name appended - see buildSortTitleFromOverride
   randomizeHomeOrder?: boolean; // If true, randomize position amongst other randomized items on home screen
   visibilityConfig: {
     usersHome: boolean;
@@ -702,6 +705,7 @@ export interface MainSettings {
   placeholderTVRootFolders?: Record<string, string>; // libraryKey -> TV placeholder path mapping
   // Trailer download settings
   placeholderFolderTmdbId?: boolean; // If true, new movie placeholder folders are named 'Title (Year) {tmdb-ID}'
+  placeholderEditions?: boolean; // If true, new TV placeholders use a separate Plex edition folder '{edition-Trailer}'
   skipYoutubeTrailerDownloads?: boolean; // If true, skip YouTube trailer downloads and use hardcoded placeholder video only (speeds up sync)
   preferTmdbTrailers?: boolean; // If true (default), resolve trailers from TMDB /videos before falling back to YouTube search
   trailerExcludeWords?: string; // Comma-separated words — any match in title rejects the candidate
@@ -2423,6 +2427,7 @@ export interface MultiSourceCollectionConfig {
   readonly isLibraryPromoted?: boolean;
   readonly sortOrder?: CollectionSortOrder;
   readonly sortTitleOverride?: string; // User-provided sort title written verbatim to Plex (blank = auto)
+  readonly sortTitleOverrideIsFullTitle?: boolean; // Set when the override was written through the Sort Title field, which accepts a complete title. Absent on anything saved earlier, which always had the collection name appended - see buildSortTitleFromOverride
   readonly timeRestriction?: {
     readonly alwaysActive: boolean;
     readonly removeFromPlexWhenInactive?: boolean;

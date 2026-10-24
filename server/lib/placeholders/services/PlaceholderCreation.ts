@@ -12,6 +12,7 @@ import type {
   PlaceholderSourceData,
 } from '@server/lib/collections/core/types';
 import { isInsideSectionPaths } from '@server/lib/placeholders/helpers/placeholderPathHelpers';
+import { ensurePlexVersion, plexVersionKnown } from '@server/lib/plexVersion';
 import type { CollectionConfig, Library } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -47,10 +48,24 @@ export async function processPlaceholdersForMissingItems(
   const isComingSoonCollection = config.type === 'comingsoon';
 
   // Convert missing items to placeholder source data
-  const sourceData = missingItemsToPlaceholderSourceData(
+  let sourceData = missingItemsToPlaceholderSourceData(
     missingItems,
     isComingSoonCollection // Only require release dates for Coming Soon collections
   );
+
+  // TV folder naming depends on the Plex version: don't guess when it's unknown
+  await ensurePlexVersion(plexClient);
+  if (
+    getSettings().main.placeholderEditions !== false &&
+    !plexVersionKnown() &&
+    sourceData.some((item) => item.mediaType === 'tv')
+  ) {
+    logger.warn(
+      'Plex version unknown, skipping TV placeholder creation this run',
+      { label: 'PlaceholderService', configName: config.name }
+    );
+    sourceData = sourceData.filter((item) => item.mediaType !== 'tv');
+  }
 
   if (sourceData.length === 0) {
     const message = isComingSoonCollection
