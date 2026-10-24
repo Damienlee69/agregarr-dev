@@ -2415,7 +2415,7 @@ export abstract class BaseCollectionSync<TSource extends CollectionSource>
         );
 
         // Update config if everLibraryPromoted needs to be reset
-        // ponytail: a group never flips, so every member resets; the unchanged-write skip keeps later syncs quiet
+        // Groups never flip it, so a reset reaches every member, not just the first.
         if (
           updateConfig.everLibraryPromoted !== undefined &&
           matchingConfig &&
