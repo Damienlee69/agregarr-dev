@@ -22,6 +22,7 @@ type MixedCollectionItem = (
   | PreExistingCollectionConfig
 ) & {
   configType: 'collection' | 'hub' | 'preExisting';
+  wasDragged?: boolean;
 };
 
 // Type guards to validate config structure matches declared type
@@ -159,6 +160,26 @@ reorderRoutes.post('/', isAuthenticated(), async (req, res) => {
  * Handle automatic sort order management for all collection types
  * Assigns sequential sort orders, handles new collections, fills gaps
  */
+/** Shape the override decision needs - see shouldClearSortTitleOverride. */
+export interface ReorderOverrideCandidate {
+  sortOrderLibrary?: number;
+  isLibraryPromoted?: boolean;
+  sortTitleOverride?: string;
+}
+
+/** A drag clears the dragged row's override only; displaced peers keep theirs. */
+export function shouldClearSortTitleOverride(
+  config: ReorderOverrideCandidate,
+  sortOrderField: string,
+  newSortOrder: number,
+  wasDragged: boolean
+): boolean {
+  if (!wasDragged || sortOrderField !== 'sortOrderLibrary') return false;
+  if (config.isLibraryPromoted !== true) return false;
+  if (!config.sortTitleOverride) return false;
+  return config.sortOrderLibrary !== newSortOrder;
+}
+
 async function handleAutoReordering(
   libraryId: string,
   context: string,
@@ -190,6 +211,10 @@ async function handleManualReordering(
   res: Response
 ) {
   const settings = getSettings();
+  // Reported back so the client can say the override was cleared rather
+  // than leaving the user to notice the field emptied on its own.
+  let clearedSortTitleOverrides = 0;
+
   let totalUpdated = 0;
   let finalCollectionConfigs: CollectionConfig[] | undefined;
   let finalHubConfigs: PlexHubConfig[] | undefined;
@@ -207,7 +232,7 @@ async function handleManualReordering(
 
   mixedItems.forEach((item: MixedCollectionItem, index) => {
     // Strip metadata and add sort order
-    const { configType, ...originalConfig } = item;
+    const { configType, wasDragged, ...originalConfig } = item;
 
     // Apply correct sort order logic based on context and collection type
     let sortOrder = index;
@@ -225,6 +250,18 @@ async function handleManualReordering(
     }
 
     const updatedConfig = { ...originalConfig, [sortOrderField]: sortOrder };
+
+    if (
+      shouldClearSortTitleOverride(
+        originalConfig as ReorderOverrideCandidate,
+        sortOrderField,
+        sortOrder,
+        wasDragged === true
+      )
+    ) {
+      (updatedConfig as { sortTitleOverride?: string }).sortTitleOverride = '';
+      clearedSortTitleOverrides += 1;
+    }
 
     // Set everLibraryPromoted: true when a collection is assigned to the promoted library section
     if (
@@ -360,6 +397,7 @@ async function handleManualReordering(
     collectionsUpdated: collectionsApplied,
     hubsUpdated: hubsApplied,
     preExistingUpdated: preExistingApplied,
+    clearedSortTitleOverrides,
   });
 }
 
