@@ -163,7 +163,9 @@ describe('jobFreshnessCheck', () => {
 
     const result = await jobFreshnessCheck.run();
     expect(result.status).toBe('warning');
-    expect(result.message).toContain('Collections Sync: last run failed: boom');
+    expect(result.message).toContain(
+      'Collections Sync: last run failed. Full error in Settings > Logs: boom'
+    );
 
     resolveJob?.();
     await runPromise;
@@ -250,7 +252,9 @@ describe('jobFreshnessCheck', () => {
 
     const result = await jobFreshnessCheck.run();
     expect(result.status).toBe('warning');
-    expect(result.message).toContain('Collections Sync: last success 49h ago');
+    expect(result.message).toContain(
+      'Collections Sync: last succeeded 49h ago'
+    );
   });
 
   it("matches the reporter's case: a long-running sync with a fresh prior success is ok", async () => {
@@ -306,7 +310,7 @@ describe('jobFreshnessCheck', () => {
 
     const result = await jobFreshnessCheck.run();
     expect(result.status).toBe('warning');
-    expect(result.message).toContain('Collections Sync: last success');
+    expect(result.message).toContain('Collections Sync: last succeeded');
 
     resolveJob?.();
     await runPromise;
