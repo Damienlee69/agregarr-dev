@@ -32,7 +32,11 @@ function isChallengeHtml(html: string): boolean {
   );
 }
 
+// The solver answered but the site still refused: an egress problem, not a dead solver
+class SolverBlockedError extends Error {}
+
 export class CloudflareSolver {
+  private static lastBlocked: Map<string, number> = new Map();
   private static fetchInProgress: Map<string, Promise<string>> = new Map();
   private static htmlCache: Map<string, { html: string; fetchedAt: number }> =
     new Map();
@@ -68,6 +72,11 @@ export class CloudflareSolver {
 
   private static normaliseInstance(url: string): string {
     return url.replace(/\/+$/, '');
+  }
+
+  /** When every solver last reached `domain` and was still refused; cleared on success */
+  static getLastBlocked(domain: string): number | undefined {
+    return this.lastBlocked.get(domain);
   }
 
   static isSolving(instanceUrl: string): boolean {
@@ -134,12 +143,16 @@ export class CloudflareSolver {
     }
 
     const failures: string[] = [];
+    let blocked = false;
     for (const solver of solvers) {
       try {
-        return await this.attemptFetch(url, domain, solver.url, () =>
+        const html = await this.attemptFetch(url, domain, solver.url, () =>
           this.fetchWithFlareSolverr(url, solver.url)
         );
+        this.lastBlocked.delete(domain);
+        return html;
       } catch (error) {
+        blocked ||= error instanceof SolverBlockedError;
         failures.push(
           `${solver.name || solver.url}: ${
             error instanceof Error ? error.message : String(error)
@@ -148,6 +161,7 @@ export class CloudflareSolver {
       }
     }
 
+    if (blocked) this.lastBlocked.set(domain, Date.now());
     throw new Error(
       `All ${
         solvers.length
@@ -377,11 +391,11 @@ export class CloudflareSolver {
       const fsResponse = (error as FlareSolverrErrorResponse).response;
       const fsMessage = fsResponse?.data?.message;
       const fallback = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        fsMessage
-          ? `FlareSolverr ${fsResponse?.status}: ${fsMessage}`
-          : fallback
-      );
+      if (!fsMessage) throw new Error(fallback);
+      const ErrorType = /cloudflare|challenge|captcha|blocked/i.test(fsMessage)
+        ? SolverBlockedError
+        : Error;
+      throw new ErrorType(`FlareSolverr ${fsResponse?.status}: ${fsMessage}`);
     }
 
     if (response.data?.status !== 'ok' || !response.data?.solution?.response) {
@@ -394,7 +408,10 @@ export class CloudflareSolver {
 
     const solutionStatus = (response.data.solution.status as number) ?? 0;
     if (solutionStatus >= 400) {
-      throw new Error(
+      const ErrorType = [403, 429, 503].includes(solutionStatus)
+        ? SolverBlockedError
+        : Error;
+      throw new ErrorType(
         `solver loaded ${domain} but the site returned HTTP ${solutionStatus}`
       );
     }
@@ -402,7 +419,7 @@ export class CloudflareSolver {
     const html = response.data.solution.response as string;
 
     if (isChallengeHtml(html)) {
-      throw new Error(
+      throw new SolverBlockedError(
         `FlareSolverr could not solve Cloudflare challenge for ${domain}`
       );
     }

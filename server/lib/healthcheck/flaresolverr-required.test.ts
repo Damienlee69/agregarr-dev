@@ -191,3 +191,84 @@ describe('connectionFlareSolverrCheck', () => {
     expect((await connectionFlareSolverrCheck.run()).status).toBe('error');
   });
 });
+
+describe('flareSolverrRequiredCheck FlixPatrol block', () => {
+  const mockPost = vi.mocked(axios.post);
+  // Solver backoff is static state: a fresh instance per test keeps fetches reaching the mock
+  let n = 0;
+  const useFreshSolver = () =>
+    (state.settings = settingsWith(
+      [{ type: 'networks' }],
+      [{ id: `fp${++n}`, name: 'Solver', url: `http://fp-${n}:8191` }]
+    ));
+  const fetchFp = (path: string) =>
+    CloudflareSolver.fetchPage(`https://flixpatrol.com/${path}/`).catch(
+      () => undefined
+    );
+
+  it('stays ok when the solver is only unreachable', async () => {
+    useFreshSolver();
+    mockPost.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+    await fetchFp('unreachable');
+    expect((await flareSolverrRequiredCheck.run()).status).toBe('ok');
+  });
+
+  it('stays ok on a 404 or a solver crash', async () => {
+    useFreshSolver();
+    mockPost.mockResolvedValueOnce({
+      data: { status: 'ok', solution: { status: 404, response: '<html/>' } },
+    });
+    await fetchFp('missing-slug');
+    useFreshSolver();
+    mockPost.mockRejectedValueOnce(
+      Object.assign(new Error('Request failed with status code 500'), {
+        response: { status: 500, data: { message: 'Error: Chrome crashed' } },
+      })
+    );
+    await fetchFp('crashed');
+    expect((await flareSolverrRequiredCheck.run()).status).toBe('ok');
+  });
+
+  it('errors when the solver reports a Cloudflare challenge failure', async () => {
+    useFreshSolver();
+    mockPost.mockRejectedValueOnce(
+      Object.assign(new Error('Request failed with status code 500'), {
+        response: {
+          status: 500,
+          data: {
+            message: 'Error solving the challenge. Timeout after 60.0 seconds.',
+          },
+        },
+      })
+    );
+    await fetchFp('challenge-timeout');
+    expect((await flareSolverrRequiredCheck.run()).status).toBe('error');
+  });
+
+  it('clears once a later fetch succeeds', async () => {
+    useFreshSolver();
+    mockPost.mockResolvedValueOnce({
+      data: {
+        status: 'ok',
+        solution: {
+          status: 200,
+          response: '<html><title>Top 10</title></html>',
+        },
+      },
+    });
+    await fetchFp('recovered');
+    expect((await flareSolverrRequiredCheck.run()).status).toBe('ok');
+  });
+
+  it('errors with IP guidance when the solver reached the site and was refused', async () => {
+    useFreshSolver();
+    mockPost.mockResolvedValueOnce({
+      data: { status: 'ok', solution: { status: 403, response: '<html/>' } },
+    });
+    await fetchFp('blocked');
+    const result = await flareSolverrRequiredCheck.run();
+    expect(result.status).toBe('error');
+    expect(result.message).toContain('VPN');
+    expect(result.message).toContain('MDBList');
+  });
+});

@@ -353,6 +353,19 @@ export const flareSolverrRequiredCheck: HealthCheck = {
       };
     }
 
+    const blockedAt = CloudflareSolver.getLastBlocked('flixpatrol.com');
+    const hoursAgo = blockedAt ? (Date.now() - blockedAt) / 3600000 : Infinity;
+    if (hoursAgo < 24) {
+      return {
+        status: 'error',
+        message: `Your solver reached FlixPatrol but Cloudflare still blocked it (${
+          hoursAgo < 1
+            ? `${Math.round(hoursAgo * 60)}m`
+            : `${Math.round(hoursAgo)}h`
+        } ago). A common cause is FlixPatrol challenging your server's IP address, even when the site opens fine in your browser. To check, route the solver through a VPN and run a sync: if it works there, your IP is the problem and you can keep the solver on the VPN. If it still fails, check your solver's own logs. MDBList lists are an alternative to Networks Top 10.`,
+      };
+    }
+
     return { status: 'ok', message: 'Solver configured' };
   },
 };
