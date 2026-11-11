@@ -24,7 +24,8 @@ export type CollectionSortOrder =
   | 'date_added_desc' // Most recently added to Plex
   | 'date_added_asc' // Least recently added to Plex
   | 'alphabetical_asc' // A-Z alphabetical order
-  | 'alphabetical_desc'; // Z-A alphabetical order
+  | 'alphabetical_desc' // Z-A alphabetical order
+  | 'source_rank'; // Source ranking (Trakt anticipated only)
 
 /**
  * Sonarr monitor types - determines which episodes are monitored when adding a series
@@ -194,6 +195,7 @@ export interface CollectionFormConfig {
     | 'myanimelist'
     | 'plex'
     | 'mdblist'
+    | 'tvdb'
     | 'networks'
     | 'originals'
     | 'multi-source'
@@ -314,6 +316,7 @@ export interface CollectionFormConfig {
   // Placeholder settings (for createPlaceholdersForMissing feature - unified for all collection types)
   readonly createPlaceholdersForMissing?: boolean; // Create placeholder files for missing items
   readonly placeholderReleasedDays?: number; // Days to keep orphaned placeholders after they fall off source list (from release date if released, otherwise from creation date) (default: 7)
+  readonly placeholderSkipEstimatedDates?: boolean;
   readonly placeholderDaysAhead?: number; // Days to look ahead for release dates (default: 360)
   readonly includeAllReleasedItems?: boolean; // If true, include all released items regardless of release date (default: true for new configs)
   // Placeholder filter settings (independent of auto-request filters)
@@ -414,6 +417,8 @@ export interface CollectionFormConfig {
   readonly letterboxdCustomListUrl?: string; // Custom Letterboxd list URL
   // MDBList custom list fields
   readonly mdblistCustomListUrl?: string; // Custom MDBList list URL
+  // TVDB list fields
+  readonly tvdbCustomListUrl?: string; // TVDB list URL
   // Networks fields
   readonly networksCountry?: string; // Selected country for Networks collections
   // AniList custom list fields
@@ -432,17 +437,21 @@ export interface CollectionFormConfig {
   readonly comingSoonSonarrTagIds?: number[]; // Sonarr tag IDs to filter by
   readonly comingSoonRadarrRootFolder?: string; // Radarr root folder path to filter by
   readonly comingSoonSonarrRootFolder?: string; // Sonarr root folder path to filter by
+  readonly comingSoonIncludeMidSeason?: boolean; // TV monitored: also include shows whose next episode is mid-season
   // Generic ordering options (applicable to all collection types)
   readonly sortOrder?: CollectionSortOrder; // Sort order for collection items (default: 'default')
   // Plex Library label subtype: build a collection from items carrying this Plex label
   readonly plexLabel?: string;
   // Unified person minimum items for plex/actors|directors
   readonly personMinimumItems?: number;
+  readonly franchiseMinimumItems?: number; // tmdb auto_franchise: minimum owned movies (default 2)
+  readonly franchiseCountReleasedOnly?: boolean; // tmdb auto_franchise: only released TMDB parts count towards franchise size
   // Plex Library separator settings for multi-collections (actors/directors)
   readonly useSeparator?: boolean; // Whether to create a separator collection for auto person collections
   readonly separatorTitle?: string; // Custom title for the separator collection
   // Collection exclusion settings
   readonly excludeFromCollections?: string[]; // Array of collection IDs to exclude items from (mutual exclusion)
+  readonly excludeLabels?: string[]; // Plex item labels to keep out of this collection
 
   // Target user restriction (restrict collection visibility to a specific Plex user)
   readonly targetUserId?: string; // Plex user ID to restrict this collection to
@@ -516,6 +525,7 @@ export interface CollectionConfigCreateRequest {
     | 'myanimelist'
     | 'plex'
     | 'mdblist'
+    | 'tvdb'
     | 'networks'
     | 'originals'
     | 'multi-source'
@@ -549,6 +559,7 @@ export interface CollectionConfigCreateRequest {
   // Placeholder settings (unified for all collection types)
   readonly createPlaceholdersForMissing?: boolean;
   readonly placeholderReleasedDays?: number;
+  readonly placeholderSkipEstimatedDates?: boolean;
   readonly placeholderDaysAhead?: number;
   readonly placeholderMinimumYear?: number;
   readonly placeholderMinimumImdbRating?: number;
@@ -638,6 +649,7 @@ export interface CollectionConfigCreateRequest {
   readonly imdbCustomListUrl?: string;
   readonly letterboxdCustomListUrl?: string;
   readonly mdblistCustomListUrl?: string;
+  readonly tvdbCustomListUrl?: string;
   readonly networksCountry?: string;
   readonly anilistCustomListUrl?: string;
   readonly radarrInstanceId?: number;
@@ -653,15 +665,19 @@ export interface CollectionConfigCreateRequest {
   readonly comingSoonSonarrTagIds?: number[];
   readonly comingSoonRadarrRootFolder?: string;
   readonly comingSoonSonarrRootFolder?: string;
+  readonly comingSoonIncludeMidSeason?: boolean;
   readonly sortOrder?: CollectionSortOrder;
   // Plex Library label subtype: build a collection from items carrying this Plex label
   readonly plexLabel?: string;
   // Unified person minimum items for plex actors/directors
   readonly personMinimumItems?: number;
+  readonly franchiseMinimumItems?: number; // tmdb auto_franchise: minimum owned movies (default 2)
+  readonly franchiseCountReleasedOnly?: boolean; // tmdb auto_franchise: only released TMDB parts count towards franchise size
   // Plex Library separator settings for auto person multi-collections
   readonly useSeparator?: boolean;
   readonly separatorTitle?: string;
   readonly excludeFromCollections?: string[];
+  readonly excludeLabels?: string[];
   readonly timeRestriction?: {
     readonly alwaysActive: boolean;
     readonly removeFromPlexWhenInactive?: boolean;
@@ -741,6 +757,7 @@ export const toCollectionCreateRequest = (
     tautulliStatType: config.tautulliStatType,
     createPlaceholdersForMissing: config.createPlaceholdersForMissing,
     placeholderReleasedDays: config.placeholderReleasedDays,
+    placeholderSkipEstimatedDates: config.placeholderSkipEstimatedDates,
     placeholderDaysAhead: config.placeholderDaysAhead,
     placeholderMinimumYear: config.placeholderMinimumYear,
     placeholderMinimumImdbRating: config.placeholderMinimumImdbRating,
@@ -798,6 +815,7 @@ export const toCollectionCreateRequest = (
     imdbCustomListUrl: config.imdbCustomListUrl,
     letterboxdCustomListUrl: config.letterboxdCustomListUrl,
     mdblistCustomListUrl: config.mdblistCustomListUrl,
+    tvdbCustomListUrl: config.tvdbCustomListUrl,
     networksCountry: config.networksCountry,
     anilistCustomListUrl: config.anilistCustomListUrl,
     radarrInstanceId: config.radarrInstanceId,
@@ -812,9 +830,13 @@ export const toCollectionCreateRequest = (
     comingSoonSonarrTagIds: config.comingSoonSonarrTagIds,
     comingSoonRadarrRootFolder: config.comingSoonRadarrRootFolder,
     comingSoonSonarrRootFolder: config.comingSoonSonarrRootFolder,
+    comingSoonIncludeMidSeason: config.comingSoonIncludeMidSeason,
     sortOrder: config.sortOrder,
     personMinimumItems: config.personMinimumItems,
+    franchiseMinimumItems: config.franchiseMinimumItems,
+    franchiseCountReleasedOnly: config.franchiseCountReleasedOnly,
     excludeFromCollections: config.excludeFromCollections,
+    excludeLabels: config.excludeLabels,
     timeRestriction: config.timeRestriction,
     customPoster: config.customPoster,
     autoPoster: config.autoPoster,
@@ -1098,6 +1120,7 @@ export interface CollectionSourceConfig {
   readonly minimumPlays?: number; // Minimum play count required
   // Networks-specific configuration
   readonly networksCountry?: string; // Selected country for Networks collections
+  readonly tmdbAdvancedFilters?: TmdbAdvancedFilters; // Per-source TMDB discover filters (advanced_custom_tmdb)
   // Radarr/Sonarr tag source configuration
   readonly radarrTagServerId?: number;
   readonly radarrTagId?: number;
@@ -1200,6 +1223,7 @@ export interface MultiSourceCollectionConfig {
   readonly createPlaceholdersForMissing?: boolean;
   readonly placeholderDaysAhead?: number;
   readonly placeholderReleasedDays?: number;
+  readonly placeholderSkipEstimatedDates?: boolean;
   readonly includeAllReleasedItems?: boolean;
   // Placeholder filter settings (independent of auto-request filters)
   readonly placeholderMinimumYear?: number;
@@ -1285,6 +1309,7 @@ export type MultiSourceType =
   | 'imdb'
   | 'letterboxd'
   | 'mdblist'
+  | 'tvdb'
   | 'tautulli'
   | 'overseerr'
   | 'networks'
@@ -1310,6 +1335,7 @@ export interface SourceDefinition {
   readonly minimumPlays?: number;
   readonly priority: number;
   readonly networksCountry?: string; // Selected country for Networks collections
+  readonly tmdbAdvancedFilters?: TmdbAdvancedFilters; // Per-source TMDB discover filters (advanced_custom_tmdb)
   readonly radarrTagServerId?: number; // Radarr instance ID for radarrtag source
   readonly radarrTagId?: number; // Radarr tag ID for radarrtag source
   readonly radarrTagLabel?: string; // Radarr tag label for display

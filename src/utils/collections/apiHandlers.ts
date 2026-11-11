@@ -199,6 +199,10 @@ export const saveIndividualConfigs = async (
         ...(collectionConfig.placeholderReleasedDays !== undefined && {
           placeholderReleasedDays: collectionConfig.placeholderReleasedDays,
         }),
+        ...(collectionConfig.placeholderSkipEstimatedDates !== undefined && {
+          placeholderSkipEstimatedDates:
+            collectionConfig.placeholderSkipEstimatedDates,
+        }),
         ...(collectionConfig.placeholderMinimumYear !== undefined && {
           placeholderMinimumYear: collectionConfig.placeholderMinimumYear,
         }),
@@ -331,6 +335,10 @@ export const saveIndividualConfigs = async (
           comingSoonSonarrRootFolder:
             collectionConfig.comingSoonSonarrRootFolder,
         }),
+        ...(collectionConfig.comingSoonIncludeMidSeason !== undefined && {
+          comingSoonIncludeMidSeason:
+            collectionConfig.comingSoonIncludeMidSeason,
+        }),
         ...buildSelectionFieldsPayload(collectionConfig),
         ...(collectionConfig.isMultiSource !== undefined && {
           isMultiSource: collectionConfig.isMultiSource,
@@ -389,6 +397,9 @@ export const saveIndividualConfigs = async (
         ...(collectionConfig.excludeFromCollections !== undefined && {
           excludeFromCollections: collectionConfig.excludeFromCollections,
         }),
+        ...(collectionConfig.excludeLabels !== undefined && {
+          excludeLabels: collectionConfig.excludeLabels,
+        }),
         ...(collectionConfig.traktCustomListUrl && {
           traktCustomListUrl: collectionConfig.traktCustomListUrl,
         }),
@@ -420,6 +431,13 @@ export const saveIndividualConfigs = async (
         }),
         ...(collectionConfig.useTmdbFranchisePoster !== undefined && {
           useTmdbFranchisePoster: collectionConfig.useTmdbFranchisePoster,
+        }),
+        ...(collectionConfig.franchiseMinimumItems !== undefined && {
+          franchiseMinimumItems: collectionConfig.franchiseMinimumItems,
+        }),
+        ...(collectionConfig.franchiseCountReleasedOnly !== undefined && {
+          franchiseCountReleasedOnly:
+            collectionConfig.franchiseCountReleasedOnly,
         }),
         ...(collectionConfig.hideIndividualItems !== undefined && {
           hideIndividualItems: collectionConfig.hideIndividualItems,

@@ -8,6 +8,7 @@ import type {
   OverlayVariableElementProps,
 } from '@server/entity/OverlayTemplate';
 import { OverlayTemplate } from '@server/entity/OverlayTemplate';
+import { sampleCollectionRankContext } from '@server/lib/overlays/collectionRank';
 import { extractStreamingProvider } from '@server/lib/overlays/OverlayContextBuilder';
 import { overlayOutputFormat } from '@server/lib/overlays/overlayOutputQuality';
 import { createOverlayPreviewArtwork } from '@server/lib/overlays/overlayPreviewArtwork';
@@ -18,15 +19,20 @@ import {
 } from '@server/lib/overlays/overlayTargets';
 import { overlayTemplateRenderer } from '@server/lib/overlays/OverlayTemplateRenderer';
 import { presetTemplateService } from '@server/lib/overlays/PresetTemplates';
+import {
+  deriveReleaseDateContext,
+  movieReleaseInfoFromTmdb,
+} from '@server/lib/overlays/releaseDateContext';
 import { createSampleOverlayContext } from '@server/lib/overlays/sampleOverlayContext';
 import { toTmdbRatingContext } from '@server/lib/overlays/tmdbRatingPolicy';
 import { getSettings, getTmdbLanguage } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
+import { fileRouteLimiter } from '@server/middleware/rateLimit';
 import { Router } from 'express';
 import * as fsPromises from 'fs/promises';
 import path from 'path';
-import type sharp from 'sharp';
+import type { OverlayOptions } from 'sharp';
 
 const router = Router();
 
@@ -199,18 +205,49 @@ interface PreviewPosterMetadata {
   audioFormat: string;
   audioProfile?: string;
   videoCodec: string;
+  edition?: string;
   status: string;
   daysUntilRelease?: number;
   releaseDate?: string;
+  theatricalReleaseDate?: string;
+  digitalReleaseDate?: string;
+  physicalReleaseDate?: string;
+  daysSinceTheatricalRelease?: number;
+  daysSinceDigitalRelease?: number;
+  daysSincePhysicalRelease?: number;
+  daysSinceHomeRelease?: number;
+  releaseDateSource?: string;
   runtime?: number;
   daysUntilAction?: number;
+}
+
+function previewMovieReleaseStates(
+  results: Parameters<typeof movieReleaseInfoFromTmdb>[0] | undefined
+): Partial<PreviewPosterMetadata> {
+  if (!results) return {};
+  const info = movieReleaseInfoFromTmdb(
+    results,
+    getSettings().overlays?.watchProviderRegion || 'US'
+  );
+  if (!info) return {};
+  const ctx = deriveReleaseDateContext(info);
+  return {
+    theatricalReleaseDate: ctx.theatricalReleaseDate,
+    digitalReleaseDate: ctx.digitalReleaseDate,
+    physicalReleaseDate: ctx.physicalReleaseDate,
+    daysSinceTheatricalRelease: ctx.daysSinceTheatricalRelease,
+    daysSinceDigitalRelease: ctx.daysSinceDigitalRelease,
+    daysSincePhysicalRelease: ctx.daysSincePhysicalRelease,
+    daysSinceHomeRelease: ctx.daysSinceHomeRelease,
+    releaseDateSource: ctx.releaseDateSource,
+  };
 }
 
 // Apply authentication to all routes
 router.use(isAuthenticated());
 
 // GET /api/v1/overlay-templates/preview-posters - List available preview posters
-router.get('/preview-posters', async (_req, res, next) => {
+router.get('/preview-posters', fileRouteLimiter, async (_req, res, next) => {
   try {
     const postersDir = path.join(process.cwd(), 'public', 'preview-posters');
 
@@ -356,8 +393,10 @@ router.get('/preview-metadata/:posterId', async (req, res, next) => {
         audioFormat: 'Dolby Atmos',
         audioProfile: 'truehd_atmos',
         videoCodec: 'HEVC',
+        edition: 'Extended Cut',
         status: 'Available',
         releaseDate: movieDetails.release_date,
+        ...previewMovieReleaseStates(movieDetails.release_dates?.results),
         runtime: movieDetails.runtime,
         daysUntilAction: 5, // Simulated Maintainerr data for preview
       };
@@ -752,7 +791,7 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 // GET /api/v1/overlay-templates/:id/preview - Generate preview of overlay template
-router.get('/:id/preview', async (req, res, next) => {
+router.get('/:id/preview', fileRouteLimiter, async (req, res, next) => {
   try {
     const templateId = parseInt(req.params.id);
     const templateRepository = getRepository(OverlayTemplate);
@@ -824,6 +863,7 @@ router.get('/:id/preview', async (req, res, next) => {
 
     // Render the overlay on the poster
     const templateData = template.getTemplateData();
+    Object.assign(sampleContext, sampleCollectionRankContext([templateData]));
     const renderedBuffer = await overlayTemplateRenderer.renderOverlay(
       posterBuffer,
       templateData,
@@ -844,7 +884,7 @@ router.get('/:id/preview', async (req, res, next) => {
 });
 
 // POST /api/v1/overlay-templates/combined-preview - Generate preview with multiple overlays
-router.post('/combined-preview', async (req, res, next) => {
+router.post('/combined-preview', fileRouteLimiter, async (req, res, next) => {
   try {
     const {
       templateIds,
@@ -983,7 +1023,7 @@ router.post('/combined-preview', async (req, res, next) => {
     // Batch render: collect all overlay elements, then composite once
     const { width: posterWidth, height: posterHeight } =
       await overlayTemplateRenderer.getPosterDimensions(posterBuffer);
-    const allOverlays: sharp.OverlayOptions[] = [];
+    const allOverlays: OverlayOptions[] = [];
 
     for (const template of orderedTemplates) {
       // Check before each expensive rendering operation
@@ -996,6 +1036,7 @@ router.post('/combined-preview', async (req, res, next) => {
       }
 
       const templateData = template.getTemplateData();
+      Object.assign(sampleContext, sampleCollectionRankContext([templateData]));
       const templateOverlays =
         await overlayTemplateRenderer.renderOverlayElements(
           posterWidth,

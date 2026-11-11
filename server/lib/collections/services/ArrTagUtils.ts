@@ -20,6 +20,7 @@ export type TagSource =
   | 'anilist'
   | 'myanimelist'
   | 'mdblist'
+  | 'tvdb'
   | 'networks'
   | 'originals'
   | 'multi-source'
@@ -36,6 +37,7 @@ const SOURCE_LABELS: Record<TagSource, string> = {
   anilist: 'Anilist',
   myanimelist: 'MyAnimeList',
   mdblist: 'Mdblist',
+  tvdb: 'Tvdb',
   networks: 'Networks',
   originals: 'Originals',
   'multi-source': 'MultiSource',
@@ -60,13 +62,14 @@ function resolveTagMode(
   return legacyEnabled ? 'granular' : 'off';
 }
 
-function slugifyTagSegment(segment?: string): string {
+export function slugifyTagSegment(segment?: string): string {
   if (!segment) {
     return '';
   }
 
   return segment
     .toString()
+    .slice(0, 200)
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

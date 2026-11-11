@@ -1,0 +1,64 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Skip the window where hijacked releases are live; security updates ignore this.
+    cooldown:
+      default-days: 7
+    groups:
+      # Keep the two lists identical: Dependabot ranks a pattern-less group as more specific.
+      dev-tooling:
+        patterns:
+          - 'eslint*'
+          - '@typescript-eslint/*'
+          - 'prettier*'
+          - '@types/*'
+          - 'vitest*'
+        update-types:
+          - minor
+          - patch
+      everything-else:
+        patterns: ['*']
+        exclude-patterns:
+          - 'eslint*'
+          - '@typescript-eslint/*'
+          - 'prettier*'
+          - '@types/*'
+          - 'vitest*'
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns: ['*']
+    # Majors (Next, React, Node) are their own workstreams, not bot PRs.
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      # Security updates skip the major rule above; the Next upgrade is its own workstream.
+      - dependency-name: 'next'
+        versions: ['>=13.0.0']
+      # 0.5+ needs prettier 3; move both together.
+      - dependency-name: 'prettier-plugin-tailwindcss'
+        versions: ['>=0.3.0']
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']

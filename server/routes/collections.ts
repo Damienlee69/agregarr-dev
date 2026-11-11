@@ -21,7 +21,6 @@ import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { Router } from 'express';
-import multer from 'multer';
 
 // Plex label can be either a string or an object with a tag property
 type PlexLabel = string | { tag: string };
@@ -85,6 +84,7 @@ export function validateExternalUrl(
       tmdb: ['www.themoviedb.org', 'themoviedb.org'],
       imdb: ['www.imdb.com', 'imdb.com'],
       mdblist: ['mdblist.com', 'www.mdblist.com'],
+      tvdb: ['thetvdb.com', 'www.thetvdb.com'],
       letterboxd: ['letterboxd.com', 'www.letterboxd.com'],
       anilist: ['anilist.co', 'www.anilist.co'],
     };
@@ -147,6 +147,15 @@ export function validateExternalUrl(
           };
         }
         break;
+      case 'tvdb':
+        if (!urlObj.pathname.match(/^\/lists\/[A-Za-z0-9_-]+\/?$/)) {
+          return {
+            isValid: false,
+            error:
+              'Invalid TVDB list URL format. Expected: https://thetvdb.com/lists/listname or https://thetvdb.com/lists/123456',
+          };
+        }
+        break;
       case 'letterboxd':
         if (
           !urlObj.pathname.match(/^\/[^/]+\/list\/[^/?]+\/?$/) &&
@@ -194,39 +203,6 @@ export function validateExternalUrl(
 }
 
 const collectionsRoutes = Router();
-
-// Configure multer for poster uploads
-export const posterUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-    files: 1, // Only allow one file
-  },
-  fileFilter: (req, file, callback) => {
-    // Allow specific mime types
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-
-    if (!allowedMimeTypes.includes(file.mimetype)) {
-      return callback(
-        new Error('Invalid file type. Only JPEG, PNG, and WebP are allowed.')
-      );
-    }
-
-    // Check file extension matches mime type
-    const fileExt = file.originalname?.toLowerCase().split('.').pop();
-    const expectedExts: Record<string, string[]> = {
-      'image/jpeg': ['jpg', 'jpeg'],
-      'image/png': ['png'],
-      'image/webp': ['webp'],
-    };
-
-    if (fileExt && !expectedExts[file.mimetype]?.includes(fileExt)) {
-      return callback(new Error('File extension does not match file type.'));
-    }
-
-    callback(null, true);
-  },
-}).single('poster');
 
 /**
  * GET /api/v1/collections
@@ -282,6 +258,25 @@ collectionsRoutes.put('/:id/settings', isAuthenticated(), async (req, res) => {
     if (sortTitleOverrideChanged) {
       req.body.sortTitleOverrideIsFullTitle =
         req.body.sortTitleOverride.trim() !== '';
+    }
+
+    if (
+      req.body?.type === 'tmdb' &&
+      req.body?.subtype === 'auto_franchise' &&
+      req.body.franchiseMinimumItems !== undefined &&
+      req.body.franchiseMinimumItems !== null &&
+      req.body.franchiseMinimumItems !== ''
+    ) {
+      const franchiseMinimum = Number(req.body.franchiseMinimumItems);
+      if (!Number.isInteger(franchiseMinimum) || franchiseMinimum < 1) {
+        return res.status(400).json({
+          error:
+            'Franchise minimum movies must be a whole number of at least 1',
+          message:
+            'Franchise minimum movies must be a whole number of at least 1',
+        });
+      }
+      req.body.franchiseMinimumItems = franchiseMinimum;
     }
 
     // Debug logging for person settings payload (directors/actors)
@@ -1983,7 +1978,7 @@ collectionsRoutes.get('/sync/status', async (_req, res) => {
       (job) => job.id === 'plex-collections-sync'
     );
     if (syncJob?.job?.nextInvocation) {
-      nextSyncAt = syncJob.job.nextInvocation().toISOString();
+      nextSyncAt = syncJob.job.nextInvocation()?.toISOString();
     }
   } catch (error) {
     // If we can't get next sync time, just omit it
@@ -2208,6 +2203,7 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
             minimumPlays?: number;
             priority: number;
             networksCountry?: string;
+            tmdbAdvancedFilters?: CollectionConfig['tmdbAdvancedFilters'];
             radarrTagServerId?: number;
             radarrTagId?: number;
             radarrTagLabel?: string;
@@ -2267,6 +2263,7 @@ collectionsRoutes.post('/:id/sync', isAuthenticated(), async (req, res) => {
                 minimumPlays: source.minimumPlays,
                 priority: source.priority,
                 networksCountry: source.networksCountry,
+                tmdbAdvancedFilters: source.tmdbAdvancedFilters,
                 radarrTagServerId: source.radarrTagServerId,
                 radarrTagId: source.radarrTagId,
                 radarrTagLabel: source.radarrTagLabel,

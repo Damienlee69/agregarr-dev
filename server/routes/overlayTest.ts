@@ -3,11 +3,13 @@ import PlexAPI, { type PlexLibraryItem } from '@server/api/plexapi';
 import { getRepository } from '@server/datasource';
 import { OverlayLibraryConfig } from '@server/entity/OverlayLibraryConfig';
 import { OverlayTemplate } from '@server/entity/OverlayTemplate';
+import { rankContextFromOrderedKeys } from '@server/lib/overlays/collectionRank';
 import { seasonFallbackFor } from '@server/lib/overlays/maintainerrCountdown';
 import {
   buildRenderContext,
   checkMonitoringStatus,
   fetchReleaseDateInfo,
+  type ReleaseDateInfo,
 } from '@server/lib/overlays/OverlayContextBuilder';
 import { overlayLibraryService } from '@server/lib/overlays/OverlayLibraryService';
 import {
@@ -24,13 +26,17 @@ import {
   evaluateConditionDetailed,
   overlayTemplateRenderer,
 } from '@server/lib/overlays/OverlayTemplateRenderer';
-import { deriveReleaseDateContext } from '@server/lib/overlays/releaseDateContext';
+import {
+  deriveReleaseDateContext,
+  preferRadarrReleaseDate,
+  type RadarrReleaseDates,
+} from '@server/lib/overlays/releaseDateContext';
 import { usesTmdbRatingFields } from '@server/lib/overlays/tmdbRatingPolicy';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { extractUsedContextFields } from '@server/utils/metadataHashing';
 import { Router } from 'express';
-import type sharp from 'sharp';
+import type { OverlayOptions } from 'sharp';
 
 const overlayTestRouter = Router();
 
@@ -348,11 +354,9 @@ overlayTestRouter.post('/', async (req, res) => {
 
     // Fetch release date information if TMDB ID available
     let releaseDateContext: Partial<OverlayRenderContext> = {};
+    let releaseDateInfo: ReleaseDateInfo | undefined;
     if (tmdbId) {
-      const releaseDateInfo = await fetchReleaseDateInfo(
-        tmdbId,
-        actualMediaType
-      );
+      releaseDateInfo = await fetchReleaseDateInfo(tmdbId, actualMediaType);
 
       if (releaseDateInfo) {
         // Same shared read-time derivation as the overlay sync path, so the
@@ -364,19 +368,29 @@ overlayTestRouter.post('/', async (req, res) => {
 
     // Check monitoring status if TMDB ID available
     let monitoringContext: Partial<OverlayRenderContext> = {};
+    let radarrDates: RadarrReleaseDates = {};
     if (tmdbId) {
-      monitoringContext = await checkMonitoringStatus(
-        tmdbId,
-        actualMediaType,
-        undefined,
-        undefined
-      );
+      const { radarrDigitalRelease, radarrPhysicalRelease, ...status } =
+        await checkMonitoringStatus(
+          tmdbId,
+          actualMediaType,
+          undefined,
+          undefined
+        );
+      monitoringContext = status;
+      radarrDates = { radarrDigitalRelease, radarrPhysicalRelease };
     }
 
     // Merge contexts
     let actualIsPlaceholder = isPlaceholder;
     if (monitoringContext.hasFile === true) {
       actualIsPlaceholder = false; // *arr has files, so it's definitely not a placeholder
+    }
+    if (actualIsPlaceholder && actualMediaType === 'movie') {
+      const preferred = preferRadarrReleaseDate(releaseDateInfo, radarrDates);
+      if (preferred && preferred !== releaseDateInfo) {
+        releaseDateContext = deriveReleaseDateContext(preferred);
+      }
     }
 
     let downloaded: boolean;
@@ -403,6 +417,7 @@ overlayTestRouter.post('/', async (req, res) => {
         !!cfg.collectionRatingKey
     );
     const collectionIds: string[] = [];
+    const rankContext: Record<string, number> = {};
     const concurrency = 10;
 
     for (let i = 0; i < collectionsWithKeys.length; i += concurrency) {
@@ -412,6 +427,10 @@ overlayTestRouter.post('/', async (req, res) => {
           try {
             const itemKeys = await plexApi.getCollectionItems(
               cfg.collectionRatingKey
+            );
+            Object.assign(
+              rankContext,
+              rankContextFromOrderedKeys(cfg.id, ratingKey, itemKeys)
             );
             return itemKeys.includes(ratingKey) ? cfg.id : null;
           } catch {
@@ -439,6 +458,7 @@ overlayTestRouter.post('/', async (req, res) => {
       ...releaseDateContext,
       ...monitoringContext,
       collection: collectionIds,
+      ...rankContext,
     };
 
     // Evaluate all templates with detailed results
@@ -458,11 +478,11 @@ overlayTestRouter.post('/', async (req, res) => {
     });
 
     // Fetch base poster
-    const { plexBasePosterManager, resolveBasePosterSource } = await import(
-      '@server/lib/overlays/PlexBasePosterManager'
-    );
+    const { plexBasePosterManager, resolveBasePosterSourceWithTrail } =
+      await import('@server/lib/overlays/PlexBasePosterManager');
 
-    const posterSource = resolveBasePosterSource(item, settings);
+    const { source: posterSource, tried: posterSourceTrail } =
+      resolveBasePosterSourceWithTrail(item, settings);
 
     // Real metadata, or a preview treats an overlaid poster as the original.
     const metadataService = (
@@ -493,7 +513,8 @@ overlayTestRouter.post('/', async (req, res) => {
           basePosterFilename: metadata?.basePosterFilename,
           localPosterModifiedTime: metadata?.localPosterModifiedTime,
         },
-        tmdbId
+        tmdbId,
+        posterSourceTrail
       );
     } catch (error) {
       logger.error('Failed to get base poster', {
@@ -517,7 +538,7 @@ overlayTestRouter.post('/', async (req, res) => {
 
     const { width: posterWidth, height: posterHeight } =
       await overlayTemplateRenderer.getPosterDimensions(posterBuffer);
-    const allOverlays: sharp.OverlayOptions[] = [];
+    const allOverlays: OverlayOptions[] = [];
 
     for (const template of matchingTemplates) {
       const templateData = template.getTemplateData();
@@ -537,10 +558,12 @@ overlayTestRouter.post('/', async (req, res) => {
     const jpegQuality = normalizeOverlayJpegQuality(
       settings.overlays?.jpegQuality
     );
+    const outputFormat = overlayOutputFormat();
     posterBuffer = await overlayTemplateRenderer.compositeOverlays(
       posterBuffer,
       allOverlays,
-      jpegQuality
+      jpegQuality,
+      outputFormat
     );
 
     // Return all context variables as a flat list (no grouping)
@@ -572,7 +595,7 @@ overlayTestRouter.post('/', async (req, res) => {
       output: {
         width: posterWidth,
         height: posterHeight,
-        format: overlayOutputFormat(),
+        format: outputFormat,
         jpegQuality,
         bytes: posterBuffer.length,
       },

@@ -46,6 +46,7 @@ const portableFields = [
   'imdbCustomListUrl',
   'letterboxdCustomListUrl',
   'mdblistCustomListUrl',
+  'tvdbCustomListUrl',
   'anilistCustomListUrl',
   'watchProviderId',
   'region',
@@ -72,6 +73,8 @@ const portableFields = [
   'smartCollectionSort',
   'plexLabel',
   'personMinimumItems',
+  'franchiseMinimumItems',
+  'franchiseCountReleasedOnly',
   'useSeparator',
   'separatorTitle',
   'hideIndividualItems',
@@ -84,6 +87,7 @@ const portableFields = [
   'enableCustomTheme',
   'createPlaceholdersForMissing',
   'placeholderReleasedDays',
+  'placeholderSkipEstimatedDates',
   'placeholderDaysAhead',
   'includeAllReleasedItems',
   'placeholderMinimumYear',
@@ -93,6 +97,7 @@ const portableFields = [
   'placeholderFilterSettings',
   'comingSoonFilterByTags',
   'comingSoonTagMode',
+  'comingSoonIncludeMidSeason',
   'downloadMode',
   'searchMissingMovies',
   'searchMissingTV',
@@ -116,6 +121,7 @@ const portableFields = [
   'includeValues',
   'sortTitleOverride',
   'sortTitleOverrideIsFullTitle',
+  'excludeLabels',
 ] as const satisfies readonly (keyof CollectionConfig)[];
 
 const strippedFields = [
@@ -203,6 +209,7 @@ const portableSourceFields = new Set([
   'customDays',
   'minimumPlays',
   'networksCountry',
+  'tmdbAdvancedFilters',
   'resolvedTitle',
 ]);
 

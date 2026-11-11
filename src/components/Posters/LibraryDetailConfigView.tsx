@@ -155,8 +155,10 @@ const messages = defineMessages({
   syncScope: 'Sync scope',
   syncScopeDescription:
     'Choose which artwork each overlay job processes for this library. Posterizarr callbacks use the Quick sync targets. A selected target also needs an enabled overlay template for that artwork.',
-  missingFullSyncTemplates:
-    'Full sync will skip {targets} because no enabled template targets that artwork.',
+  missingSyncTemplates:
+    'No enabled template for: {targets}. These jobs will skip that artwork.',
+  missingSyncTemplateTarget: '{target} ({jobs})',
+  quickSyncCallbacks: 'Quick sync / Posterizarr callbacks',
   fullSync: 'Full sync',
   quickSync: 'Quick sync',
   artwork: 'Artwork',
@@ -288,7 +290,10 @@ const SortableTemplateItem: React.FC<SortableTemplateItemProps> = ({
       </div>
 
       {/* Checkbox */}
-      <label className="flex flex-shrink-0 cursor-pointer items-center">
+      <label
+        className="flex flex-shrink-0 cursor-pointer items-center"
+        aria-label={template.name}
+      >
         <input
           type="checkbox"
           checked={forced || enabled}
@@ -614,9 +619,26 @@ const LibraryDetailConfigView: React.FC<LibraryDetailConfigViewProps> = ({
       .filter((template) => isEnabled(template.id))
       .flatMap((template) => getOverlayTargets(template.tags))
   );
-  const missingFullSyncTemplateTargets = fullSyncTargets.filter(
-    (target) => !enabledTemplateTargets.has(target)
-  );
+  const missingTemplateWarnings = availableSyncTargets
+    .filter((target) => !enabledTemplateTargets.has(target))
+    .flatMap((target) => {
+      const jobs = [
+        ...(fullSyncTargets.includes(target)
+          ? [intl.formatMessage(messages.fullSync)]
+          : []),
+        ...(quickSyncTargets.includes(target)
+          ? [intl.formatMessage(messages.quickSyncCallbacks)]
+          : []),
+      ];
+      return jobs.length > 0
+        ? [
+            intl.formatMessage(messages.missingSyncTemplateTarget, {
+              target: getSyncTargetLabel(target),
+              jobs: jobs.join(', '),
+            }),
+          ]
+        : [];
+    });
 
   const handleToggle = (templateId: number) => {
     setEnabledOverlays((prev) => {
@@ -882,7 +904,12 @@ const LibraryDetailConfigView: React.FC<LibraryDetailConfigViewProps> = ({
                     className="grid grid-cols-[minmax(0,1fr)_100px_100px] items-center border-t border-stone-700 px-3 py-2 text-sm text-stone-200"
                   >
                     <span>{label}</span>
-                    <label className="flex cursor-pointer justify-center">
+                    <label
+                      className="flex cursor-pointer justify-center"
+                      aria-label={`${label} ${intl.formatMessage(
+                        messages.fullSync
+                      )}`}
+                    >
                       <input
                         type="checkbox"
                         checked={fullSyncTargets.includes(target)}
@@ -890,7 +917,12 @@ const LibraryDetailConfigView: React.FC<LibraryDetailConfigViewProps> = ({
                         className="h-4 w-4 rounded border-stone-600 text-orange-500 focus:ring-orange-500"
                       />
                     </label>
-                    <label className="flex cursor-pointer justify-center">
+                    <label
+                      className="flex cursor-pointer justify-center"
+                      aria-label={`${label} ${intl.formatMessage(
+                        messages.quickSync
+                      )}`}
+                    >
                       <input
                         type="checkbox"
                         checked={quickSyncTargets.includes(target)}
@@ -902,12 +934,10 @@ const LibraryDetailConfigView: React.FC<LibraryDetailConfigViewProps> = ({
                 );
               })}
             </div>
-            {missingFullSyncTemplateTargets.length > 0 && (
-              <div className="bg-amber-950/40 mt-3 rounded-md border border-amber-700 px-3 py-2 text-xs text-amber-200">
-                {intl.formatMessage(messages.missingFullSyncTemplates, {
-                  targets: missingFullSyncTemplateTargets
-                    .map(getSyncTargetLabel)
-                    .join(', '),
+            {missingTemplateWarnings.length > 0 && (
+              <div className="mt-3 rounded-md border border-amber-700 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+                {intl.formatMessage(messages.missingSyncTemplates, {
+                  targets: missingTemplateWarnings.join('; '),
                 })}
               </div>
             )}
@@ -917,7 +947,10 @@ const LibraryDetailConfigView: React.FC<LibraryDetailConfigViewProps> = ({
           {detectedLibraryType === 'show' && (
             <div className="mt-4 border-t border-stone-700 pt-4">
               <div className="flex items-center gap-3">
-                <label className="relative inline-flex cursor-pointer items-center">
+                <label
+                  className="relative inline-flex cursor-pointer items-center"
+                  aria-label="Use episode files for quality badges"
+                >
                   <input
                     type="checkbox"
                     checked={enableEpisodeScanning}
@@ -992,6 +1025,7 @@ const LibraryDetailConfigView: React.FC<LibraryDetailConfigViewProps> = ({
             <div className="mt-4 border-t border-stone-700 pt-4">
               <div className="flex items-center gap-3">
                 <label
+                  aria-label="Season deletion countdown"
                   className={`relative inline-flex items-center ${
                     configData?.maintainerrConfigured
                       ? 'cursor-pointer'
