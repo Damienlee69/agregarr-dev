@@ -1,4 +1,8 @@
 import type PlexAPI from '@server/api/plexapi';
+import {
+  LEADING_ARTICLE_PATTERN,
+  LEADING_PUNCTUATION_PATTERN,
+} from '@server/constants/sortTitle';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { templateEngine } from '@server/lib/collections/utils/TemplateEngine';
@@ -118,6 +122,14 @@ export function isSortTitleOverrideEdit(
   );
 }
 
+/** Clearing a filled Sort Title field is a reset, derived from the stored value rather than a client flag. */
+export function isSortTitleResetRequest(
+  submitted: unknown,
+  stored: string | undefined
+): boolean {
+  return isSortTitleOverrideEdit(submitted, stored) && submitted.trim() === '';
+}
+
 export function buildSortTitleFromOverride(
   override: string,
   collectionName: string,
@@ -142,6 +154,32 @@ export function buildSortTitleFromOverride(
   }
 
   return isBarePrefix ? `${override}${collectionName}` : override;
+}
+
+/** True when Plex's current sort title is one Agregarr (or Plex itself) produced; anything typed by hand is left alone. */
+export function isAgregarrOwnedSortTitle(
+  titleSort: string | undefined,
+  collectionName: string,
+  everManaged?: boolean,
+  previousName?: string
+): boolean {
+  const current = titleSort?.trim();
+  if (!current) return true;
+  if (current === collectionName.trim()) return true;
+  if (everManaged === true) return true;
+
+  const articleForms = (name: string) =>
+    (['strip', 'moveToEnd'] as const).map((mode) =>
+      normalizeSortTitleArticle(name, mode)
+    );
+  if (articleForms(collectionName).includes(current)) return true;
+  // After a rename, the old name's article form is still Agregarr's to replace.
+  return (
+    !!previousName &&
+    articleForms(previousName).some(
+      (form) => form !== previousName && form === current
+    )
+  );
 }
 
 /**
@@ -2987,6 +3025,23 @@ export function isMultiCollectionPattern(config?: {
         'actors',
       ].includes(config?.subtype ?? ''))
   );
+}
+
+export type SortTitleArticleHandling = 'strip' | 'moveToEnd' | 'off';
+
+/** The sort key for a name under the given leading-article mode; the displayed title is never changed. */
+export function normalizeSortTitleArticle(
+  title: string,
+  mode: SortTitleArticleHandling = 'strip'
+): string {
+  // Other modes match Plex: drop leading punctuation, then handle the article.
+  if (mode === 'off') return title;
+
+  const trimmed = title.replace(LEADING_PUNCTUATION_PATTERN, '') || title;
+  const match = LEADING_ARTICLE_PATTERN.exec(trimmed);
+  if (!match) return trimmed;
+  const [, article, rest] = match;
+  return mode === 'moveToEnd' ? `${rest}, ${article}` : rest;
 }
 
 /**
