@@ -71,6 +71,23 @@ function evaluateRule(
       return (
         typeof value === 'number' && typeof cond === 'number' && value <= cond
       );
+    case 'in': {
+      if (Array.isArray(cond)) {
+        return typeof value === 'string'
+          ? cond.some(
+              (item) =>
+                typeof item === 'string' && item.toLowerCase() === strVal
+            )
+          : cond.includes(value);
+      }
+      if (typeof cond !== 'string' && typeof cond !== 'number') return false;
+      if (typeof value !== 'string' && typeof value !== 'number') return false;
+      const actual = String(value).toLowerCase();
+      return String(cond)
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .some((item) => item !== '' && item === actual);
+    }
     case 'contains':
       return (
         typeof value === 'string' &&

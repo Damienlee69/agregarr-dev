@@ -1,5 +1,6 @@
 import type PlexAPI from '@server/api/plexapi';
 import TmdbAPI from '@server/api/themoviedb';
+import { TMDB_MAX_PAGE } from '@server/api/themoviedb/constants';
 import { BaseCollectionSync } from '@server/lib/collections/core/BaseCollectionSync';
 import {
   applyLabelExclusions,
@@ -33,6 +34,9 @@ import { RandomListManager } from '@server/lib/collections/utils/RandomListManag
 import type { CollectionConfig } from '@server/lib/settings';
 import { getTmdbLanguage } from '@server/lib/settings';
 import logger from '@server/logger';
+
+// Same vote floors as TMDB's own Top Rated lists
+const TOP_RATED_MIN_VOTES = { movie: '300', tv: '200' };
 
 // TmdbSourceData interface is now imported from types.ts
 
@@ -141,6 +145,9 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
               }
             }
             currentPage++;
+            if (currentPage > TMDB_MAX_PAGE) {
+              hasMorePages = false;
+            }
           }
 
           // Check if we have enough data - stop if we have 10x maxItems (safety buffer)
@@ -207,6 +214,9 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
               }
             }
             currentPage++;
+            if (currentPage > TMDB_MAX_PAGE) {
+              hasMorePages = false;
+            }
           }
 
           if (
@@ -230,6 +240,7 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
             if (mediaType === 'movie') {
               const data = await this.tmdbClient.getDiscoverMovies({
                 sortBy: 'vote_average.desc',
+                voteCountGte: TOP_RATED_MIN_VOTES.movie,
                 page: currentPage,
               });
 
@@ -252,6 +263,7 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
             if (mediaType === 'tv') {
               const data = await this.tmdbClient.getDiscoverTv({
                 sortBy: 'vote_average.desc',
+                voteCountGte: TOP_RATED_MIN_VOTES.tv,
                 page: currentPage,
               });
 
@@ -272,6 +284,9 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
               }
             }
             currentPage++;
+            if (currentPage > TMDB_MAX_PAGE) {
+              hasMorePages = false;
+            }
           }
 
           if (
@@ -362,6 +377,9 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
             }
 
             currentPage++;
+            if (currentPage > TMDB_MAX_PAGE) {
+              hasMorePages = false;
+            }
           }
 
           tmdbData.push(...allItems);
@@ -397,6 +415,9 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
               }
 
               currentPage++;
+              if (currentPage > TMDB_MAX_PAGE) {
+                hasMorePages = false;
+              }
             }
 
             if (
@@ -465,6 +486,9 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
               }
 
               currentPage++;
+              if (currentPage > TMDB_MAX_PAGE) {
+                hasMorePages = false;
+              }
             }
 
             if (
@@ -882,6 +906,9 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
                 hasMorePages = false;
               }
               currentPage++;
+              if (currentPage > TMDB_MAX_PAGE) {
+                hasMorePages = false;
+              }
             }
 
             if (
