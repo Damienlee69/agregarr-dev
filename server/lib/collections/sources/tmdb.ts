@@ -629,6 +629,16 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
           'with_watch_providers',
           'with_status', // TV-only: comma (AND) or pipe (OR) separated
           'with_type', // TV-only: comma (AND) or pipe (OR) separated
+          'with_networks',
+          'with_origin_country',
+          'certification',
+        ]);
+
+        // An item has only one status, type or certification, so AND never matches
+        const MATCH_ANY_ONLY_FIELDS = new Set([
+          'with_status',
+          'with_type',
+          'certification',
         ]);
 
         type AdvancedDiscoverFilters = NonNullable<
@@ -746,12 +756,12 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
             if (!filter.field) continue;
             if (!hasNonEmptyValue(filter.value)) continue;
 
-            const filterLogicalOperator = normalizeLogicalOperator(
-              filter.operator
-            );
-
             const field = normalizeDiscoverField(filter.field);
             if (!field) continue;
+
+            const filterLogicalOperator = MATCH_ANY_ONLY_FIELDS.has(field)
+              ? 'or'
+              : normalizeLogicalOperator(filter.operator);
             if (!isSupportedForMediaType(field)) continue;
             let rawValue: unknown = coerceDiscoverValue(field, filter.value);
 
@@ -808,6 +818,14 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
             } else {
               groupFilters[field] = rawValue;
             }
+          }
+
+          // TMDB ignores a rating without a country; the picker shows US ratings
+          if (
+            !groupFilters.certification_country &&
+            Object.keys(groupFilters).some((k) => k.startsWith('certification'))
+          ) {
+            groupFilters.certification_country = 'US';
           }
 
           return groupFilters;
@@ -925,7 +943,11 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
 
         const effectiveGroups: AdvancedDiscoverFilterGroup[] =
           groups.length > 0
-            ? (groups as AdvancedDiscoverFilterGroup[])
+            ? (groups as AdvancedDiscoverFilterGroup[]).filter(
+                // A later group with nothing to send would join the whole Discover list
+                (group, i) =>
+                  i === 0 || Object.keys(buildGroupFilters(group)).length > 0
+              )
             : ([{ filters: [] }] as unknown as AdvancedDiscoverFilterGroup[]);
 
         // Fetch each group separately and then AND/OR join results between groups
@@ -1074,10 +1096,6 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
               return typeof item.vote_count === 'number'
                 ? item.vote_count
                 : undefined;
-            case 'revenue':
-              return typeof item.revenue === 'number'
-                ? item.revenue
-                : undefined;
             case 'release_date':
             case 'primary_release_date':
               return toTime(item.release_date);
@@ -1096,7 +1114,8 @@ export class TmdbCollectionSync extends BaseCollectionSync<'tmdb'> {
           }
         };
 
-        if (sortField && sortDirection) {
+        // Discover results carry no revenue, so a revenue sort keeps TMDB's order
+        if (sortField && sortDirection && sortField !== 'revenue') {
           combinedOrdered.sort((a, b) => {
             const av = getSortValue(a);
             const bv = getSortValue(b);
